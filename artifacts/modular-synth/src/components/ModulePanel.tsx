@@ -236,11 +236,39 @@ export default function ModulePanel({
 
   return (
     <div
-      style={{ width: typeDef.width, height: panelH, display: 'flex', flexDirection: 'column' }}
+      style={{ width: typeDef.width, height: panelH, display: 'flex', flexDirection: 'column', position: 'relative' }}
       onMouseEnter={() => setShowDelete(true)}
       onMouseLeave={() => setShowDelete(false)}
       data-testid={`module-${module.id}`}
     >
+      {/* Delete button — absolutely positioned so it never shifts the drag rail layout */}
+      {showDelete && (
+        <button
+          style={{
+            position: 'absolute', top: -8, right: -8, zIndex: 20,
+            width: 16, height: 16, borderRadius: '50%',
+            fontSize: 9, lineHeight: 1,
+            cursor: 'pointer', border: '1px solid #3a3a3a',
+            background: '#1a1a1a', color: '#555',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.8)',
+          }}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLElement).style.background = '#3a0000';
+            (e.currentTarget as HTMLElement).style.color = '#ef4444';
+            (e.currentTarget as HTMLElement).style.borderColor = '#ef4444';
+          }}
+          onMouseLeave={e => {
+            (e.currentTarget as HTMLElement).style.background = '#1a1a1a';
+            (e.currentTarget as HTMLElement).style.color = '#555';
+            (e.currentTarget as HTMLElement).style.borderColor = '#3a3a3a';
+          }}
+          onMouseDown={e => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onDelete(module.id); }}
+          data-testid={`delete-module-${module.id}`}
+        >✕</button>
+      )}
+
       {/* Top rail – drag handle */}
       <div
         style={{
@@ -254,6 +282,7 @@ export default function ModulePanel({
           userSelect: 'none',
         }}
         onMouseDown={(e) => onDragStart(module.id, e)}
+        onDoubleClick={e => e.preventDefault()}
       >
         <Screw />
         <span style={{
@@ -263,21 +292,7 @@ export default function ModulePanel({
         }}>
           {typeDef.name}
         </span>
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          {showDelete && (
-            <button
-              style={{
-                fontSize: 9, color: '#444', lineHeight: 1, padding: '0 2px',
-                cursor: 'pointer', background: 'none', border: 'none',
-              }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#ef4444'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#444'; }}
-              onClick={(e) => { e.stopPropagation(); onDelete(module.id); }}
-              data-testid={`delete-module-${module.id}`}
-            >✕</button>
-          )}
-          <Screw />
-        </div>
+        <Screw />
       </div>
 
       {/* Panel body */}
