@@ -51,11 +51,15 @@ export default function PortJack({
     <div className="flex flex-col items-center gap-0.5" data-testid={`port-${moduleId}-${portDef.id}`}>
       <div
         ref={ref}
-        onClick={e => { e.stopPropagation(); onPortClick(moduleId, portDef.id, portDef.type); }}
-        onDoubleClick={e => { e.stopPropagation(); if (isOut) onPortDoubleClick?.(moduleId, portDef.id); }}
-        className="cursor-pointer hover:scale-110 active:scale-95 transition-transform"
-        style={{ width: 26, height: 26 }}
+        className="hover:scale-110 active:scale-95 transition-transform"
+        style={{ position: 'relative', width: 26, height: 26 }}
       >
+        {/* Expanded transparent hit-area so the full socket face is clickable */}
+        <div
+          style={{ position: 'absolute', inset: -9, cursor: 'pointer', zIndex: 1 }}
+          onClick={e => { e.stopPropagation(); onPortClick(moduleId, portDef.id, portDef.type); }}
+          onDoubleClick={e => { e.stopPropagation(); if (isOut) onPortDoubleClick?.(moduleId, portDef.id); }}
+        />
         <svg width={26} height={26} viewBox="0 0 26 26" style={{ display: 'block' }}>
           <defs>
             <radialGradient id={rimId} cx="38%" cy="32%" r="60%">

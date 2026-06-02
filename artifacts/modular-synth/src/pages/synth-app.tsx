@@ -106,7 +106,7 @@ function ModuleBrowser({ onAdd }: { onAdd: (typeId: string) => void }) {
 
 // ─── Patch cables SVG ─────────────────────────────────────────────────────────
 function PatchCables({
-  cables, modules, pendingCable, mousePos, getPortCenter, onRemoveCable,
+  cables, modules, pendingCable, mousePos, getPortCenter, onRemoveCable, onGrabCableEnd,
 }: {
   cables: Cable[];
   modules: ModuleInstance[];
@@ -114,6 +114,7 @@ function PatchCables({
   mousePos: { x: number; y: number };
   getPortCenter: (modId: string, portId: string) => { x: number; y: number } | null;
   onRemoveCable: (id: string) => void;
+  onGrabCableEnd: (cableId: string) => void;
 }) {
   const makePath = (x1: number, y1: number, x2: number, y2: number) => {
     const dy = Math.abs(y2 - y1);
@@ -156,39 +157,57 @@ function PatchCables({
             {/* Cable highlight */}
             <path d={d} fill="none" stroke="white" strokeWidth={1.2} strokeLinecap="round" opacity={0.12} />
 
-            {/* 3.5mm plug at FROM end — collar is larger than socket face so it's clearly visible */}
-            <circle cx={from.x} cy={from.y} r={13} fill="black" opacity={0.4} />
-            <circle cx={from.x} cy={from.y} r={12} fill="#383838" stroke="#555" strokeWidth={0.6} />
-            <circle cx={from.x} cy={from.y} r={10} fill={c.color} opacity={0.9} />
-            <circle cx={from.x} cy={from.y} r={8}  fill="#1c1c1c" />
-            <circle cx={from.x} cy={from.y} r={5.5} fill="#404040" />
-            <circle cx={from.x} cy={from.y} r={2.5} fill="#888" />
-            <ellipse cx={from.x - 3} cy={from.y - 3} rx={3} ry={1.8} fill="white" opacity={0.15} />
-            <circle cx={from.x} cy={from.y} r={12} fill="none" stroke={c.color} strokeWidth={1}
-              opacity={0.7} />
+            {/* 3.5mm plug at FROM end — grab to re-patch */}
+            <g style={{ pointerEvents: 'auto', cursor: 'grab' }}
+              onMouseDown={e => { e.preventDefault(); e.stopPropagation(); onGrabCableEnd(c.id); }}>
+              <circle cx={from.x} cy={from.y} r={16} fill="transparent" />
+              <circle cx={from.x} cy={from.y} r={13} fill="black" opacity={0.4} />
+              <circle cx={from.x} cy={from.y} r={12} fill="#383838" stroke="#555" strokeWidth={0.6} />
+              <circle cx={from.x} cy={from.y} r={10} fill={c.color} opacity={0.9} />
+              <circle cx={from.x} cy={from.y} r={8}  fill="#1c1c1c" />
+              <circle cx={from.x} cy={from.y} r={5.5} fill="#404040" />
+              <circle cx={from.x} cy={from.y} r={2.5} fill="#888" />
+              <ellipse cx={from.x - 3} cy={from.y - 3} rx={3} ry={1.8} fill="white" opacity={0.15} />
+              <circle cx={from.x} cy={from.y} r={12} fill="none" stroke={c.color} strokeWidth={1} opacity={0.7} />
+            </g>
 
-            {/* 3.5mm plug at TO end */}
-            <circle cx={to.x} cy={to.y} r={13} fill="black" opacity={0.4} />
-            <circle cx={to.x} cy={to.y} r={12} fill="#383838" stroke="#555" strokeWidth={0.6} />
-            <circle cx={to.x} cy={to.y} r={10} fill={c.color} opacity={0.9} />
-            <circle cx={to.x} cy={to.y} r={8}  fill="#1c1c1c" />
-            <circle cx={to.x} cy={to.y} r={5.5} fill="#404040" />
-            <circle cx={to.x} cy={to.y} r={2.5} fill="#888" />
-            <ellipse cx={to.x - 3} cy={to.y - 3} rx={3} ry={1.8} fill="white" opacity={0.15} />
-            <circle cx={to.x} cy={to.y} r={12} fill="none" stroke={c.color} strokeWidth={1}
-              opacity={0.7} />
+            {/* 3.5mm plug at TO end — grab to re-patch */}
+            <g style={{ pointerEvents: 'auto', cursor: 'grab' }}
+              onMouseDown={e => { e.preventDefault(); e.stopPropagation(); onGrabCableEnd(c.id); }}>
+              <circle cx={to.x} cy={to.y} r={16} fill="transparent" />
+              <circle cx={to.x} cy={to.y} r={13} fill="black" opacity={0.4} />
+              <circle cx={to.x} cy={to.y} r={12} fill="#383838" stroke="#555" strokeWidth={0.6} />
+              <circle cx={to.x} cy={to.y} r={10} fill={c.color} opacity={0.9} />
+              <circle cx={to.x} cy={to.y} r={8}  fill="#1c1c1c" />
+              <circle cx={to.x} cy={to.y} r={5.5} fill="#404040" />
+              <circle cx={to.x} cy={to.y} r={2.5} fill="#888" />
+              <ellipse cx={to.x - 3} cy={to.y - 3} rx={3} ry={1.8} fill="white" opacity={0.15} />
+              <circle cx={to.x} cy={to.y} r={12} fill="none" stroke={c.color} strokeWidth={1} opacity={0.7} />
+            </g>
           </g>
         );
       })}
       {pendingCable && (() => {
         const from = getPortCenter(pendingCable.fromModuleId, pendingCable.fromPortId);
         if (!from) return null;
+        const col = pendingCable.color ?? '#e5e7eb';
+        const mx = mousePos.x, my = mousePos.y;
         return (
-          <path
-            d={makePath(from.x, from.y, mousePos.x, mousePos.y)}
-            fill="none" stroke="#fff" strokeWidth={2.5} strokeLinecap="round"
-            strokeDasharray="6 4" opacity={0.6}
-          />
+          <>
+            <path d={makePath(from.x, from.y, mx, my)}
+              fill="none" stroke="#000" strokeWidth={6} strokeLinecap="round" opacity={0.4} />
+            <path d={makePath(from.x, from.y, mx, my)}
+              fill="none" stroke={col} strokeWidth={4} strokeLinecap="round"
+              strokeDasharray="8 5" opacity={0.85} />
+            <circle cx={mx} cy={my} r={13} fill="black" opacity={0.4} />
+            <circle cx={mx} cy={my} r={12} fill="#383838" stroke="#555" strokeWidth={0.6} />
+            <circle cx={mx} cy={my} r={10} fill={col} opacity={0.9} />
+            <circle cx={mx} cy={my} r={8}  fill="#1c1c1c" />
+            <circle cx={mx} cy={my} r={5.5} fill="#404040" />
+            <circle cx={mx} cy={my} r={2.5} fill="#888" />
+            <ellipse cx={mx - 3} cy={my - 3} rx={3} ry={1.8} fill="white" opacity={0.15} />
+            <circle cx={mx} cy={my} r={12} fill="none" stroke={col} strokeWidth={1} opacity={0.7} />
+          </>
         );
       })()}
     </svg>
@@ -856,6 +875,28 @@ export default function SynthApp() {
     });
   }, [modules]);
 
+  // ─── Grab cable end → disconnect + become pending (re-patch) ─────────────────
+  const handleGrabCableEnd = useCallback((cableId: string) => {
+    const cable = cables.find(c => c.id === cableId);
+    if (!cable) return;
+    const fromTypeDef = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
+    const fromPort    = fromTypeDef?.ports.find(p => p.id === cable.fromPortId);
+    if (fromPort?.type === 'gate_out') {
+      gateConnRef.current.get(cable.fromModuleId)?.delete(cable.toModuleId);
+    } else {
+      const fromAudio = audioModulesRef.current.get(cable.fromModuleId);
+      const toAudio   = audioModulesRef.current.get(cable.toModuleId);
+      if (fromAudio && toAudio) disconnectAudioPorts(fromAudio, cable.fromPortId, toAudio, cable.toPortId);
+    }
+    setCables(prev => prev.filter(c => c.id !== cableId));
+    setPendingCable({
+      fromModuleId: cable.fromModuleId,
+      fromPortId:   cable.fromPortId,
+      fromPortType: (fromPort?.type ?? 'audio_out') as import('../types').PortType,
+      color: cable.color,
+    });
+  }, [cables, modules]);
+
   // ─── Drag (snap on release) ─────────────────────────────────────────────────
   const handleDragStart = useCallback((moduleId: string, e: React.MouseEvent) => {
     e.preventDefault();
@@ -1029,6 +1070,7 @@ export default function SynthApp() {
             mousePos={mousePos}
             getPortCenter={getPortCenter}
             onRemoveCable={handleRemoveCable}
+            onGrabCableEnd={handleGrabCableEnd}
           />
 
           {modules.map(mod => (

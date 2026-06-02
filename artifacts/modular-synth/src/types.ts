@@ -61,4 +61,5 @@ export interface PendingCable {
   fromModuleId: string;
   fromPortId: string;
   fromPortType: PortType;
+  color?: string;
 }
