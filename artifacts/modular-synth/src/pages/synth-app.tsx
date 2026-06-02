@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, RefObject } from 'react';
+import { useState, useRef, useCallback, useEffect, RefObject, memo } from 'react';
 import { ModuleInstance, Cable, PendingCable, PortType } from '../types';
 import {
   MODULE_TYPE_MAP, CATEGORY_ORDER, CATEGORY_LABELS, CATEGORY_COLORS,
@@ -104,6 +104,22 @@ function ModuleBrowser({ onAdd }: { onAdd: (typeId: string) => void }) {
   );
 }
 
+// ─── Pending cable path — truly frozen by React after mount ──────────────────
+// React never re-renders this component, so direct DOM writes to `d` persist.
+const PendingCablePath = memo(
+  function PendingCablePath({ pendingPathRef }: { pendingPathRef: RefObject<SVGPathElement | null> }) {
+    return (
+      <path
+        ref={pendingPathRef}
+        d=""
+        fill="none" stroke="#fff" strokeWidth={2.5} strokeLinecap="round"
+        strokeDasharray="6 4" opacity={0.6}
+      />
+    );
+  },
+  () => true, // never re-render — `d` is owned entirely by the mousemove handler
+);
+
 // ─── Shared cable path calculator ────────────────────────────────────────────
 function makeCablePath(x1: number, y1: number, x2: number, y2: number) {
   const dy  = Math.abs(y2 - y1);
@@ -152,15 +168,8 @@ function PatchCables({
           </g>
         );
       })}
-      {/* Pending cable — path `d` is written directly by the mousemove handler (no React state) */}
-      {pendingCable && (
-        <path
-          ref={pendingPathRef}
-          d=""
-          fill="none" stroke="#fff" strokeWidth={2.5} strokeLinecap="round"
-          strokeDasharray="6 4" opacity={0.6}
-        />
-      )}
+      {/* Pending cable — `d` is written directly by mousemove; PendingCablePath never re-renders */}
+      {pendingCable && <PendingCablePath pendingPathRef={pendingPathRef} />}
     </svg>
   );
 }
