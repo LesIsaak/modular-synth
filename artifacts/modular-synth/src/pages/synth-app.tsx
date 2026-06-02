@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, RefObject } from 'react';
 import { ModuleInstance, Cable, PendingCable, PortType } from '../types';
 import {
   MODULE_TYPE_MAP, CATEGORY_ORDER, CATEGORY_LABELS, CATEGORY_COLORS,
@@ -104,26 +104,26 @@ function ModuleBrowser({ onAdd }: { onAdd: (typeId: string) => void }) {
   );
 }
 
+// ─── Shared cable path calculator ────────────────────────────────────────────
+function makeCablePath(x1: number, y1: number, x2: number, y2: number) {
+  const dy  = Math.abs(y2 - y1);
+  const sag = Math.min(80 + dy * 0.4, 200);
+  const mx  = (x1 + x2) / 2;
+  const my  = Math.max(y1, y2) + sag;
+  return `M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`;
+}
+
 // ─── Patch cables SVG ─────────────────────────────────────────────────────────
 function PatchCables({
-  cables, modules, pendingCable, mousePos, getPortCenter, onRemoveCable, scrollTick: _,
+  cables, pendingCable, pendingPathRef, getPortCenter, onRemoveCable, scrollTick: _,
 }: {
   cables: Cable[];
-  modules: ModuleInstance[];
   pendingCable: PendingCable | null;
-  mousePos: { x: number; y: number };
+  pendingPathRef: RefObject<SVGPathElement | null>;
   getPortCenter: (modId: string, portId: string) => { x: number; y: number } | null;
   onRemoveCable: (id: string) => void;
   scrollTick: number;
 }) {
-  const makePath = (x1: number, y1: number, x2: number, y2: number) => {
-    const dy = Math.abs(y2 - y1);
-    const sag = Math.min(80 + dy * 0.4, 200);
-    const mx = (x1 + x2) / 2;
-    const my = Math.max(y1, y2) + sag;
-    return `M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`;
-  };
-
   return (
     <svg
       className="pointer-events-none"
@@ -141,7 +141,7 @@ function PatchCables({
         const from = getPortCenter(c.fromModuleId, c.fromPortId);
         const to   = getPortCenter(c.toModuleId,   c.toPortId);
         if (!from || !to) return null;
-        const d = makePath(from.x, from.y, to.x, to.y);
+        const d = makeCablePath(from.x, from.y, to.x, to.y);
         return (
           <g key={c.id} className="pointer-events-auto">
             <path d={d} fill="none" stroke="transparent" strokeWidth={14} style={{ cursor: 'pointer' }}
@@ -152,17 +152,15 @@ function PatchCables({
           </g>
         );
       })}
-      {pendingCable && (() => {
-        const from = getPortCenter(pendingCable.fromModuleId, pendingCable.fromPortId);
-        if (!from) return null;
-        return (
-          <path
-            d={makePath(from.x, from.y, mousePos.x, mousePos.y)}
-            fill="none" stroke="#fff" strokeWidth={2.5} strokeLinecap="round"
-            strokeDasharray="6 4" opacity={0.6}
-          />
-        );
-      })()}
+      {/* Pending cable — path `d` is written directly by the mousemove handler (no React state) */}
+      {pendingCable && (
+        <path
+          ref={pendingPathRef}
+          d=""
+          fill="none" stroke="#fff" strokeWidth={2.5} strokeLinecap="round"
+          strokeDasharray="6 4" opacity={0.6}
+        />
+      )}
     </svg>
   );
 }
@@ -598,8 +596,10 @@ export default function SynthApp() {
   const [modules,      setModules]      = useState<ModuleInstance[]>(DEFAULT_MODULES);
   const [cables,       setCables]       = useState<Cable[]>(DEFAULT_CABLES);
   const [pendingCable, setPendingCable] = useState<PendingCable | null>(null);
-  const [mousePos,     setMousePos]     = useState({ x: 0, y: 0 });
   const [scrollTick,   setScrollTick]   = useState(0);
+  // Refs for zero-latency pending cable drawing (bypass React state entirely)
+  const fromCenterRef  = useRef<{ x: number; y: number } | null>(null);
+  const pendingPathRef = useRef<SVGPathElement | null>(null);
 
   const audioCtxRef      = useRef<AudioContext | null>(null);
   const audioModulesRef  = useRef<Map<string, ReturnType<typeof createAudioModule>>>(new Map());
@@ -747,6 +747,7 @@ export default function SynthApp() {
   const handlePortClick = useCallback((moduleId: string, portId: string, portType: PortType) => {
     if (!pendingCable) {
       if (portType.endsWith('_out')) {
+        fromCenterRef.current = getPortCenter(moduleId, portId);
         setPendingCable({ fromModuleId: moduleId, fromPortId: portId, fromPortType: portType });
       }
       return;
@@ -814,7 +815,11 @@ export default function SynthApp() {
 
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
-      setMousePos({ x: e.clientX, y: e.clientY });
+      // Update pending cable path directly in the DOM — zero React latency
+      const fc = fromCenterRef.current;
+      if (fc && pendingPathRef.current) {
+        pendingPathRef.current.setAttribute('d', makeCablePath(fc.x, fc.y, e.clientX, e.clientY));
+      }
       if (dragRef.current) {
         const { moduleId, startX, startY, origX, origY } = dragRef.current;
         setModules(prev => prev.map(m =>
@@ -953,12 +958,11 @@ export default function SynthApp() {
         </div>
       </div>
 
-      {/* Cable SVG — fixed overlay, viewport coords, no scroll correction needed */}
+      {/* Cable SVG — fixed overlay; pending cable path written directly to DOM for zero latency */}
       <PatchCables
         cables={cables}
-        modules={modules}
         pendingCable={pendingCable}
-        mousePos={mousePos}
+        pendingPathRef={pendingPathRef}
         getPortCenter={getPortCenter}
         onRemoveCable={handleRemoveCable}
         scrollTick={scrollTick}
