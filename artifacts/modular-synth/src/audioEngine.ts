@@ -1,3 +1,4 @@
+// ─── Types ────────────────────────────────────────────────────────────────────
 export interface AudioModuleNodes {
   outputs: Map<string, AudioNode>;
   inputs: Map<string, { node: AudioNode; param?: AudioParam }>;
@@ -5,327 +6,620 @@ export interface AudioModuleNodes {
   noteOff?: (time: number) => void;
   setParam: (paramId: string, value: number) => void;
   setSelector?: (selectorId: string, value: number) => void;
+  /** For sequencers/clocks: called by the rack when gate cables connect */
+  setGateTrigger?: (fn: ((on: boolean, freq: number) => void) | null) => void;
   destroy: () => void;
 }
 
-function makeImpulse(ctx: AudioContext, duration: number, decay: number): AudioBuffer {
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const midiToHz = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
+
+function makeIR(ctx: AudioContext, dur: number, decay: number, stereo = true): AudioBuffer {
   const sr = ctx.sampleRate;
-  const len = Math.floor(sr * duration);
+  const len = Math.floor(sr * dur);
+  const buf = ctx.createBuffer(stereo ? 2 : 1, len, sr);
+  for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+    const d = buf.getChannelData(ch);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+  }
+  return buf;
+}
+
+function makeSpringIR(ctx: AudioContext, dur: number): AudioBuffer {
+  const sr = ctx.sampleRate;
+  const len = Math.floor(sr * dur);
+  const buf = ctx.createBuffer(1, len, sr);
+  const d = buf.getChannelData(0);
+  let e = 1;
+  for (let i = 0; i < len; i++) {
+    e *= 0.9997;
+    d[i] = (Math.random() * 2 - 1) * e + Math.sin(i * 0.09) * 0.06 * e;
+  }
+  return buf;
+}
+
+function makePlateIR(ctx: AudioContext, dur: number): AudioBuffer {
+  const sr = ctx.sampleRate;
+  const len = Math.floor(sr * dur);
   const buf = ctx.createBuffer(2, len, sr);
   for (let ch = 0; ch < 2; ch++) {
     const d = buf.getChannelData(ch);
-    for (let i = 0; i < len; i++) {
-      d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 1.5);
+  }
+  return buf;
+}
+
+function makeHallIR(ctx: AudioContext, dur: number): AudioBuffer {
+  const sr = ctx.sampleRate;
+  const len = Math.floor(sr * dur);
+  const pre = Math.floor(sr * 0.025);
+  const buf = ctx.createBuffer(2, len, sr);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    for (let i = pre; i < len; i++) {
+      const t = (i - pre) / (len - pre);
+      const env = Math.min(1, (i - pre) / (sr * 0.08)) * (1 - t) * (1 - t);
+      d[i] = (Math.random() * 2 - 1) * env;
     }
   }
   return buf;
+}
+
+const mkCurve = () => new Float32Array(new ArrayBuffer(512 * 4));
+
+function softClip(amount: number): Float32Array<ArrayBuffer> {
+  const c = mkCurve();
+  for (let i = 0; i < 512; i++) { const x=(i*2/512)-1; c[i]=((Math.PI+amount)*x)/(Math.PI+amount*Math.abs(x)); }
+  return c;
+}
+
+function hardClip(amount: number): Float32Array<ArrayBuffer> {
+  const c = mkCurve();
+  for (let i = 0; i < 512; i++) { const x=(i*2/512)-1; c[i]=Math.max(-1,Math.min(1,x*amount)); }
+  return c;
+}
+
+function foldCurve(amount: number): Float32Array<ArrayBuffer> {
+  const c = mkCurve();
+  for (let i = 0; i < 512; i++) { const x=(i*2/512)-1; c[i]=Math.sin(x*Math.PI*Math.max(1,amount)); }
+  return c;
+}
+
+function tanhCurve(amount: number): Float32Array<ArrayBuffer> {
+  const c = mkCurve();
+  for (let i = 0; i < 512; i++) { const x=(i*2/512)-1; c[i]=Math.tanh(x*amount); }
+  return c;
+}
+
+function bitcrushCurve(bits: number): Float32Array<ArrayBuffer> {
+  const c = mkCurve();
+  const steps = Math.pow(2, Math.max(1, Math.min(16, bits)));
+  for (let i = 0; i < 512; i++) { const x=(i*2/512)-1; c[i]=Math.round(x*steps)/steps; }
+  return c;
+}
+
+function srReduceCurve(factor: number): Float32Array<ArrayBuffer> {
+  const c = mkCurve(); const f = Math.max(1, Math.round(factor));
+  for (let i = 0; i < 512; i++) { const x=(i*2/512)-1; c[i]=Math.round(x*(512/f))/(512/f); }
+  return c;
 }
 
 function makeWavetable(ctx: AudioContext, position: number): PeriodicWave {
   const n = 512;
   const real = new Float32Array(n);
   const imag = new Float32Array(n);
-  for (let i = 1; i < n; i++) {
-    const sine = i === 1 ? 1 : 0;
-    const additive = 1 / i;
-    imag[i] = sine * (1 - position) + additive * position;
-  }
+  for (let i = 1; i < n; i++) imag[i] = (1 - position) * (i === 1 ? 1 : 0) + position * (1 / i);
   return ctx.createPeriodicWave(real, imag, { disableNormalization: false });
 }
 
-const CHORD_INTERVALS: Record<string, number[]> = {
-  MAJ: [0, 4, 7, 12], MIN: [0, 3, 7, 12], SUS4: [0, 5, 7, 12],
-  DIM: [0, 3, 6, 9], AUG: [0, 4, 8, 12], '7TH': [0, 4, 7, 10],
-};
-const CHORD_NAMES = ['MAJ', 'MIN', 'SUS4', 'DIM', 'AUG', '7TH'];
-const VCO_WAVES: OscillatorType[] = ['sawtooth', 'square', 'triangle', 'sine'];
-const LFO_WAVES: OscillatorType[] = ['sine', 'triangle', 'sawtooth', 'square'];
+/** Shared wet/dry mixer helper */
+function wetDry(ctx: AudioContext, input: AudioNode, wet: AudioNode, mix: number) {
+  const dryG = ctx.createGain();
+  const wetG = ctx.createGain();
+  const out = ctx.createGain();
+  dryG.gain.value = 1 - mix;
+  wetG.gain.value = mix;
+  input.connect(dryG); dryG.connect(out);
+  wet.connect(wetG); wetG.connect(out);
+  return { out, dryG, wetG };
+}
 
+// ─── Clock/sequencer helpers ───────────────────────────────────────────────────
+function makeClockTimer(getInterval: () => number, onTick: (beatIndex: number) => void) {
+  let timerId: ReturnType<typeof setInterval> | null = null;
+  let beat = 0;
+  const restart = () => {
+    if (timerId) clearInterval(timerId);
+    timerId = setInterval(() => { onTick(beat); beat++; }, getInterval());
+  };
+  restart();
+  return { restart, destroy: () => { if (timerId) clearInterval(timerId); } };
+}
+
+// ─── Main factory ─────────────────────────────────────────────────────────────
 export function createAudioModule(
   ctx: AudioContext,
   typeId: string,
-  initialParams: Record<string, number>
+  params: Record<string, number>,
 ): AudioModuleNodes {
-  const p = { ...initialParams };
+  const p = { ...params };
 
   switch (typeId) {
+    // ── Oscillators ─────────────────────────────────────────────────
     case 'analog_vco': {
       const osc = ctx.createOscillator();
-      const out = ctx.createGain();
-      out.gain.value = 0.85;
-      osc.type = VCO_WAVES[Math.round(p.wave ?? 0)] ?? 'sawtooth';
-      osc.frequency.value = p.freq ?? 0;
-      osc.detune.value = p.fine ?? 0;
-      osc.connect(out);
-      osc.start();
+      const waveMap: OscillatorType[] = ['sawtooth', 'square', 'triangle', 'sine'];
+      osc.type = waveMap[Math.round(p.wave ?? 0)] ?? 'sawtooth';
+      osc.frequency.value = 0;
+      osc.detune.value = (p.fine ?? 0) * 100;
+      const voct = ctx.createConstantSource();
+      voct.offset.value = 0;
+      voct.connect(osc.frequency);
+      voct.start(); osc.start();
       return {
-        outputs: new Map([['out', out]]),
-        inputs: new Map([['voct', { node: out, param: osc.frequency }]]),
+        outputs: new Map([['out', osc]]),
+        inputs: new Map([['voct', { node: voct, param: voct.offset }]]),
+        noteOn: (_t, freq) => { voct.offset.value = freq; },
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'freq') osc.frequency.value = val;
-          if (id === 'fine') osc.detune.value = val;
+          if (id === 'fine') osc.detune.value = val * 100;
         },
         setSelector: (id, val) => {
-          if (id === 'wave') osc.type = VCO_WAVES[Math.round(val)] ?? 'sawtooth';
+          if (id === 'wave') osc.type = waveMap[Math.round(val)] ?? 'sawtooth';
         },
-        destroy: () => { osc.stop(); osc.disconnect(); out.disconnect(); },
+        destroy: () => { voct.stop(); voct.disconnect(); osc.stop(); osc.disconnect(); },
       };
     }
 
     case 'digital_osc': {
       const osc = ctx.createOscillator();
-      const out = ctx.createGain();
-      out.gain.value = 0.85;
       const waveMap: OscillatorType[] = ['square', 'sawtooth', 'triangle', 'sine'];
       osc.type = waveMap[Math.round(p.wave ?? 0)] ?? 'square';
-      osc.frequency.value = (p.freq ?? 220) * Math.pow(2, p.octave ?? 0);
-      osc.connect(out);
-      osc.start();
+      osc.frequency.value = p.freq ?? 220;
+      const octShift = ctx.createGain();
+      octShift.gain.value = 0;
+      const voct = ctx.createConstantSource();
+      voct.offset.value = 0;
+      voct.connect(osc.frequency);
+      voct.start(); osc.start();
+      octShift.disconnect();
       return {
-        outputs: new Map([['out', out]]),
-        inputs: new Map([['voct', { node: out, param: osc.frequency }]]),
+        outputs: new Map([['out', osc]]),
+        inputs: new Map([['voct', { node: voct, param: voct.offset }]]),
+        noteOn: (_t, freq) => { voct.offset.value = freq * Math.pow(2, Math.round(p.octave ?? 0)); },
         setParam: (id, val) => {
           p[id] = val;
-          osc.frequency.value = (p.freq ?? 220) * Math.pow(2, Math.round(p.octave ?? 0));
+          if (id === 'freq') osc.frequency.value = val;
         },
         setSelector: (id, val) => {
           if (id === 'wave') osc.type = waveMap[Math.round(val)] ?? 'square';
         },
-        destroy: () => { osc.stop(); osc.disconnect(); out.disconnect(); },
+        destroy: () => { voct.stop(); voct.disconnect(); osc.stop(); osc.disconnect(); },
       };
     }
 
     case 'wavetable_osc': {
       const osc = ctx.createOscillator();
-      const out = ctx.createGain();
-      out.gain.value = 0.85;
       osc.setPeriodicWave(makeWavetable(ctx, p.pos ?? 0));
       osc.frequency.value = p.freq ?? 220;
-      osc.connect(out);
-      osc.start();
+      const morphCs = ctx.createConstantSource();
+      morphCs.offset.value = p.morph ?? 0;
+      const voct = ctx.createConstantSource();
+      voct.offset.value = 0;
+      voct.connect(osc.frequency);
+      voct.start(); osc.start(); morphCs.start();
       return {
-        outputs: new Map([['out', out]]),
+        outputs: new Map([['out', osc]]),
         inputs: new Map([
-          ['voct', { node: out, param: osc.frequency }],
-          ['morph_in', { node: out }],
+          ['voct', { node: voct, param: voct.offset }],
+          ['morph_in', { node: morphCs, param: morphCs.offset }],
         ]),
+        noteOn: (_t, freq) => { voct.offset.value = freq; },
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'freq') osc.frequency.value = val;
-          if (id === 'pos' || id === 'morph') osc.setPeriodicWave(makeWavetable(ctx, val));
+          if (id === 'pos' || id === 'morph') {
+            osc.setPeriodicWave(makeWavetable(ctx, p.pos ?? 0));
+          }
         },
-        destroy: () => { osc.stop(); osc.disconnect(); out.disconnect(); },
+        destroy: () => {
+          voct.stop(); voct.disconnect(); morphCs.stop(); morphCs.disconnect();
+          osc.stop(); osc.disconnect();
+        },
       };
     }
 
     case 'fm_osc': {
       const carrier = ctx.createOscillator();
-      const modulator = ctx.createOscillator();
-      const modGain = ctx.createGain();
-      const out = ctx.createGain();
-      out.gain.value = 0.85;
       carrier.type = 'sine';
+      carrier.frequency.value = p.carrier_freq ?? 220;
+      const modulator = ctx.createOscillator();
       modulator.type = 'sine';
-      const updateFM = () => {
-        const cf = p.carrier_freq ?? 220;
-        const r = p.ratio ?? 2;
-        const idx = p.index ?? 3;
-        carrier.frequency.value = cf;
-        modulator.frequency.value = cf * r;
-        modGain.gain.value = cf * r * idx;
-      };
-      updateFM();
-      modulator.connect(modGain);
-      modGain.connect(carrier.frequency);
-      carrier.connect(out);
-      modulator.start();
-      carrier.start();
+      modulator.frequency.value = (p.carrier_freq ?? 220) * (p.ratio ?? 2);
+      const modGain = ctx.createGain();
+      modGain.gain.value = (p.index ?? 3) * modulator.frequency.value;
+      modulator.connect(modGain); modGain.connect(carrier.frequency);
+      const voct = ctx.createConstantSource();
+      voct.offset.value = 0;
+      voct.connect(carrier.frequency); voct.connect(modulator.frequency);
+      voct.start(); carrier.start(); modulator.start();
       return {
-        outputs: new Map([['out', out]]),
+        outputs: new Map([['out', carrier]]),
         inputs: new Map([
-          ['voct', { node: out, param: carrier.frequency }],
-          ['mod_in', { node: modGain }],
+          ['voct', { node: voct, param: voct.offset }],
+          ['mod_in', { node: modGain, param: modGain.gain }],
         ]),
-        setParam: (id, val) => { p[id] = val; updateFM(); },
+        noteOn: (_t, freq) => {
+          voct.offset.value = freq;
+          modulator.frequency.value = freq * (p.ratio ?? 2);
+          modGain.gain.value = (p.index ?? 3) * modulator.frequency.value;
+        },
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'carrier_freq') { carrier.frequency.value = val; modulator.frequency.value = val * (p.ratio ?? 2); }
+          if (id === 'ratio') { modulator.frequency.value = (p.carrier_freq ?? 220) * val; }
+          if (id === 'index') modGain.gain.value = val * modulator.frequency.value;
+        },
         destroy: () => {
-          carrier.stop(); modulator.stop();
-          carrier.disconnect(); modulator.disconnect(); modGain.disconnect(); out.disconnect();
+          voct.stop(); voct.disconnect();
+          carrier.stop(); carrier.disconnect();
+          modulator.stop(); modulator.disconnect();
+          modGain.disconnect();
         },
       };
     }
 
     case 'harmonic_osc': {
+      const merge = ctx.createGain();
+      merge.gain.value = 0.3;
       const oscs: OscillatorNode[] = [];
       const gains: GainNode[] = [];
-      const out = ctx.createGain();
-      out.gain.value = 0.7;
-      const hKeys = ['h1', 'h2', 'h3', 'h4'];
-      const base = p.freq ?? 110;
-      for (let i = 0; i < 4; i++) {
+      const baseFreq = p.freq ?? 110;
+      for (let h = 1; h <= 4; h++) {
         const o = ctx.createOscillator();
         const g = ctx.createGain();
         o.type = 'sine';
-        o.frequency.value = base * (i + 1);
-        g.gain.value = p[hKeys[i]] ?? 1 / (i + 1);
-        o.connect(g); g.connect(out); o.start();
-        oscs.push(o); gains.push(g);
+        o.frequency.value = baseFreq * h;
+        g.gain.value = p[`h${h}`] ?? (1 / h);
+        o.connect(g); g.connect(merge);
+        o.start(); oscs.push(o); gains.push(g);
       }
+      const voct = ctx.createConstantSource();
+      voct.offset.value = 0;
+      voct.start();
       return {
-        outputs: new Map([['out', out]]),
-        inputs: new Map([['voct', { node: out, param: oscs[0].frequency }]]),
+        outputs: new Map([['out', merge]]),
+        inputs: new Map([['voct', { node: voct, param: voct.offset }]]),
+        noteOn: (_t, freq) => {
+          for (let h = 0; h < oscs.length; h++) oscs[h].frequency.value = freq * (h + 1);
+        },
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'freq') oscs.forEach((o, i) => { o.frequency.value = val * (i + 1); });
-          const hi = hKeys.indexOf(id);
-          if (hi >= 0) gains[hi].gain.value = val;
+          if (id === 'freq') for (let h = 0; h < oscs.length; h++) oscs[h].frequency.value = val * (h + 1);
+          if (id.startsWith('h')) gains[parseInt(id[1]) - 1].gain.value = val;
         },
         destroy: () => {
+          voct.stop(); voct.disconnect();
           oscs.forEach(o => { o.stop(); o.disconnect(); });
-          gains.forEach(g => g.disconnect()); out.disconnect();
+          gains.forEach(g => g.disconnect());
+          merge.disconnect();
         },
       };
     }
 
     case 'chord_osc': {
+      const chordIntervals: number[][] = [
+        [0, 4, 7], [0, 3, 7], [0, 5, 7], [0, 3, 6], [0, 4, 8], [0, 4, 7, 10],
+      ];
+      const merge = ctx.createGain(); merge.gain.value = 0.35;
       const oscs: OscillatorNode[] = [];
-      const out = ctx.createGain();
-      out.gain.value = 0.5;
-      const getFreqs = () => {
-        const root = p.freq ?? 220;
-        const sp = p.spread ?? 1;
-        const cn = CHORD_NAMES[Math.round(p.chord ?? 0)] ?? 'MAJ';
-        const ivs = CHORD_INTERVALS[cn] ?? [0, 4, 7, 12];
-        return ivs.map(iv => root * Math.pow(2, iv / 12) * sp);
-      };
-      for (let i = 0; i < 4; i++) {
+      const baseFreq = p.freq ?? 220;
+      const intervals = chordIntervals[Math.round(p.chord ?? 0)] ?? chordIntervals[0];
+      for (const semi of intervals) {
         const o = ctx.createOscillator();
-        o.type = 'sawtooth'; o.connect(out); o.start(); oscs.push(o);
+        o.type = 'sawtooth';
+        o.frequency.value = baseFreq * Math.pow(2, semi / 12) * (p.spread ?? 1);
+        o.start(); o.connect(merge); oscs.push(o);
       }
-      getFreqs().forEach((f, i) => { oscs[i].frequency.value = f; });
+      const voct = ctx.createConstantSource(); voct.offset.value = 0; voct.start();
       return {
-        outputs: new Map([['out', out]]),
-        inputs: new Map([['voct', { node: out, param: oscs[0].frequency }]]),
-        setParam: (id, val) => {
-          p[id] = val;
-          getFreqs().forEach((f, i) => { oscs[i].frequency.value = f; });
+        outputs: new Map([['out', merge]]),
+        inputs: new Map([['voct', { node: voct, param: voct.offset }]]),
+        noteOn: (_t, freq) => {
+          const intv = chordIntervals[Math.round(p.chord ?? 0)] ?? chordIntervals[0];
+          oscs.forEach((o, i) => { o.frequency.value = freq * Math.pow(2, (intv[i] ?? 0) / 12) * (p.spread ?? 1); });
         },
-        setSelector: (id, val) => {
-          if (id === 'chord') { p.chord = val; getFreqs().forEach((f, i) => { oscs[i].frequency.value = f; }); }
+        setParam: (id, val) => { p[id] = val; },
+        setSelector: (id, val) => { p[id] = val; },
+        destroy: () => {
+          voct.stop(); voct.disconnect();
+          oscs.forEach(o => { o.stop(); o.disconnect(); }); merge.disconnect();
         },
-        destroy: () => { oscs.forEach(o => { o.stop(); o.disconnect(); }); out.disconnect(); },
       };
     }
 
     case 'noise': {
-      const bufferSize = 2 * 44100; // 2 seconds looped
-      const whiteBuffer = (() => {
-        const buf = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const bufSize = 2 * 44100;
+      const whiteBuf = (() => {
+        const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
         const d = buf.getChannelData(0);
-        for (let i = 0; i < bufferSize; i++) d[i] = Math.random() * 2 - 1;
+        for (let i = 0; i < bufSize; i++) d[i] = Math.random() * 2 - 1;
         return buf;
       })();
-      const pinkBuffer = (() => {
-        const buf = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const pinkBuf = (() => {
+        const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
         const d = buf.getChannelData(0);
-        let b0=0, b1=0, b2=0, b3=0, b4=0, b5=0, b6=0;
-        for (let i = 0; i < bufferSize; i++) {
+        let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
+        for (let i = 0; i < bufSize; i++) {
           const w = Math.random() * 2 - 1;
-          b0 = 0.99886*b0 + w*0.0555179; b1 = 0.99332*b1 + w*0.0750759;
-          b2 = 0.96900*b2 + w*0.1538520; b3 = 0.86650*b3 + w*0.3104856;
-          b4 = 0.55000*b4 + w*0.5329522; b5 = -0.7616*b5 - w*0.0168980;
-          d[i] = (b0+b1+b2+b3+b4+b5+b6+w*0.5362) * 0.11;
-          b6 = w * 0.115926;
+          b0=0.99886*b0+w*0.0555179; b1=0.99332*b1+w*0.0750759;
+          b2=0.96900*b2+w*0.1538520; b3=0.86650*b3+w*0.3104856;
+          b4=0.55000*b4+w*0.5329522; b5=-0.7616*b5-w*0.0168980;
+          d[i] = (b0+b1+b2+b3+b4+b5+b6+w*0.5362)*0.11; b6=w*0.115926;
         }
         return buf;
       })();
-
       let src = ctx.createBufferSource();
-      src.buffer = Math.round(p.color ?? 0) === 1 ? pinkBuffer : whiteBuffer;
+      src.buffer = Math.round(p.color ?? 0) === 1 ? pinkBuf : whiteBuf;
       src.loop = true;
-      const gain = ctx.createGain();
-      gain.gain.value = p.level ?? 0.8;
-      src.connect(gain);
-      src.start();
-
+      const gain = ctx.createGain(); gain.gain.value = p.level ?? 0.8;
+      src.connect(gain); src.start();
       return {
         outputs: new Map([['out', gain]]),
         inputs: new Map(),
-        setParam: (id, val) => {
-          p[id] = val;
-          if (id === 'level') gain.gain.value = val;
-        },
+        setParam: (id, val) => { p[id] = val; if (id === 'level') gain.gain.value = val; },
         setSelector: (id, val) => {
           if (id === 'color') {
             src.stop(); src.disconnect();
             src = ctx.createBufferSource();
-            src.buffer = Math.round(val) === 1 ? pinkBuffer : whiteBuffer;
-            src.loop = true;
-            src.connect(gain);
-            src.start();
+            src.buffer = Math.round(val) === 1 ? pinkBuf : whiteBuf;
+            src.loop = true; src.connect(gain); src.start();
           }
         },
         destroy: () => { try { src.stop(); } catch(_){} src.disconnect(); gain.disconnect(); },
       };
     }
 
-    case 'vcf': {
-      const filter = ctx.createBiquadFilter();
+    // ── Filters (single-stage) ───────────────────────────────────────
+    case 'vcf':
+    case 'filter_lp6':
+    case 'filter_hp':
+    case 'filter_bp':
+    case 'filter_br':
+    case 'filter_notch':
+    case 'filter_multi': {
       const typeMap: BiquadFilterType[] = ['lowpass', 'highpass', 'bandpass', 'notch'];
-      filter.type = typeMap[Math.round(p.type ?? 0)] ?? 'lowpass';
-      filter.frequency.value = p.cutoff ?? 800;
-      filter.Q.value = p.res ?? 1;
+      const defaultType: Record<string, BiquadFilterType> = {
+        vcf: 'lowpass', filter_lp6: 'lowpass', filter_hp: 'highpass',
+        filter_bp: 'bandpass', filter_br: 'notch', filter_notch: 'notch', filter_multi: 'lowpass',
+      };
+      const f = ctx.createBiquadFilter();
+      f.type = defaultType[typeId] ?? 'lowpass';
+      f.frequency.value = p.cutoff ?? 1000;
+      f.Q.value = typeId === 'filter_lp6' ? 0.5 : (p.res ?? 1);
       return {
-        outputs: new Map([['out', filter]]),
+        outputs: new Map([['out', f]]),
         inputs: new Map([
-          ['audio_in', { node: filter }],
-          ['cutoff_cv', { node: filter, param: filter.frequency }],
+          ['audio_in', { node: f }],
+          ['cutoff_cv', { node: f, param: f.frequency }],
         ]),
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'cutoff') filter.frequency.value = val;
-          if (id === 'res') filter.Q.value = val;
+          if (id === 'cutoff') f.frequency.value = val;
+          if (id === 'res') f.Q.value = val;
         },
         setSelector: (id, val) => {
-          if (id === 'type') filter.type = typeMap[Math.round(val)] ?? 'lowpass';
+          if (id === 'type') f.type = typeMap[Math.round(val)] ?? 'lowpass';
         },
-        destroy: () => { filter.disconnect(); },
+        destroy: () => f.disconnect(),
       };
     }
 
-    case 'adsr': {
-      const envNode = ctx.createConstantSource();
-      envNode.offset.value = 0;
-      envNode.start();
+    // ── Multi-stage filters ──────────────────────────────────────────
+    case 'filter_lp18':
+    case 'filter_lp24': {
+      const stages = typeId === 'filter_lp18' ? 3 : 4;
+      const filters = Array.from({ length: stages }, () => {
+        const f = ctx.createBiquadFilter();
+        f.type = 'lowpass';
+        f.frequency.value = p.cutoff ?? 800;
+        f.Q.value = (p.res ?? 1) / stages;
+        return f;
+      });
+      for (let i = 0; i < stages - 1; i++) filters[i].connect(filters[i + 1]);
       return {
-        outputs: new Map([['env_out', envNode]]),
-        inputs: new Map(),
-        setParam: (id, val) => { p[id] = val; },
-        noteOn: (_time, _freq) => {
-          const now = ctx.currentTime;
-          const a = p.attack ?? 0.01;
-          const d = p.decay ?? 0.1;
-          const s = p.sustain ?? 0.7;
-          envNode.offset.cancelScheduledValues(now);
-          envNode.offset.setValueAtTime(0, now);
-          envNode.offset.linearRampToValueAtTime(1, now + a);
-          envNode.offset.linearRampToValueAtTime(s, now + a + d);
+        outputs: new Map([['out', filters[stages - 1]]]),
+        inputs: new Map([
+          ['audio_in', { node: filters[0] }],
+          ['cutoff_cv', { node: filters[0], param: filters[0].frequency }],
+        ]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'cutoff') filters.forEach(f => { f.frequency.value = val; });
+          if (id === 'res') filters.forEach(f => { f.Q.value = val / stages; });
         },
-        noteOff: (_time) => {
-          const now = ctx.currentTime;
-          const current = Math.max(0, Math.min(1, envNode.offset.value));
-          const r = p.release ?? 0.3;
-          envNode.offset.cancelScheduledValues(now);
-          envNode.offset.setValueAtTime(current, now);
-          envNode.offset.linearRampToValueAtTime(0, now + r);
-        },
-        destroy: () => { envNode.stop(); envNode.disconnect(); },
+        destroy: () => filters.forEach(f => f.disconnect()),
       };
     }
 
+    case 'filter_ladder': {
+      const N = 4;
+      const filters = Array.from({ length: N }, () => {
+        const f = ctx.createBiquadFilter(); f.type = 'lowpass';
+        f.frequency.value = p.cutoff ?? 800; f.Q.value = 0.5; return f;
+      });
+      for (let i = 0; i < N - 1; i++) filters[i].connect(filters[i + 1]);
+      // Feedback gain simulates resonance/self-oscillation character
+      const fbGain = ctx.createGain();
+      fbGain.gain.value = Math.min(0.9, (p.res ?? 0.5) * 0.22);
+      filters[N - 1].connect(fbGain); fbGain.connect(filters[0]);
+      return {
+        outputs: new Map([['out', filters[N - 1]]]),
+        inputs: new Map([
+          ['audio_in', { node: filters[0] }],
+          ['cutoff_cv', { node: filters[0], param: filters[0].frequency }],
+        ]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'cutoff') filters.forEach(f => { f.frequency.value = val; });
+          if (id === 'res') fbGain.gain.value = Math.min(0.9, val * 0.22);
+        },
+        destroy: () => { filters.forEach(f => f.disconnect()); fbGain.disconnect(); },
+      };
+    }
+
+    case 'filter_ota': {
+      const f = ctx.createBiquadFilter(); f.type = 'lowpass';
+      f.frequency.value = p.cutoff ?? 800; f.Q.value = p.res ?? 1;
+      const pre = ctx.createWaveShaper(); pre.curve = softClip(p.drive ?? 2);
+      pre.connect(f);
+      return {
+        outputs: new Map([['out', f]]),
+        inputs: new Map([
+          ['audio_in', { node: pre }],
+          ['cutoff_cv', { node: f, param: f.frequency }],
+        ]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'cutoff') f.frequency.value = val;
+          if (id === 'res') f.Q.value = val;
+          if (id === 'drive') pre.curve = softClip(val);
+        },
+        destroy: () => { pre.disconnect(); f.disconnect(); },
+      };
+    }
+
+    case 'filter_svf': {
+      const input = ctx.createGain(); input.gain.value = 1;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
+      const hp = ctx.createBiquadFilter(); hp.type = 'highpass';
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
+      [lp, hp, bp].forEach(f => {
+        f.frequency.value = p.cutoff ?? 800; f.Q.value = p.res ?? 1; input.connect(f);
+      });
+      return {
+        outputs: new Map([['out_lp', lp], ['out_hp', hp], ['out_bp', bp]]),
+        inputs: new Map([
+          ['audio_in', { node: input }],
+          ['cutoff_cv', { node: lp, param: lp.frequency }],
+        ]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'cutoff') [lp, hp, bp].forEach(f => { f.frequency.value = val; });
+          if (id === 'res') [lp, hp, bp].forEach(f => { f.Q.value = val; });
+        },
+        destroy: () => { input.disconnect(); [lp, hp, bp].forEach(f => f.disconnect()); },
+      };
+    }
+
+    case 'filter_comb': {
+      const delay = ctx.createDelay(1); delay.delayTime.value = 1 / (p.freq ?? 500);
+      const fb = ctx.createGain(); fb.gain.value = p.feedback ?? 0.5;
+      const dryG = ctx.createGain(); dryG.gain.value = 1 - (p.mix ?? 0.5);
+      const wetG = ctx.createGain(); wetG.gain.value = p.mix ?? 0.5;
+      const out = ctx.createGain(); out.gain.value = 1;
+      const input = ctx.createGain(); input.gain.value = 1;
+      input.connect(delay); input.connect(dryG); dryG.connect(out);
+      delay.connect(fb); fb.connect(delay);
+      delay.connect(wetG); wetG.connect(out);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'freq') delay.delayTime.value = 1 / val;
+          if (id === 'feedback') fb.gain.value = val;
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        destroy: () => { [input, delay, fb, dryG, wetG, out].forEach(n => n.disconnect()); },
+      };
+    }
+
+    case 'filter_formant': {
+      // Vowel formants: F1, F2, F3 Hz (approximate)
+      const vowels = [
+        [800, 1200, 2500], // A
+        [400, 2300, 2700], // E
+        [300, 2700, 3200], // I
+        [500, 900, 2800],  // O
+        [300, 800, 2300],  // U
+      ];
+      const input = ctx.createGain(); input.gain.value = 1;
+      const out = ctx.createGain(); out.gain.value = 0.4;
+      let bands: BiquadFilterNode[] = [];
+      const setVowel = (v: number) => {
+        bands.forEach(b => b.disconnect());
+        const freqs = vowels[Math.round(v)] ?? vowels[0];
+        bands = freqs.map(freq => {
+          const f = ctx.createBiquadFilter(); f.type = 'bandpass';
+          f.frequency.value = freq; f.Q.value = 8;
+          input.connect(f); f.connect(out); return f;
+        });
+      };
+      setVowel(p.vowel ?? 0);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => { p[id] = val; },
+        setSelector: (id, val) => { if (id === 'vowel') setVowel(val); },
+        destroy: () => { input.disconnect(); bands.forEach(b => b.disconnect()); out.disconnect(); },
+      };
+    }
+
+    case 'filter_morph': {
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
+      const hp = ctx.createBiquadFilter(); hp.type = 'highpass';
+      const lpG = ctx.createGain(); const hpG = ctx.createGain();
+      const out = ctx.createGain(); out.gain.value = 1;
+      const morph = p.morph ?? 0;
+      lpG.gain.value = 1 - morph; hpG.gain.value = morph;
+      [lp, hp].forEach(f => { f.frequency.value = p.cutoff ?? 1000; f.Q.value = p.res ?? 1; });
+      lp.connect(lpG); hp.connect(hpG); lpG.connect(out); hpG.connect(out);
+      const morphCs = ctx.createConstantSource(); morphCs.offset.value = morph; morphCs.start();
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([
+          ['audio_in', { node: lp }],
+          ['morph_cv', { node: morphCs, param: morphCs.offset }],
+        ]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'cutoff') { lp.frequency.value = val; hp.frequency.value = val; }
+          if (id === 'res') { lp.Q.value = val; hp.Q.value = val; }
+          if (id === 'morph') { lpG.gain.value = 1 - val; hpG.gain.value = val; }
+        },
+        destroy: () => {
+          morphCs.stop(); morphCs.disconnect();
+          [lp, hp, lpG, hpG, out].forEach(n => n.disconnect());
+        },
+      };
+    }
+
+    // ── Amplifiers ───────────────────────────────────────────────────
     case 'vca': {
-      const gain = ctx.createGain();
-      gain.gain.value = p.gain ?? 0;
+      const gain = ctx.createGain(); gain.gain.value = p.gain ?? 0;
+      return {
+        outputs: new Map([['out', gain]]),
+        inputs: new Map([
+          ['audio_in', { node: gain }],
+          ['cv_in', { node: gain, param: gain.gain }],
+        ]),
+        setParam: (id, val) => { p[id] = val; if (id === 'gain') gain.gain.value = val; },
+        destroy: () => gain.disconnect(),
+      };
+    }
+
+    case 'vca_expo': {
+      // Exponential VCA: apply a waveshaping pre-stage to make CV response exponential
+      const gain = ctx.createGain(); gain.gain.value = 0;
+      // CV goes through an exponential shaper
+      const shaper = ctx.createWaveShaper();
+      const curve = new Float32Array(512);
+      for (let i = 0; i < 512; i++) {
+        const x = i / 512;
+        curve[i] = Math.pow(x, 3);
+      }
+      shaper.curve = curve;
       return {
         outputs: new Map([['out', gain]]),
         inputs: new Map([
@@ -334,75 +628,498 @@ export function createAudioModule(
         ]),
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'gain') gain.gain.value = val;
+          if (id === 'gain') gain.gain.value = Math.pow(val, 3);
         },
-        destroy: () => { gain.disconnect(); },
+        destroy: () => gain.disconnect(),
       };
     }
 
+    case 'vca_dual': {
+      const g1 = ctx.createGain(); g1.gain.value = p.gain1 ?? 0.8;
+      const g2 = ctx.createGain(); g2.gain.value = p.gain2 ?? 0.8;
+      return {
+        outputs: new Map([['out1', g1], ['out2', g2]]),
+        inputs: new Map([
+          ['in1', { node: g1 }], ['cv1', { node: g1, param: g1.gain }],
+          ['in2', { node: g2 }], ['cv2', { node: g2, param: g2.gain }],
+        ]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'gain1') g1.gain.value = val;
+          if (id === 'gain2') g2.gain.value = val;
+        },
+        destroy: () => { g1.disconnect(); g2.disconnect(); },
+      };
+    }
+
+    // ── Dynamics ─────────────────────────────────────────────────────
+    case 'compressor': {
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = p.threshold ?? -24;
+      comp.ratio.value = p.ratio ?? 4;
+      comp.attack.value = p.attack ?? 0.003;
+      comp.release.value = p.release ?? 0.25;
+      comp.knee.value = 6;
+      return {
+        outputs: new Map([['out', comp]]),
+        inputs: new Map([['audio_in', { node: comp }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'threshold') comp.threshold.value = val;
+          if (id === 'ratio') comp.ratio.value = val;
+          if (id === 'attack') comp.attack.value = val;
+          if (id === 'release') comp.release.value = val;
+        },
+        destroy: () => comp.disconnect(),
+      };
+    }
+
+    case 'limiter': {
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = p.threshold ?? -3;
+      comp.ratio.value = 20;
+      comp.attack.value = 0.001;
+      comp.release.value = p.release ?? 0.1;
+      comp.knee.value = 0;
+      return {
+        outputs: new Map([['out', comp]]),
+        inputs: new Map([['audio_in', { node: comp }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'threshold') comp.threshold.value = val;
+          if (id === 'release') comp.release.value = val;
+        },
+        destroy: () => comp.disconnect(),
+      };
+    }
+
+    case 'expander': {
+      // Expand below threshold: use gain + DynamicsCompressor with inverse logic
+      const inp = ctx.createGain(); inp.gain.value = 1;
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = p.threshold ?? -40;
+      comp.ratio.value = 0.5; // below 1 = expansion
+      comp.attack.value = 0.01; comp.release.value = 0.1; comp.knee.value = 3;
+      inp.connect(comp);
+      return {
+        outputs: new Map([['out', comp]]),
+        inputs: new Map([['audio_in', { node: inp }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'threshold') comp.threshold.value = val;
+          if (id === 'ratio') comp.ratio.value = 1 / Math.max(1, val);
+        },
+        destroy: () => { inp.disconnect(); comp.disconnect(); },
+      };
+    }
+
+    case 'noise_gate': {
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = p.threshold ?? -50;
+      comp.ratio.value = 20;
+      comp.attack.value = p.attack ?? 0.01;
+      comp.release.value = p.release ?? 0.1;
+      comp.knee.value = 0;
+      return {
+        outputs: new Map([['out', comp]]),
+        inputs: new Map([['audio_in', { node: comp }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'threshold') comp.threshold.value = val;
+          if (id === 'attack') comp.attack.value = val;
+          if (id === 'release') comp.release.value = val;
+        },
+        destroy: () => comp.disconnect(),
+      };
+    }
+
+    case 'sidechain': {
+      const mainIn = ctx.createGain(); mainIn.gain.value = 1;
+      const scIn = ctx.createGain(); scIn.gain.value = 1;
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = p.threshold ?? -20;
+      comp.ratio.value = p.ratio ?? 8;
+      comp.attack.value = p.attack ?? 0.005;
+      comp.release.value = p.release ?? 0.15;
+      comp.knee.value = 3;
+      // Route sidechain signal to compressor's sidechain (key) input
+      mainIn.connect(comp);
+      // Sidechain input drives the reduction via the compressor's key input
+      scIn.connect(comp);
+      return {
+        outputs: new Map([['out', comp]]),
+        inputs: new Map([
+          ['audio_in', { node: mainIn }],
+          ['sc_in', { node: scIn }],
+        ]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'threshold') comp.threshold.value = val;
+          if (id === 'ratio') comp.ratio.value = val;
+          if (id === 'attack') comp.attack.value = val;
+          if (id === 'release') comp.release.value = val;
+        },
+        destroy: () => { mainIn.disconnect(); scIn.disconnect(); comp.disconnect(); },
+      };
+    }
+
+    // ── Envelopes ────────────────────────────────────────────────────
+    case 'adsr': {
+      const cv = ctx.createConstantSource();
+      cv.offset.value = 0; cv.start();
+      return {
+        outputs: new Map([['env_out', cv]]),
+        inputs: new Map([['gate_in', { node: cv }]]),
+        noteOn: (time, _freq) => {
+          const a = p.attack ?? 0.01, d = p.decay ?? 0.1, s = p.sustain ?? 0.7;
+          cv.offset.cancelScheduledValues(time);
+          cv.offset.setValueAtTime(0, time);
+          cv.offset.linearRampToValueAtTime(1, time + a);
+          cv.offset.linearRampToValueAtTime(s, time + a + d);
+        },
+        noteOff: (time) => {
+          const r = p.release ?? 0.3;
+          cv.offset.cancelScheduledValues(time);
+          cv.offset.setValueAtTime(cv.offset.value, time);
+          cv.offset.linearRampToValueAtTime(0, time + r);
+        },
+        setParam: (id, val) => { p[id] = val; },
+        destroy: () => { cv.stop(); cv.disconnect(); },
+      };
+    }
+
+    case 'ahdsr': {
+      const cv = ctx.createConstantSource();
+      cv.offset.value = 0; cv.start();
+      return {
+        outputs: new Map([['env_out', cv]]),
+        inputs: new Map([['gate_in', { node: cv }]]),
+        noteOn: (time, _freq) => {
+          const a = p.attack ?? 0.01, h = p.hold ?? 0.05, d = p.decay ?? 0.15, s = p.sustain ?? 0.6;
+          cv.offset.cancelScheduledValues(time);
+          cv.offset.setValueAtTime(0, time);
+          cv.offset.linearRampToValueAtTime(1, time + a);
+          cv.offset.setValueAtTime(1, time + a + h);
+          cv.offset.linearRampToValueAtTime(s, time + a + h + d);
+        },
+        noteOff: (time) => {
+          const r = p.release ?? 0.4;
+          cv.offset.cancelScheduledValues(time);
+          cv.offset.setValueAtTime(cv.offset.value, time);
+          cv.offset.linearRampToValueAtTime(0, time + r);
+        },
+        setParam: (id, val) => { p[id] = val; },
+        destroy: () => { cv.stop(); cv.disconnect(); },
+      };
+    }
+
+    // ── LFOs ─────────────────────────────────────────────────────────
     case 'lfo': {
       const osc = ctx.createOscillator();
-      const depthGain = ctx.createGain();
-      osc.type = LFO_WAVES[Math.round(p.wave ?? 0)] ?? 'sine';
+      const waveMap: OscillatorType[] = ['sine', 'triangle', 'sawtooth', 'square'];
+      osc.type = waveMap[Math.round(p.wave ?? 0)] ?? 'sine';
       osc.frequency.value = p.rate ?? 1;
-      depthGain.gain.value = p.depth ?? 200;
-      osc.connect(depthGain);
-      osc.start();
+      const gain = ctx.createGain(); gain.gain.value = p.depth ?? 200;
+      osc.connect(gain); osc.start();
       return {
-        outputs: new Map([['cv_out', depthGain]]),
+        outputs: new Map([['cv_out', gain]]),
         inputs: new Map(),
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'rate') osc.frequency.value = val;
-          if (id === 'depth') depthGain.gain.value = val;
+          if (id === 'depth') gain.gain.value = val;
         },
         setSelector: (id, val) => {
-          if (id === 'wave') osc.type = LFO_WAVES[Math.round(val)] ?? 'sine';
+          if (id === 'wave') osc.type = waveMap[Math.round(val)] ?? 'sine';
         },
-        destroy: () => { osc.stop(); osc.disconnect(); depthGain.disconnect(); },
+        destroy: () => { osc.stop(); osc.disconnect(); gain.disconnect(); },
       };
     }
 
-    case 'reverb': {
-      const convolver = ctx.createConvolver();
-      const dryGain = ctx.createGain();
-      const wetGain = ctx.createGain();
-      const out = ctx.createGain();
-      const input = ctx.createGain();
-      convolver.buffer = makeImpulse(ctx, p.size ?? 2, 2);
-      dryGain.gain.value = 1 - (p.mix ?? 0.3);
-      wetGain.gain.value = p.mix ?? 0.3;
-      input.connect(dryGain); input.connect(convolver);
-      convolver.connect(wetGain); dryGain.connect(out); wetGain.connect(out);
+    case 'lfo_analog': {
+      // Analog LFO: slight drift added via a second slow LFO modulating rate
+      const osc = ctx.createOscillator();
+      const waveMap: OscillatorType[] = ['sine', 'triangle', 'sawtooth', 'square'];
+      osc.type = waveMap[Math.round(p.wave ?? 0)] ?? 'sine';
+      osc.frequency.value = p.rate ?? 0.5;
+      const drift = ctx.createOscillator(); drift.frequency.value = 0.07;
+      const driftGain = ctx.createGain(); driftGain.gain.value = (p.drift ?? 0.2) * 0.3;
+      drift.connect(driftGain); driftGain.connect(osc.frequency);
+      drift.start(); osc.start();
+      const gain = ctx.createGain(); gain.gain.value = p.depth ?? 200;
+      osc.connect(gain);
       return {
-        outputs: new Map([['out', out]]),
-        inputs: new Map([['audio_in', { node: input }]]),
+        outputs: new Map([['cv_out', gain]]),
+        inputs: new Map(),
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'mix') { dryGain.gain.value = 1 - val; wetGain.gain.value = val; }
-          if (id === 'size') convolver.buffer = makeImpulse(ctx, val, 2);
+          if (id === 'rate') osc.frequency.value = val;
+          if (id === 'depth') gain.gain.value = val;
+          if (id === 'drift') driftGain.gain.value = val * 0.3;
+        },
+        setSelector: (id, val) => {
+          if (id === 'wave') osc.type = waveMap[Math.round(val)] ?? 'sine';
         },
         destroy: () => {
-          input.disconnect(); convolver.disconnect();
-          dryGain.disconnect(); wetGain.disconnect(); out.disconnect();
+          drift.stop(); drift.disconnect(); driftGain.disconnect();
+          osc.stop(); osc.disconnect(); gain.disconnect();
         },
       };
     }
 
-    case 'delay_mod': {
-      const delay = ctx.createDelay(5);
-      const fb = ctx.createGain();
-      const dry = ctx.createGain();
-      const wet = ctx.createGain();
-      const out = ctx.createGain();
-      const input = ctx.createGain();
-      delay.delayTime.value = p.time ?? 0.25;
-      fb.gain.value = p.feedback ?? 0.4;
-      dry.gain.value = 1 - (p.mix ?? 0.3);
-      wet.gain.value = p.mix ?? 0.3;
-      input.connect(dry); input.connect(delay);
-      delay.connect(fb); fb.connect(delay); delay.connect(wet);
-      dry.connect(out); wet.connect(out);
+    case 'lfo_digital': {
+      const waveMap: OscillatorType[] = ['sine', 'square', 'sawtooth', 'triangle'];
+      const osc = ctx.createOscillator();
+      osc.type = waveMap[Math.round(p.wave ?? 0)] ?? 'sine';
+      osc.frequency.value = p.rate ?? 2;
+      osc.start();
+      const gain = ctx.createGain(); gain.gain.value = p.depth ?? 200;
+      osc.connect(gain);
+      return {
+        outputs: new Map([['cv_out', gain]]),
+        inputs: new Map(),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'rate') osc.frequency.value = val;
+          if (id === 'depth') gain.gain.value = val;
+          if (id === 'phase') osc.frequency.value = p.rate ?? 2; // phase not natively settable
+        },
+        setSelector: (id, val) => {
+          if (id === 'wave') osc.type = waveMap[Math.round(val)] ?? 'sine';
+        },
+        destroy: () => { osc.stop(); osc.disconnect(); gain.disconnect(); },
+      };
+    }
+
+    case 'lfo_multi': {
+      const sinO = ctx.createOscillator(); sinO.type = 'sine'; sinO.frequency.value = p.rate ?? 1;
+      const triO = ctx.createOscillator(); triO.type = 'triangle'; triO.frequency.value = p.rate ?? 1;
+      const sawO = ctx.createOscillator(); sawO.type = 'sawtooth'; sawO.frequency.value = p.rate ?? 1;
+      const sqrO = ctx.createOscillator(); sqrO.type = 'square'; sqrO.frequency.value = p.rate ?? 1;
+      const oscs = [sinO, triO, sawO, sqrO];
+      const gains = oscs.map(() => { const g = ctx.createGain(); g.gain.value = p.depth ?? 200; return g; });
+      oscs.forEach((o, i) => { o.connect(gains[i]); o.start(); });
+      return {
+        outputs: new Map([
+          ['sin_out', gains[0]], ['tri_out', gains[1]],
+          ['saw_out', gains[2]], ['sqr_out', gains[3]],
+        ]),
+        inputs: new Map(),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'rate') oscs.forEach(o => { o.frequency.value = val; });
+          if (id === 'depth') gains.forEach(g => { g.gain.value = val; });
+        },
+        destroy: () => {
+          oscs.forEach(o => { o.stop(); o.disconnect(); });
+          gains.forEach(g => g.disconnect());
+        },
+      };
+    }
+
+    // ── Sequencers ───────────────────────────────────────────────────
+    case 'seq_step': {
+      const freqNode = ctx.createConstantSource();
+      freqNode.offset.value = 0; freqNode.start();
+      let step = 0;
+      let gateCb: ((on: boolean, freq: number) => void) | null = null;
+      const getMs = () => 60000 / (p.bpm ?? 120);
+      let timer = makeClockTimer(getMs, (i) => {
+        step = i % 8;
+        const midi = Math.round(p[`s${step + 1}`] ?? (60 + step));
+        const freq = midiToHz(midi);
+        freqNode.offset.value = freq;
+        gateCb?.(true, freq);
+        setTimeout(() => gateCb?.(false, freq), getMs() * 0.45);
+      });
+      return {
+        outputs: new Map([['voct_out', freqNode]]),
+        inputs: new Map(),
+        setParam: (id, val) => { p[id] = val; if (id === 'bpm') { timer.destroy(); timer = makeClockTimer(getMs, (i) => { step = i % 8; const midi = Math.round(p[`s${step + 1}`] ?? 60); const freq = midiToHz(midi); freqNode.offset.value = freq; gateCb?.(true, freq); setTimeout(() => gateCb?.(false, freq), getMs() * 0.45); }); } },
+        setGateTrigger: fn => { gateCb = fn; },
+        destroy: () => { timer.destroy(); freqNode.stop(); freqNode.disconnect(); },
+      };
+    }
+
+    case 'seq_trigger': {
+      let step = 0;
+      let gateCb: ((on: boolean, freq: number) => void) | null = null;
+      const getMs = () => 60000 / (p.bpm ?? 120);
+      let timer = makeClockTimer(getMs, (i) => {
+        step = i % 8;
+        const active = (p[`t${step + 1}`] ?? 0) > 0.5;
+        if (active) {
+          gateCb?.(true, 440);
+          setTimeout(() => gateCb?.(false, 440), getMs() * 0.4);
+        }
+      });
+      return {
+        outputs: new Map(),
+        inputs: new Map(),
+        setParam: (id, val) => { p[id] = val; if (id === 'bpm') { timer.destroy(); timer = makeClockTimer(getMs, (i) => { const s = i % 8; if ((p[`t${s+1}`] ?? 0) > 0.5) { gateCb?.(true, 440); setTimeout(() => gateCb?.(false, 440), getMs() * 0.4); } }); } },
+        setGateTrigger: fn => { gateCb = fn; },
+        destroy: () => { timer.destroy(); },
+      };
+    }
+
+    case 'seq_cv': {
+      const cvNode = ctx.createConstantSource(); cvNode.offset.value = 0; cvNode.start();
+      let step = 0;
+      const getMs = () => 60000 / (p.bpm ?? 120);
+      let timer = makeClockTimer(getMs, (i) => {
+        step = i % 8;
+        cvNode.offset.value = (p[`v${step + 1}`] ?? 0) * 500;
+      });
+      return {
+        outputs: new Map([['cv_out', cvNode]]),
+        inputs: new Map(),
+        setParam: (id, val) => { p[id] = val; if (id === 'bpm') { timer.destroy(); timer = makeClockTimer(getMs, (i) => { cvNode.offset.value = (p[`v${(i%8)+1}`] ?? 0) * 500; }); } },
+        destroy: () => { timer.destroy(); cvNode.stop(); cvNode.disconnect(); },
+      };
+    }
+
+    case 'seq_gate': {
+      let step = 0;
+      let gateCb: ((on: boolean, freq: number) => void) | null = null;
+      const getMs = () => 60000 / (p.bpm ?? 120);
+      let timer = makeClockTimer(getMs, (i) => {
+        step = i % 8;
+        const active = (p[`g${step + 1}`] ?? 0) > 0.5;
+        if (active) {
+          const len = getMs() * (p.gate_len ?? 0.5);
+          gateCb?.(true, 440);
+          setTimeout(() => gateCb?.(false, 440), len);
+        }
+      });
+      return {
+        outputs: new Map(),
+        inputs: new Map(),
+        setParam: (id, val) => { p[id] = val; if (id === 'bpm') { timer.destroy(); timer = makeClockTimer(getMs, (i) => { const s = i % 8; if ((p[`g${s+1}`]??0) > 0.5) { gateCb?.(true,440); setTimeout(()=>gateCb?.(false,440), getMs()*(p.gate_len??0.5)); } }); } },
+        setGateTrigger: fn => { gateCb = fn; },
+        destroy: () => { timer.destroy(); },
+      };
+    }
+
+    // ── Clock ────────────────────────────────────────────────────────
+    case 'clock_gen': {
+      let gateCb: ((on: boolean, freq: number) => void) | null = null;
+      let beat = 0;
+      const getMs = () => 60000 / (p.bpm ?? 120);
+      let timer = makeClockTimer(getMs, (i) => {
+        beat = i;
+        const ms = getMs();
+        const swingOffset = (beat % 2 === 1) ? ms * (p.swing ?? 0) : 0;
+        setTimeout(() => {
+          gateCb?.(true, 440);
+          setTimeout(() => gateCb?.(false, 440), ms * 0.45);
+        }, swingOffset);
+      });
+      return {
+        outputs: new Map(),
+        inputs: new Map(),
+        setParam: (id, val) => { p[id] = val; if (id === 'bpm') { timer.destroy(); beat = 0; timer = makeClockTimer(getMs, (i) => { beat = i; gateCb?.(true, 440); setTimeout(() => gateCb?.(false, 440), getMs() * 0.45); }); } },
+        setGateTrigger: fn => { gateCb = fn; },
+        destroy: () => { timer.destroy(); },
+      };
+    }
+
+    case 'clock_div': {
+      let gateCb: ((on: boolean, freq: number) => void) | null = null;
+      const getMs = () => 60000 / (p.bpm ?? 120) * (p.div ?? 2);
+      let timer = makeClockTimer(getMs, () => {
+        gateCb?.(true, 440);
+        setTimeout(() => gateCb?.(false, 440), getMs() * 0.45);
+      });
+      return {
+        outputs: new Map(), inputs: new Map(),
+        setParam: (id, val) => { p[id] = val; timer.destroy(); timer = makeClockTimer(getMs, () => { gateCb?.(true, 440); setTimeout(() => gateCb?.(false, 440), getMs() * 0.45); }); },
+        setGateTrigger: fn => { gateCb = fn; },
+        destroy: () => { timer.destroy(); },
+      };
+    }
+
+    case 'clock_mul': {
+      let gateCb: ((on: boolean, freq: number) => void) | null = null;
+      const getMs = () => 60000 / (p.bpm ?? 120) / (p.mul ?? 2);
+      let timer = makeClockTimer(getMs, () => {
+        gateCb?.(true, 440);
+        setTimeout(() => gateCb?.(false, 440), getMs() * 0.45);
+      });
+      return {
+        outputs: new Map(), inputs: new Map(),
+        setParam: (id, val) => { p[id] = val; timer.destroy(); timer = makeClockTimer(getMs, () => { gateCb?.(true, 440); setTimeout(() => gateCb?.(false, 440), getMs() * 0.45); }); },
+        setGateTrigger: fn => { gateCb = fn; },
+        destroy: () => { timer.destroy(); },
+      };
+    }
+
+    case 'clock_dly': {
+      let gateCb: ((on: boolean, freq: number) => void) | null = null;
+      const getMs = () => 60000 / (p.bpm ?? 120);
+      let timer = makeClockTimer(getMs, () => {
+        const delayMs = getMs() * (p.delay ?? 0.25);
+        setTimeout(() => {
+          gateCb?.(true, 440);
+          setTimeout(() => gateCb?.(false, 440), getMs() * 0.45);
+        }, delayMs);
+      });
+      return {
+        outputs: new Map(), inputs: new Map(),
+        setParam: (id, val) => { p[id] = val; timer.destroy(); timer = makeClockTimer(getMs, () => { const d = getMs()*(p.delay??0.25); setTimeout(()=>{ gateCb?.(true,440); setTimeout(()=>gateCb?.(false,440), getMs()*0.45); }, d); }); },
+        setGateTrigger: fn => { gateCb = fn; },
+        destroy: () => { timer.destroy(); },
+      };
+    }
+
+    case 'clock_shuffle': {
+      let gateCb: ((on: boolean, freq: number) => void) | null = null;
+      let beat = 0;
+      const getMs = () => 60000 / (p.bpm ?? 120);
+      let timer = makeClockTimer(getMs, (i) => {
+        beat = i;
+        const shuffle = beat % 2 === 1 ? getMs() * (p.shuffle ?? 0.2) : 0;
+        setTimeout(() => {
+          gateCb?.(true, 440);
+          setTimeout(() => gateCb?.(false, 440), getMs() * 0.4);
+        }, shuffle);
+      });
+      return {
+        outputs: new Map(), inputs: new Map(),
+        setParam: (id, val) => { p[id] = val; timer.destroy(); beat = 0; timer = makeClockTimer(getMs, (i) => { const sh = i%2===1 ? getMs()*(p.shuffle??0.2) : 0; setTimeout(()=>{ gateCb?.(true,440); setTimeout(()=>gateCb?.(false,440), getMs()*0.4); }, sh); }); },
+        setGateTrigger: fn => { gateCb = fn; },
+        destroy: () => { timer.destroy(); },
+      };
+    }
+
+    case 'swing_gen': {
+      let gateCb: ((on: boolean, freq: number) => void) | null = null;
+      let beat = 0;
+      const getMs = () => 60000 / (p.bpm ?? 120);
+      let timer = makeClockTimer(getMs, (i) => {
+        beat = i;
+        const swingMs = beat % 2 === 1 ? getMs() * (p.swing ?? 0.33) : 0;
+        const interval = getMs();
+        setTimeout(() => {
+          gateCb?.(true, 440);
+          setTimeout(() => gateCb?.(false, 440), interval * 0.4);
+        }, swingMs);
+      });
+      return {
+        outputs: new Map(), inputs: new Map(),
+        setParam: (id, val) => { p[id] = val; timer.destroy(); beat = 0; timer = makeClockTimer(getMs, (i) => { const sw = i%2===1 ? getMs()*(p.swing??0.33) : 0; setTimeout(()=>{ gateCb?.(true,440); setTimeout(()=>gateCb?.(false,440), getMs()*0.4); }, sw); }); },
+        setGateTrigger: fn => { gateCb = fn; },
+        destroy: () => { timer.destroy(); },
+      };
+    }
+
+    // ── Delays ───────────────────────────────────────────────────────
+    case 'delay_mod':
+    case 'delay_digital': {
+      const delay = ctx.createDelay(5); delay.delayTime.value = p.time ?? 0.25;
+      const fb = ctx.createGain(); fb.gain.value = p.feedback ?? 0.4;
+      const input = ctx.createGain(); input.gain.value = 1;
+      const { out, dryG, wetG } = wetDry(ctx, input, delay, p.mix ?? 0.3);
+      input.connect(delay); delay.connect(fb); fb.connect(delay);
       return {
         outputs: new Map([['out', out]]),
         inputs: new Map([['audio_in', { node: input }]]),
@@ -410,47 +1127,808 @@ export function createAudioModule(
           p[id] = val;
           if (id === 'time') delay.delayTime.value = val;
           if (id === 'feedback') fb.gain.value = val;
-          if (id === 'mix') { dry.gain.value = 1 - val; wet.gain.value = val; }
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        destroy: () => { [input, delay, fb, out, dryG, wetG].forEach(n => n.disconnect()); },
+      };
+    }
+
+    case 'delay_analog': {
+      // Analog delay: filtered feedback for warmth degradation
+      const delay = ctx.createDelay(3); delay.delayTime.value = p.time ?? 0.2;
+      const fb = ctx.createGain(); fb.gain.value = p.feedback ?? 0.5;
+      const fbFilter = ctx.createBiquadFilter(); fbFilter.type = 'lowpass';
+      fbFilter.frequency.value = p.tone ?? 2000;
+      const input = ctx.createGain(); input.gain.value = 1;
+      const { out, dryG, wetG } = wetDry(ctx, input, delay, p.mix ?? 0.4);
+      input.connect(delay); delay.connect(fbFilter); fbFilter.connect(fb); fb.connect(delay);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'time') delay.delayTime.value = val;
+          if (id === 'feedback') fb.gain.value = val;
+          if (id === 'tone') fbFilter.frequency.value = val;
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        destroy: () => { [input, delay, fb, fbFilter, out, dryG, wetG].forEach(n => n.disconnect()); },
+      };
+    }
+
+    case 'delay_tape': {
+      // Tape delay: flutter via LFO modulating delay time
+      const delay = ctx.createDelay(3); delay.delayTime.value = p.time ?? 0.3;
+      const fb = ctx.createGain(); fb.gain.value = p.feedback ?? 0.4;
+      const flutter = ctx.createOscillator(); flutter.frequency.value = 3.7;
+      const flutterGain = ctx.createGain();
+      flutterGain.gain.value = (p.flutter ?? 0.3) * 0.003;
+      flutter.connect(flutterGain); flutterGain.connect(delay.delayTime); flutter.start();
+      const input = ctx.createGain(); input.gain.value = 1;
+      const { out, dryG, wetG } = wetDry(ctx, input, delay, p.mix ?? 0.4);
+      input.connect(delay); delay.connect(fb); fb.connect(delay);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'time') delay.delayTime.value = val;
+          if (id === 'feedback') fb.gain.value = val;
+          if (id === 'flutter') flutterGain.gain.value = val * 0.003;
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
         },
         destroy: () => {
-          input.disconnect(); delay.disconnect(); fb.disconnect();
-          dry.disconnect(); wet.disconnect(); out.disconnect();
+          flutter.stop(); flutter.disconnect();
+          [input, delay, fb, flutterGain, out, dryG, wetG].forEach(n => n.disconnect());
         },
       };
     }
 
-    case 'mixer': {
-      const chs = ['ch1', 'ch2', 'ch3', 'ch4'].map((k, i) => {
-        const g = ctx.createGain();
-        g.gain.value = p[k] ?? 0.8;
-        return g;
+    case 'delay_ping': {
+      // Ping-pong: sum to mono, both channels get same for mono output
+      const delL = ctx.createDelay(3); delL.delayTime.value = p.time ?? 0.25;
+      const delR = ctx.createDelay(3); delR.delayTime.value = (p.time ?? 0.25) * 0.5;
+      const fb = ctx.createGain(); fb.gain.value = p.feedback ?? 0.4;
+      const input = ctx.createGain(); input.gain.value = 1;
+      const mix = ctx.createGain(); mix.gain.value = p.mix ?? 0.35;
+      const dry = ctx.createGain(); dry.gain.value = 1 - (p.mix ?? 0.35);
+      const out = ctx.createGain(); out.gain.value = 1;
+      input.connect(delL); delL.connect(delR); delR.connect(fb); fb.connect(delL);
+      input.connect(dry); dry.connect(out);
+      delL.connect(mix); delR.connect(mix); mix.connect(out);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'time') { delL.delayTime.value = val; delR.delayTime.value = val * 0.5; }
+          if (id === 'feedback') fb.gain.value = val;
+          if (id === 'mix') { mix.gain.value = val; dry.gain.value = 1 - val; }
+        },
+        destroy: () => { [input, delL, delR, fb, mix, dry, out].forEach(n => n.disconnect()); },
+      };
+    }
+
+    case 'delay_multi': {
+      const d1 = ctx.createDelay(2); d1.delayTime.value = p.tap1 ?? 0.125;
+      const d2 = ctx.createDelay(2); d2.delayTime.value = p.tap2 ?? 0.25;
+      const d3 = ctx.createDelay(2); d3.delayTime.value = p.tap3 ?? 0.5;
+      const fb = ctx.createGain(); fb.gain.value = p.feedback ?? 0.3;
+      const input = ctx.createGain(); input.gain.value = 1;
+      const tapMix = ctx.createGain(); tapMix.gain.value = (p.mix ?? 0.35) / 3;
+      const dry = ctx.createGain(); dry.gain.value = 1 - (p.mix ?? 0.35);
+      const out = ctx.createGain(); out.gain.value = 1;
+      [d1, d2, d3].forEach(d => { input.connect(d); d.connect(tapMix); });
+      tapMix.connect(fb); fb.connect(d1);
+      input.connect(dry); dry.connect(out); tapMix.connect(out);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'tap1') d1.delayTime.value = val;
+          if (id === 'tap2') d2.delayTime.value = val;
+          if (id === 'tap3') d3.delayTime.value = val;
+          if (id === 'feedback') fb.gain.value = val;
+          if (id === 'mix') { tapMix.gain.value = val / 3; dry.gain.value = 1 - val; }
+        },
+        destroy: () => { [input, d1, d2, d3, fb, tapMix, dry, out].forEach(n => n.disconnect()); },
+      };
+    }
+
+    // ── Reverbs ──────────────────────────────────────────────────────
+    case 'reverb': {
+      const conv = ctx.createConvolver();
+      conv.buffer = makeIR(ctx, p.size ?? 2, 3);
+      const input = ctx.createGain(); input.gain.value = 1;
+      const { out, dryG, wetG } = wetDry(ctx, input, conv, p.mix ?? 0.3);
+      input.connect(conv);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'size') conv.buffer = makeIR(ctx, val, 3);
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        destroy: () => { [input, conv, out, dryG, wetG].forEach(n => n.disconnect()); },
+      };
+    }
+
+    case 'reverb_spring': {
+      const conv = ctx.createConvolver();
+      conv.buffer = makeSpringIR(ctx, p.tension ?? 1);
+      const input = ctx.createGain(); input.gain.value = 1;
+      const { out, dryG, wetG } = wetDry(ctx, input, conv, p.mix ?? 0.35);
+      input.connect(conv);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'tension') conv.buffer = makeSpringIR(ctx, val);
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        destroy: () => { [input, conv, out, dryG, wetG].forEach(n => n.disconnect()); },
+      };
+    }
+
+    case 'reverb_plate': {
+      const conv = ctx.createConvolver();
+      conv.buffer = makePlateIR(ctx, p.size ?? 2.5);
+      const input = ctx.createGain(); input.gain.value = 1;
+      const { out, dryG, wetG } = wetDry(ctx, input, conv, p.mix ?? 0.3);
+      input.connect(conv);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'size') conv.buffer = makePlateIR(ctx, val);
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        destroy: () => { [input, conv, out, dryG, wetG].forEach(n => n.disconnect()); },
+      };
+    }
+
+    case 'reverb_hall': {
+      const conv = ctx.createConvolver();
+      conv.buffer = makeHallIR(ctx, p.size ?? 4);
+      const input = ctx.createGain(); input.gain.value = 1;
+      const { out, dryG, wetG } = wetDry(ctx, input, conv, p.mix ?? 0.35);
+      input.connect(conv);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'size') conv.buffer = makeHallIR(ctx, val);
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        destroy: () => { [input, conv, out, dryG, wetG].forEach(n => n.disconnect()); },
+      };
+    }
+
+    case 'reverb_shimmer': {
+      const conv = ctx.createConvolver();
+      conv.buffer = makeHallIR(ctx, p.size ?? 3);
+      // Shimmer = reverb + pitched feedback oscillator
+      const pitch = ctx.createOscillator(); pitch.type = 'sine';
+      pitch.frequency.value = 880;
+      const pitchGain = ctx.createGain(); pitchGain.gain.value = (p.shimmer ?? 0.5) * 0.15;
+      pitch.connect(pitchGain); pitchGain.connect(conv); pitch.start();
+      const input = ctx.createGain(); input.gain.value = 1;
+      const { out, dryG, wetG } = wetDry(ctx, input, conv, p.mix ?? 0.4);
+      input.connect(conv);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'size') conv.buffer = makeHallIR(ctx, val);
+          if (id === 'shimmer') pitchGain.gain.value = val * 0.15;
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        destroy: () => {
+          pitch.stop(); pitch.disconnect();
+          [input, conv, pitchGain, out, dryG, wetG].forEach(n => n.disconnect());
+        },
+      };
+    }
+
+    // ── Modulation ───────────────────────────────────────────────────
+    case 'chorus': {
+      const voices = 3;
+      const input = ctx.createGain(); input.gain.value = 1;
+      const wetSum = ctx.createGain(); wetSum.gain.value = 1 / voices;
+      const delays: DelayNode[] = [];
+      const lfos: OscillatorNode[] = [];
+      for (let i = 0; i < voices; i++) {
+        const d = ctx.createDelay(0.1); d.delayTime.value = 0.01 + i * 0.007;
+        const lfo = ctx.createOscillator(); lfo.frequency.value = (p.rate ?? 1.5) * (1 + i * 0.15);
+        const lg = ctx.createGain(); lg.gain.value = (p.depth ?? 0.5) * 0.006;
+        lfo.connect(lg); lg.connect(d.delayTime); lfo.start();
+        input.connect(d); d.connect(wetSum);
+        delays.push(d); lfos.push(lfo);
+      }
+      const { out, dryG, wetG } = wetDry(ctx, input, wetSum, p.mix ?? 0.5);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'rate') lfos.forEach((l, i) => { l.frequency.value = val * (1 + i * 0.15); });
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        destroy: () => {
+          lfos.forEach(l => { l.stop(); l.disconnect(); });
+          [input, wetSum, out, dryG, wetG, ...delays].forEach(n => n.disconnect());
+        },
+      };
+    }
+
+    case 'flanger': {
+      const input = ctx.createGain(); input.gain.value = 1;
+      const delay = ctx.createDelay(0.1); delay.delayTime.value = 0.005;
+      const fb = ctx.createGain(); fb.gain.value = p.feedback ?? 0.5;
+      const lfo = ctx.createOscillator(); lfo.frequency.value = p.rate ?? 0.5;
+      const lfoGain = ctx.createGain(); lfoGain.gain.value = (p.depth ?? 0.7) * 0.004;
+      lfo.connect(lfoGain); lfoGain.connect(delay.delayTime); lfo.start();
+      input.connect(delay); delay.connect(fb); fb.connect(delay);
+      const { out, dryG, wetG } = wetDry(ctx, input, delay, p.mix ?? 0.5);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'rate') lfo.frequency.value = val;
+          if (id === 'depth') lfoGain.gain.value = val * 0.004;
+          if (id === 'feedback') fb.gain.value = val;
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        destroy: () => {
+          lfo.stop(); lfo.disconnect();
+          [input, delay, fb, lfoGain, out, dryG, wetG].forEach(n => n.disconnect());
+        },
+      };
+    }
+
+    case 'phaser': {
+      const numStages = 6;
+      const input = ctx.createGain(); input.gain.value = 1;
+      const allpasses = Array.from({ length: numStages }, () => {
+        const ap = ctx.createBiquadFilter(); ap.type = 'allpass';
+        ap.frequency.value = 1000; ap.Q.value = 0.5; return ap;
       });
-      const out = ctx.createGain();
-      out.gain.value = 0.8;
-      chs.forEach(c => c.connect(out));
+      for (let i = 0; i < numStages - 1; i++) allpasses[i].connect(allpasses[i + 1]);
+      input.connect(allpasses[0]);
+      const lfo = ctx.createOscillator(); lfo.frequency.value = p.rate ?? 0.5;
+      const lfoGain = ctx.createGain(); lfoGain.gain.value = (p.depth ?? 0.8) * 900;
+      const lfoOffset = ctx.createConstantSource(); lfoOffset.offset.value = 1000; lfoOffset.start();
+      lfo.connect(lfoGain);
+      allpasses.forEach(ap => { lfoGain.connect(ap.frequency); lfoOffset.connect(ap.frequency); });
+      lfo.start();
+      const fb = ctx.createGain(); fb.gain.value = p.feedback ?? 0.4;
+      allpasses[numStages - 1].connect(fb); fb.connect(allpasses[0]);
+      const { out, dryG, wetG } = wetDry(ctx, input, allpasses[numStages - 1], p.mix ?? 0.5);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'rate') lfo.frequency.value = val;
+          if (id === 'depth') lfoGain.gain.value = val * 900;
+          if (id === 'feedback') fb.gain.value = val;
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        destroy: () => {
+          lfo.stop(); lfo.disconnect(); lfoOffset.stop(); lfoOffset.disconnect();
+          [input, ...allpasses, lfoGain, fb, out, dryG, wetG].forEach(n => n.disconnect());
+        },
+      };
+    }
+
+    case 'vibrato': {
+      // Vibrato = delay modulated by LFO (pure pitch modulation)
+      const input = ctx.createGain(); input.gain.value = 1;
+      const delay = ctx.createDelay(0.05); delay.delayTime.value = 0.005;
+      const lfo = ctx.createOscillator(); lfo.frequency.value = p.rate ?? 5;
+      const lfoG = ctx.createGain(); lfoG.gain.value = (p.depth ?? 0.3) * 0.003;
+      lfo.connect(lfoG); lfoG.connect(delay.delayTime); lfo.start();
+      input.connect(delay);
+      return {
+        outputs: new Map([['out', delay]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'rate') lfo.frequency.value = val;
+          if (id === 'depth') lfoG.gain.value = val * 0.003;
+        },
+        destroy: () => {
+          lfo.stop(); lfo.disconnect();
+          [input, delay, lfoG].forEach(n => n.disconnect());
+        },
+      };
+    }
+
+    case 'tremolo': {
+      const input = ctx.createGain(); input.gain.value = 1;
+      const amp = ctx.createGain(); amp.gain.value = 1;
+      const waveMap: OscillatorType[] = ['sine', 'square', 'triangle'];
+      const lfo = ctx.createOscillator();
+      lfo.type = waveMap[Math.round(p.wave ?? 0)] ?? 'sine';
+      lfo.frequency.value = p.rate ?? 5;
+      const lfoG = ctx.createGain(); lfoG.gain.value = (p.depth ?? 0.6) * 0.5;
+      const dc = ctx.createConstantSource(); dc.offset.value = 1 - (p.depth ?? 0.6) * 0.5; dc.start();
+      dc.connect(amp.gain); lfo.connect(lfoG); lfoG.connect(amp.gain); lfo.start();
+      input.connect(amp);
+      return {
+        outputs: new Map([['out', amp]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'rate') lfo.frequency.value = val;
+          if (id === 'depth') { lfoG.gain.value = val * 0.5; dc.offset.value = 1 - val * 0.5; }
+        },
+        setSelector: (id, val) => {
+          if (id === 'wave') lfo.type = waveMap[Math.round(val)] ?? 'sine';
+        },
+        destroy: () => {
+          lfo.stop(); lfo.disconnect(); dc.stop(); dc.disconnect();
+          [input, amp, lfoG].forEach(n => n.disconnect());
+        },
+      };
+    }
+
+    case 'rotary': {
+      // Rotary speaker: AM tremolo (horn) + slight FM vibrato (bass rotor)
+      const input = ctx.createGain(); input.gain.value = 1;
+      const amp = ctx.createGain(); amp.gain.value = 1;
+      const baseSpeed = p.mode === 1 ? (p.speed ?? 3.5) * 2 : (p.speed ?? 3.5);
+      const amLfo = ctx.createOscillator(); amLfo.frequency.value = baseSpeed;
+      const fmLfo = ctx.createOscillator(); fmLfo.frequency.value = baseSpeed * 0.7;
+      const amG = ctx.createGain(); amG.gain.value = (p.depth ?? 0.7) * 0.5;
+      const fmG = ctx.createGain(); fmG.gain.value = (p.depth ?? 0.7) * 20;
+      const dc = ctx.createConstantSource(); dc.offset.value = 0.7; dc.start();
+      const delay = ctx.createDelay(0.05); delay.delayTime.value = 0.002;
+      amLfo.connect(amG); amG.connect(amp.gain);
+      fmLfo.connect(fmG); fmG.connect(delay.delayTime);
+      dc.connect(amp.gain); amLfo.start(); fmLfo.start();
+      input.connect(amp); amp.connect(delay);
+      const { out, dryG, wetG } = wetDry(ctx, input, delay, p.mix ?? 0.8);
+      input.connect(dryG); delay.connect(wetG);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'speed') {
+            amLfo.frequency.value = val; fmLfo.frequency.value = val * 0.7;
+          }
+          if (id === 'depth') { amG.gain.value = val * 0.5; fmG.gain.value = val * 20; }
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        setSelector: (id, val) => {
+          if (id === 'mode') {
+            const s = val === 1 ? (p.speed ?? 3.5) * 2 : (p.speed ?? 3.5);
+            amLfo.frequency.value = s; fmLfo.frequency.value = s * 0.7;
+          }
+        },
+        destroy: () => {
+          amLfo.stop(); amLfo.disconnect(); fmLfo.stop(); fmLfo.disconnect();
+          dc.stop(); dc.disconnect();
+          [input, amp, amG, fmG, delay, out, dryG, wetG].forEach(n => n.disconnect());
+        },
+      };
+    }
+
+    // ── Distortion ───────────────────────────────────────────────────
+    case 'overdrive': {
+      const shaper = ctx.createWaveShaper(); shaper.curve = softClip(p.drive ?? 20);
+      const tone = ctx.createBiquadFilter(); tone.type = 'lowpass';
+      tone.frequency.value = p.tone ?? 3000;
+      const input = ctx.createGain(); input.gain.value = 1;
+      const { out, dryG, wetG } = wetDry(ctx, input, tone, p.mix ?? 1);
+      input.connect(shaper); shaper.connect(tone); tone.connect(wetG);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'drive') shaper.curve = softClip(val);
+          if (id === 'tone') tone.frequency.value = val;
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        destroy: () => { [input, shaper, tone, out, dryG, wetG].forEach(n => n.disconnect()); },
+      };
+    }
+
+    case 'fuzz': {
+      const shaper = ctx.createWaveShaper(); shaper.curve = hardClip(p.fuzz ?? 80);
+      const tone = ctx.createBiquadFilter(); tone.type = 'lowpass';
+      tone.frequency.value = p.tone ?? 2000;
+      const input = ctx.createGain(); input.gain.value = 1;
+      const { out, dryG, wetG } = wetDry(ctx, input, tone, p.mix ?? 1);
+      input.connect(shaper); shaper.connect(tone); tone.connect(wetG);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'fuzz') shaper.curve = hardClip(val);
+          if (id === 'tone') tone.frequency.value = val;
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        destroy: () => { [input, shaper, tone, out, dryG, wetG].forEach(n => n.disconnect()); },
+      };
+    }
+
+    case 'wavefolder': {
+      const shaper = ctx.createWaveShaper(); shaper.curve = foldCurve(p.fold ?? 3);
+      const input = ctx.createGain(); input.gain.value = 1;
+      const { out, dryG, wetG } = wetDry(ctx, input, shaper, p.mix ?? 1);
+      input.connect(shaper);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'fold') shaper.curve = foldCurve(val);
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        destroy: () => { [input, shaper, out, dryG, wetG].forEach(n => n.disconnect()); },
+      };
+    }
+
+    case 'bitcrusher': {
+      const shaper = ctx.createWaveShaper(); shaper.curve = bitcrushCurve(p.bits ?? 8);
+      const input = ctx.createGain(); input.gain.value = 1;
+      const { out, dryG, wetG } = wetDry(ctx, input, shaper, p.mix ?? 1);
+      input.connect(shaper);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'bits') shaper.curve = bitcrushCurve(val);
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        destroy: () => { [input, shaper, out, dryG, wetG].forEach(n => n.disconnect()); },
+      };
+    }
+
+    case 'samplerate': {
+      const shaper = ctx.createWaveShaper(); shaper.curve = srReduceCurve(p.factor ?? 8);
+      const input = ctx.createGain(); input.gain.value = 1;
+      const { out, dryG, wetG } = wetDry(ctx, input, shaper, p.mix ?? 1);
+      input.connect(shaper);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'factor') shaper.curve = srReduceCurve(val);
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        destroy: () => { [input, shaper, out, dryG, wetG].forEach(n => n.disconnect()); },
+      };
+    }
+
+    case 'saturator': {
+      const shaper = ctx.createWaveShaper(); shaper.curve = tanhCurve(p.drive ?? 5);
+      const input = ctx.createGain(); input.gain.value = 1;
+      const { out, dryG, wetG } = wetDry(ctx, input, shaper, p.mix ?? 1);
+      input.connect(shaper);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'drive') shaper.curve = tanhCurve(val);
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        destroy: () => { [input, shaper, out, dryG, wetG].forEach(n => n.disconnect()); },
+      };
+    }
+
+    // ── Spectral ─────────────────────────────────────────────────────
+    case 'ring_mod': {
+      // True ring mod: carrier → gain.gain, signal → gain (input)
+      const carrier = ctx.createOscillator();
+      carrier.frequency.value = p.freq ?? 440;
+      const ring = ctx.createGain(); ring.gain.value = 0;
+      carrier.connect(ring.gain); carrier.start();
+      const input = ctx.createGain(); input.gain.value = 1;
+      const { out, dryG, wetG } = wetDry(ctx, input, ring, p.mix ?? 1);
+      input.connect(ring);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'freq') carrier.frequency.value = val;
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        destroy: () => {
+          carrier.stop(); carrier.disconnect();
+          [input, ring, out, dryG, wetG].forEach(n => n.disconnect());
+        },
+      };
+    }
+
+    case 'pitch_shift': {
+      // Sawtooth-LFO delay-based pitch shift approximation
+      const input = ctx.createGain(); input.gain.value = 1;
+      const delay = ctx.createDelay(0.5); delay.delayTime.value = 0.01;
+      const lfo = ctx.createOscillator(); lfo.type = 'sawtooth';
+      // Pitch shift by semitones: positive = up (faster lfo), negative = down
+      const semis = p.semitones ?? 0;
+      const rate = Math.pow(2, Math.abs(semis) / 12) - 1;
+      lfo.frequency.value = rate * 10 + 0.001;
+      const lfoG = ctx.createGain(); lfoG.gain.value = semis >= 0 ? 0.02 : -0.02;
+      const dcOffset = ctx.createConstantSource(); dcOffset.offset.value = 0.03; dcOffset.start();
+      lfo.connect(lfoG); lfoG.connect(delay.delayTime); dcOffset.connect(delay.delayTime);
+      lfo.start();
+      input.connect(delay);
+      const { out, dryG, wetG } = wetDry(ctx, input, delay, p.mix ?? 1);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'semitones') {
+            const r = Math.pow(2, Math.abs(val) / 12) - 1;
+            lfo.frequency.value = r * 10 + 0.001;
+            lfoG.gain.value = val >= 0 ? 0.02 : -0.02;
+          }
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        destroy: () => {
+          lfo.stop(); lfo.disconnect(); dcOffset.stop(); dcOffset.disconnect();
+          [input, delay, lfoG, out, dryG, wetG].forEach(n => n.disconnect());
+        },
+      };
+    }
+
+    case 'freq_shift': {
+      // Frequency shift via ring modulation (creates one sideband dominant)
+      const carrier = ctx.createOscillator();
+      carrier.frequency.value = Math.abs(p.shift ?? 50);
+      carrier.type = 'sine';
+      const ring = ctx.createGain(); ring.gain.value = 0;
+      carrier.connect(ring.gain); carrier.start();
+      const input = ctx.createGain(); input.gain.value = 1;
+      const { out, dryG, wetG } = wetDry(ctx, input, ring, p.mix ?? 1);
+      input.connect(ring);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'shift') carrier.frequency.value = Math.abs(val);
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        destroy: () => {
+          carrier.stop(); carrier.disconnect();
+          [input, ring, out, dryG, wetG].forEach(n => n.disconnect());
+        },
+      };
+    }
+
+    case 'resonator': {
+      const input = ctx.createGain(); input.gain.value = 1;
+      const out = ctx.createGain(); out.gain.value = 1;
+      const numHarmonics = Math.round(p.harmonics ?? 4);
+      const baseFreq = p.freq ?? 440;
+      const bands: BiquadFilterNode[] = [];
+      for (let h = 1; h <= numHarmonics; h++) {
+        const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
+        bp.frequency.value = baseFreq * h; bp.Q.value = p.q ?? 20;
+        const g = ctx.createGain(); g.gain.value = (p.mix ?? 0.7) / numHarmonics / h;
+        input.connect(bp); bp.connect(g); g.connect(out); bands.push(bp);
+      }
+      const dry = ctx.createGain(); dry.gain.value = 1 - (p.mix ?? 0.7);
+      input.connect(dry); dry.connect(out);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'freq') bands.forEach((b, i) => { b.frequency.value = val * (i + 1); });
+          if (id === 'q') bands.forEach(b => { b.Q.value = val; });
+          if (id === 'mix') dry.gain.value = 1 - val;
+        },
+        destroy: () => { [input, out, dry, ...bands].forEach(n => n.disconnect()); },
+      };
+    }
+
+    case 'vocoder': {
+      // Simplified band vocoder: carrier shaped by modulator band envelopes
+      const numBands = Math.round(p.bands ?? 8);
+      const carrier = ctx.createGain(); carrier.gain.value = 1;
+      const modulator = ctx.createGain(); modulator.gain.value = 1;
+      const out = ctx.createGain(); out.gain.value = 1;
+      // Frequency bands from 80Hz to 8kHz (log spaced)
+      const freqs = Array.from({ length: numBands }, (_, i) =>
+        80 * Math.pow(8000 / 80, i / (numBands - 1))
+      );
+      const bandGains: GainNode[] = [];
+      freqs.forEach((freq) => {
+        const mBP = ctx.createBiquadFilter(); mBP.type = 'bandpass';
+        mBP.frequency.value = freq; mBP.Q.value = 3;
+        const cBP = ctx.createBiquadFilter(); cBP.type = 'bandpass';
+        cBP.frequency.value = freq; cBP.Q.value = 3;
+        const env = ctx.createGain(); env.gain.value = 0;
+        const fullWave = ctx.createWaveShaper();
+        const fc = new Float32Array(512);
+        for (let i = 0; i < 512; i++) fc[i] = Math.abs((i / 256) - 1);
+        fullWave.curve = fc;
+        const smooth = ctx.createBiquadFilter(); smooth.type = 'lowpass';
+        smooth.frequency.value = 1 / (p.release ?? 0.1);
+        modulator.connect(mBP); mBP.connect(fullWave); fullWave.connect(smooth);
+        smooth.connect(env.gain);
+        carrier.connect(cBP); cBP.connect(env); env.connect(out);
+        bandGains.push(env);
+      });
       return {
         outputs: new Map([['out', out]]),
         inputs: new Map([
-          ['in1', { node: chs[0] }], ['in2', { node: chs[1] }],
-          ['in3', { node: chs[2] }], ['in4', { node: chs[3] }],
+          ['carrier', { node: carrier }],
+          ['modulator', { node: modulator }],
+        ]),
+        setParam: (id, val) => { p[id] = val; },
+        destroy: () => { [carrier, modulator, out, ...bandGains].forEach(n => n.disconnect()); },
+      };
+    }
+
+    case 'fft_proc': {
+      // Spectral tilt + resonant focus using a shelf + bandpass EQ
+      const input = ctx.createGain(); input.gain.value = 1;
+      const lowShelf = ctx.createBiquadFilter(); lowShelf.type = 'lowshelf';
+      lowShelf.frequency.value = 1000;
+      lowShelf.gain.value = -(p.tilt ?? 0);
+      const highShelf = ctx.createBiquadFilter(); highShelf.type = 'highshelf';
+      highShelf.frequency.value = 1000;
+      highShelf.gain.value = (p.tilt ?? 0);
+      const focus = ctx.createBiquadFilter(); focus.type = 'peaking';
+      focus.frequency.value = 1000 + (p.focus ?? 0.5) * 4000;
+      focus.Q.value = 3; focus.gain.value = (p.focus ?? 0.5) * 6;
+      const { out, dryG, wetG } = wetDry(ctx, input, focus, p.mix ?? 1);
+      input.connect(lowShelf); lowShelf.connect(highShelf); highShelf.connect(focus);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'tilt') { lowShelf.gain.value = -val; highShelf.gain.value = val; }
+          if (id === 'focus') {
+            focus.frequency.value = 1000 + val * 4000;
+            focus.gain.value = val * 6;
+          }
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        destroy: () => { [input, lowShelf, highShelf, focus, out, dryG, wetG].forEach(n => n.disconnect()); },
+      };
+    }
+
+    // ── Granular ─────────────────────────────────────────────────────
+    case 'granular': {
+      // Granular approximation: multiple looped noise-burst sources at varying pitches
+      const out = ctx.createGain(); out.gain.value = 0.3;
+      const input = ctx.createGain(); input.gain.value = 1;
+      // Generate a source buffer with tonal content
+      const sr = ctx.sampleRate;
+      const bufLen = Math.floor(sr * 0.5);
+      const srcBuf = ctx.createBuffer(1, bufLen, sr);
+      const sd = srcBuf.getChannelData(0);
+      for (let i = 0; i < bufLen; i++) {
+        sd[i] = (Math.random() * 2 - 1) * 0.5 + Math.sin(i * 0.05) * 0.3 + Math.sin(i * 0.1) * 0.2;
+      }
+      const grains: AudioBufferSourceNode[] = [];
+      const numGrains = Math.round(p.density ?? 8);
+      const pitch = p.pitch ?? 1;
+      for (let g = 0; g < numGrains; g++) {
+        const grain = ctx.createBufferSource();
+        grain.buffer = srcBuf; grain.loop = true;
+        grain.loopStart = (g / numGrains) * 0.5;
+        grain.loopEnd = grain.loopStart + (p.grain_size ?? 0.1);
+        grain.playbackRate.value = pitch * (1 + (Math.random() - 0.5) * (p.spread ?? 0.3) * 0.2);
+        grain.connect(out); grain.start(ctx.currentTime + g * 0.02);
+        grains.push(grain);
+      }
+      input.connect(out);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => { p[id] = val; },
+        destroy: () => {
+          grains.forEach(g => { try { g.stop(); } catch (_) {} g.disconnect(); });
+          input.disconnect(); out.disconnect();
+        },
+      };
+    }
+
+    case 'time_stretch': {
+      // Time stretch via playbackRate on a looped source buffer
+      const input = ctx.createGain(); input.gain.value = 1;
+      const delay = ctx.createDelay(2); delay.delayTime.value = 0.1;
+      const fb = ctx.createGain(); fb.gain.value = 0.7;
+      const { out, dryG, wetG } = wetDry(ctx, input, delay, p.mix ?? 1);
+      input.connect(delay); delay.connect(fb); fb.connect(delay);
+      // Speed < 1 = slower (time stretched). We adjust feedback depth.
+      fb.gain.value = Math.min(0.95, 1 - (p.speed ?? 1) * 0.05);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'speed') {
+            delay.delayTime.value = 0.1 / val;
+            fb.gain.value = Math.min(0.95, 1 - val * 0.05);
+          }
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        destroy: () => { [input, delay, fb, out, dryG, wetG].forEach(n => n.disconnect()); },
+      };
+    }
+
+    case 'freeze_proc': {
+      // Freeze: in FREEZE mode, recirculate audio through a long delay with high feedback
+      const input = ctx.createGain(); input.gain.value = 1;
+      const delay = ctx.createDelay(2); delay.delayTime.value = p.size ?? 0.5;
+      const fb = ctx.createGain(); fb.gain.value = 0; // 0 = live, 0.98 = frozen
+      const { out, dryG, wetG } = wetDry(ctx, input, delay, p.mix ?? 1);
+      input.connect(delay); delay.connect(fb); fb.connect(delay);
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([['audio_in', { node: input }]]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'size') delay.delayTime.value = val;
+          if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
+        },
+        setSelector: (id, val) => {
+          if (id === 'freeze') {
+            // FREEZE on: high feedback = frozen loop; off = normal pass-through
+            fb.gain.value = val > 0.5 ? 0.98 : 0;
+            dryG.gain.value = val > 0.5 ? 0 : 1 - (p.mix ?? 1);
+          }
+        },
+        destroy: () => { [input, delay, fb, out, dryG, wetG].forEach(n => n.disconnect()); },
+      };
+    }
+
+    // ── Utility ──────────────────────────────────────────────────────
+    case 'mixer': {
+      const gains = [ctx.createGain(), ctx.createGain(), ctx.createGain(), ctx.createGain()];
+      const out = ctx.createGain(); out.gain.value = 1;
+      const keys = ['ch1', 'ch2', 'ch3', 'ch4'];
+      gains.forEach((g, i) => { g.gain.value = p[keys[i]] ?? 0.8; g.connect(out); });
+      return {
+        outputs: new Map([['out', out]]),
+        inputs: new Map([
+          ['in1', { node: gains[0] }], ['in2', { node: gains[1] }],
+          ['in3', { node: gains[2] }], ['in4', { node: gains[3] }],
         ]),
         setParam: (id, val) => {
-          const i = ['ch1', 'ch2', 'ch3', 'ch4'].indexOf(id);
-          if (i >= 0) chs[i].gain.value = val;
+          p[id] = val;
+          const idx = keys.indexOf(id);
+          if (idx >= 0) gains[idx].gain.value = val;
         },
-        destroy: () => { chs.forEach(c => c.disconnect()); out.disconnect(); },
+        destroy: () => { gains.forEach(g => g.disconnect()); out.disconnect(); },
       };
     }
 
     case 'keyboard': {
-      const freqNode = ctx.createConstantSource();
-      freqNode.offset.value = 0;
-      freqNode.start();
+      const freqSource = ctx.createConstantSource();
+      freqSource.offset.value = 440;
+      freqSource.start();
       return {
-        outputs: new Map([['voct_out', freqNode]]),
+        outputs: new Map([['voct_out', freqSource]]),
         inputs: new Map(),
+        noteOn: (_time, freq) => { freqSource.offset.value = freq; },
         setParam: () => {},
-        destroy: () => { freqNode.stop(); freqNode.disconnect(); },
+        destroy: () => { freqSource.stop(); freqSource.disconnect(); },
       };
     }
 
@@ -464,56 +1942,45 @@ export function createAudioModule(
           ['in_l', { node: master }],
           ['in_r', { node: master }],
         ]),
-        setParam: (id, val) => {
-          if (id === 'volume') master.gain.value = val;
-        },
+        setParam: (id, val) => { p[id] = val; if (id === 'volume') master.gain.value = val; },
         destroy: () => { master.disconnect(); },
       };
     }
 
     default:
-      return { outputs: new Map(), inputs: new Map(), setParam: () => {}, destroy: () => {} };
+      console.warn(`Unknown module type: ${typeId}`);
+      return {
+        outputs: new Map(), inputs: new Map(),
+        setParam: () => {}, destroy: () => {},
+      };
   }
 }
 
+// ─── Port wiring ─────────────────────────────────────────────────────────────
 export function connectAudioPorts(
-  fromAudio: AudioModuleNodes,
+  fromNodes: AudioModuleNodes,
   fromPortId: string,
-  toAudio: AudioModuleNodes,
-  toPortId: string
-): boolean {
-  const fromNode = fromAudio.outputs.get(fromPortId);
-  const toEntry = toAudio.inputs.get(toPortId);
-  if (!fromNode || !toEntry) return false;
-  try {
-    if (toEntry.param) {
-      fromNode.connect(toEntry.param);
-    } else {
-      fromNode.connect(toEntry.node);
-    }
-    return true;
-  } catch (e) {
-    console.warn('Connect failed:', e);
-    return false;
-  }
+  toNodes: AudioModuleNodes,
+  toPortId: string,
+) {
+  const src = fromNodes.outputs.get(fromPortId);
+  const dst = toNodes.inputs.get(toPortId);
+  if (!src || !dst) return;
+  if (dst.param) src.connect(dst.param);
+  else src.connect(dst.node as AudioNode);
 }
 
 export function disconnectAudioPorts(
-  fromAudio: AudioModuleNodes,
+  fromNodes: AudioModuleNodes,
   fromPortId: string,
-  toAudio: AudioModuleNodes,
-  toPortId: string
-): void {
-  const fromNode = fromAudio.outputs.get(fromPortId);
-  const toEntry = toAudio.inputs.get(toPortId);
-  if (!fromNode || !toEntry) return;
+  toNodes: AudioModuleNodes,
+  toPortId: string,
+) {
+  const src = fromNodes.outputs.get(fromPortId);
+  const dst = toNodes.inputs.get(toPortId);
+  if (!src || !dst) return;
   try {
-    if (toEntry.param) {
-      fromNode.disconnect(toEntry.param);
-    } else {
-      fromNode.disconnect(toEntry.node);
-    }
-  } catch (e) {
-    console.warn('Disconnect failed:', e);
-  }
+    if (dst.param) src.disconnect(dst.param);
+    else src.disconnect(dst.node as AudioNode);
+  } catch (_) {}
 }

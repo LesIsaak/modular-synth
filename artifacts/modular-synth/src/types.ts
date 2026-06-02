@@ -1,5 +1,9 @@
 export type PortType = 'audio_out' | 'audio_in' | 'cv_out' | 'cv_in' | 'gate_out' | 'gate_in';
-export type ModuleCategory = 'oscillator' | 'filter' | 'amplifier' | 'envelope' | 'lfo' | 'effect' | 'utility';
+export type ModuleCategory =
+  | 'oscillator' | 'filter' | 'amplifier' | 'dynamics'
+  | 'envelope' | 'lfo' | 'sequencer' | 'clock'
+  | 'delay' | 'reverb' | 'modulation' | 'distortion'
+  | 'spectral' | 'granular' | 'utility';
 
 export interface PortDef {
   id: string;

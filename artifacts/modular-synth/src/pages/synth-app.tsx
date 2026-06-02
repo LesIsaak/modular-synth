@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { ModuleInstance, Cable, PendingCable, PortType } from '../types';
 import {
-  MODULE_TYPE_MAP, CATEGORY_ORDER, CATEGORY_LABELS,
+  MODULE_TYPE_MAP, CATEGORY_ORDER, CATEGORY_LABELS, CATEGORY_COLORS,
   CABLE_COLORS, getDefaultParams, MODULE_TYPES,
 } from '../moduleDefinitions';
 import { AudioModuleNodes, createAudioModule, connectAudioPorts, disconnectAudioPorts } from '../audioEngine';
@@ -37,10 +37,7 @@ function ModuleBrowser({ onAdd }: { onAdd: (typeId: string) => void }) {
     types: MODULE_TYPES.filter(m => m.category === cat),
   })).filter(g => g.types.length > 0);
 
-  const catColors: Record<string, string> = {
-    oscillator: '#f97316', filter: '#14b8a6', amplifier: '#3b82f6',
-    envelope: '#a855f7', lfo: '#ec4899', effect: '#22c55e', utility: '#94a3b8',
-  };
+  const catColors = CATEGORY_COLORS;
 
   return (
     <div className="w-52 flex-shrink-0 flex flex-col border-r border-[#2a2a2a] bg-[#0f0f0f] z-10 overflow-y-auto" data-testid="module-browser">
@@ -188,6 +185,22 @@ export default function SynthApp() {
   const audioModulesRef = useRef<Map<string, AudioModuleNodes>>(new Map());
   // gate_out moduleId → Set of ADSR moduleIds
   const gateConnectionsRef = useRef<Map<string, Set<string>>>(new Map());
+
+  // Register setGateTrigger callback on sequencers/clocks so they can fire noteOn/Off
+  const registerGateTrigger = useCallback((fromModuleId: string) => {
+    const fromAudio = audioModulesRef.current.get(fromModuleId);
+    if (!fromAudio?.setGateTrigger) return;
+    fromAudio.setGateTrigger((on: boolean, freq: number) => {
+      const ctx = audioCtxRef.current;
+      if (!ctx) return;
+      const connected = gateConnectionsRef.current.get(fromModuleId);
+      for (const toId of connected ?? []) {
+        const toAudio = audioModulesRef.current.get(toId);
+        if (on) toAudio?.noteOn?.(ctx.currentTime, freq);
+        else toAudio?.noteOff?.(ctx.currentTime);
+      }
+    });
+  }, []);
   // port DOM refs
   const portRefsRef = useRef<Map<string, HTMLDivElement>>(new Map());
   // drag state
@@ -236,6 +249,7 @@ export default function SynthApp() {
         const key = cable.fromModuleId;
         if (!gateConnectionsRef.current.has(key)) gateConnectionsRef.current.set(key, new Set());
         gateConnectionsRef.current.get(key)!.add(cable.toModuleId);
+        registerGateTrigger(cable.fromModuleId);
       } else if (fromAudio && toAudio) {
         connectAudioPorts(fromAudio, cable.fromPortId, toAudio, cable.toPortId);
       }
@@ -357,6 +371,7 @@ export default function SynthApp() {
       const key = fromModuleId;
       if (!gateConnectionsRef.current.has(key)) gateConnectionsRef.current.set(key, new Set());
       gateConnectionsRef.current.get(key)!.add(moduleId);
+      registerGateTrigger(fromModuleId);
     } else {
       const fromAudio = audioModulesRef.current.get(fromModuleId);
       const toAudio = audioModulesRef.current.get(moduleId);
