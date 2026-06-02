@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ModuleInstance, PortType, PendingCable } from '../types';
 import { MODULE_TYPE_MAP } from '../moduleDefinitions';
 import Knob from './Knob';
@@ -15,6 +15,66 @@ interface ModulePanelProps {
   onDelete: (moduleId: string) => void;
   onRegisterPortRef: (key: string, el: HTMLDivElement | null) => void;
   onKeyPress?: (moduleId: string, freq: number, on: boolean) => void;
+  analyser?: AnalyserNode;
+}
+
+// ─── Live VU meter ────────────────────────────────────────────────────────────
+function OutputMeter({ analyser }: { analyser?: AnalyserNode }) {
+  const leftRef  = useRef<HTMLDivElement>(null);
+  const rightRef = useRef<HTMLDivElement>(null);
+  const rafRef   = useRef<number>(0);
+
+  useEffect(() => {
+    if (!analyser) return;
+    const buf = new Float32Array(analyser.fftSize);
+    let envL = 0;
+    let envR = 0;
+
+    const tick = () => {
+      rafRef.current = requestAnimationFrame(tick);
+      analyser.getFloatTimeDomainData(buf);
+
+      // Compute RMS
+      let sum = 0;
+      for (const s of buf) sum += s * s;
+      const rms = Math.sqrt(sum / buf.length);
+
+      // Smooth: fast attack, slow decay
+      const target = Math.min(rms * 3.5, 1);
+      envL = target > envL ? target : envL * 0.88 + target * 0.12;
+      envR = envL; // mono signal, mirror on both bars
+
+      const pctL = Math.min(envL * 100, 100).toFixed(1) + '%';
+      const pctR = pctL;
+      if (leftRef.current)  leftRef.current.style.height  = pctL;
+      if (rightRef.current) rightRef.current.style.height = pctR;
+    };
+
+    tick();
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [analyser]);
+
+  const track: React.CSSProperties = {
+    width: 14, height: 80, background: '#0a0a0a',
+    border: '1px solid #1e1e1e', borderRadius: 3,
+    display: 'flex', flexDirection: 'column-reverse',
+    overflow: 'hidden',
+  };
+  const fill: React.CSSProperties = {
+    width: '100%', height: '0%',
+    background: 'linear-gradient(to top, #16a34a 0%, #22c55e 50%, #fbbf24 78%, #ef4444 100%)',
+    transition: 'none',
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+      <div style={{ display: 'flex', gap: 5 }}>
+        <div style={track}><div ref={leftRef}  style={fill} /></div>
+        <div style={track}><div ref={rightRef} style={fill} /></div>
+      </div>
+      <span style={{ fontSize: 6, color: '#2a2a2a', letterSpacing: '0.14em', textTransform: 'uppercase' }}>L &nbsp; R</span>
+    </div>
+  );
 }
 
 const PANEL_H = 400;
@@ -131,7 +191,7 @@ function PianoKeyboard({ octave, onKeyPress }: {
 
 export default function ModulePanel({
   module, connectedPorts, pendingCable, onPortClick, onParamChange,
-  onSelectorChange, onDragStart, onDelete, onRegisterPortRef, onKeyPress,
+  onSelectorChange, onDragStart, onDelete, onRegisterPortRef, onKeyPress, analyser,
 }: ModulePanelProps) {
   const typeDef = MODULE_TYPE_MAP.get(module.typeId);
   const [showDelete, setShowDelete] = useState(false);
@@ -300,15 +360,7 @@ export default function ModulePanel({
             </div>
           )}
 
-          {isOutput && (
-            <div style={{ display: 'flex', gap: 4, justifyContent: 'center', height: 60 }}>
-              {[0, 1].map(ch => (
-                <div key={ch} style={{ width: 12, borderRadius: 2, overflow: 'hidden', display: 'flex', flexDirection: 'column-reverse', background: '#111', border: '1px solid #272727' }}>
-                  <div style={{ width: '100%', borderRadius: 2, height: '60%', background: 'linear-gradient(to top, #22c55e, #fbbf24, #ef4444)' }} />
-                </div>
-              ))}
-            </div>
-          )}
+          {isOutput && <OutputMeter analyser={analyser} />}
         </div>
 
         {/* Output ports */}

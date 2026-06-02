@@ -9,6 +9,8 @@ export interface AudioModuleNodes {
   /** For sequencers/clocks: called by the rack when gate cables connect */
   setGateTrigger?: (fn: ((on: boolean, freq: number) => void) | null) => void;
   destroy: () => void;
+  /** Only present on the 'output' module — used for the VU meter */
+  analyser?: AnalyserNode;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -2135,7 +2137,12 @@ export function createAudioModule(
     case 'output': {
       const master = ctx.createGain();
       master.gain.value = p.volume ?? 0.7;
-      master.connect(ctx.destination);
+      // Route through analyser so the VU meter can read levels
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.0;
+      master.connect(analyser);
+      analyser.connect(ctx.destination);
       const volCv = ctx.createConstantSource(); volCv.offset.value = 0; volCv.start();
       volCv.connect(master.gain);
       return {
@@ -2146,7 +2153,8 @@ export function createAudioModule(
           ['vol_cv', { node: volCv, param: volCv.offset }],
         ]),
         setParam: (id, val) => { p[id] = val; if (id === 'volume') master.gain.value = val; },
-        destroy: () => { volCv.stop(); volCv.disconnect(); master.disconnect(); },
+        destroy: () => { volCv.stop(); volCv.disconnect(); master.disconnect(); analyser.disconnect(); },
+        analyser,
       };
     }
 

@@ -484,6 +484,68 @@ function FixedKeyboardPanel({
   );
 }
 
+// ─── MIDI input hook ─────────────────────────────────────────────────────────
+function useMIDI(
+  onNote: (freq: number, on: boolean) => void,
+  onBend: (freq: number) => void,
+) {
+  const onNoteRef  = useRef(onNote);
+  const onBendRef  = useRef(onBend);
+  onNoteRef.current = onNote;
+  onBendRef.current = onBend;
+
+  useEffect(() => {
+    if (!navigator.requestMIDIAccess) return;
+
+    const baseFreqRef = { current: 0 };
+
+    const handleMsg = (e: MIDIMessageEvent) => {
+      const d = e.data;
+      if (!d || d.length < 3) return;
+      const type = d[0] & 0xf0;
+      const note = d[1];
+      const vel  = d[2];
+
+      if (type === 0x90 && vel > 0) {
+        // Note On
+        const freq = 440 * Math.pow(2, (note - 69) / 12);
+        baseFreqRef.current = freq;
+        onNoteRef.current(freq, true);
+      } else if (type === 0x80 || (type === 0x90 && vel === 0)) {
+        // Note Off
+        baseFreqRef.current = 0;
+        onNoteRef.current(0, false);
+      } else if (type === 0xe0) {
+        // Pitch bend: LSB = d[1], MSB = d[2], center 8192
+        const bend14 = (d[2] << 7) | d[1];
+        const norm   = (bend14 - 8192) / 8192;
+        if (baseFreqRef.current > 0) {
+          const BEND_ST = 2;
+          onBendRef.current(baseFreqRef.current * Math.pow(2, norm * BEND_ST / 12));
+        }
+      }
+      // CC 1 = mod wheel — future: expose via kb1 mod_out
+    };
+
+    let access: MIDIAccess | null = null;
+
+    navigator.requestMIDIAccess({ sysex: false }).then(a => {
+      access = a;
+      for (const input of a.inputs.values()) input.onmidimessage = handleMsg;
+      a.onstatechange = ev => {
+        const port = (ev as MIDIConnectionEvent).port;
+        if (port && port.type === 'input' && port.state === 'connected') {
+          (port as MIDIInput).onmidimessage = handleMsg;
+        }
+      };
+    }).catch(() => { /* MIDI not available or denied */ });
+
+    return () => {
+      access?.inputs.forEach(i => { i.onmidimessage = null; });
+    };
+  }, []);
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function SynthApp() {
   const [started,      setStarted]      = useState(false);
@@ -578,6 +640,9 @@ export default function SynthApp() {
       freqNode.offset.value = bentFreq;
     }
   }, []);
+
+  // MIDI input — routes USB keyboard events through the same handlers as the on-screen keys
+  useMIDI(handleKeyNote, handleKeyBend);
 
   // ─── Add module ─────────────────────────────────────────────────────────────
   const handleAddModule = useCallback((typeId: string) => {
@@ -832,6 +897,7 @@ export default function SynthApp() {
                 onDelete={handleDeleteModule}
                 onRegisterPortRef={registerPortRef}
                 onKeyPress={handleModuleKeyPress}
+                analyser={mod.typeId === 'output' ? audioModulesRef.current.get(mod.id)?.analyser : undefined}
               />
             </div>
           ))}
