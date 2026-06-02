@@ -1027,8 +1027,8 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
     ],
   },
   {
-    id: 'keyboard', name: 'Keyboard', category: 'utility', accentColor: UTL, width: 360,
-    knobs: [{ id: 'octave', name: 'OCTAVE', min: 1, max: 7, default: 4, step: 1 }],
+    id: 'keyboard', name: 'KB OUT', category: 'utility', accentColor: UTL, width: 140,
+    knobs: [],
     ports: [
       { id: 'gate_out', name: 'GATE',  type: 'gate_out' },
       { id: 'voct_out', name: 'V/OCT', type: 'cv_out'   },

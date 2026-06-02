@@ -36,20 +36,23 @@ function findNextSlot(modules: ModuleInstance[]): { x: number; y: number } {
   return { x: 0, y: 0 };
 }
 
-// ─── Default patch (keyboard is NOT a module — it's the fixed panel) ──────────
+// ─── Default patch ─────────────────────────────────────────────────────────────
 const DEFAULT_MODULES: ModuleInstance[] = [
-  { id: 'vco1',  typeId: 'analog_vco', x: 0 * SLOT_W, y: 0, params: { freq: 0, fine: 0, wave: 0 } },
-  { id: 'vcf1',  typeId: 'vcf',        x: 1 * SLOT_W, y: 0, params: { cutoff: 900, res: 2, type: 0 } },
-  { id: 'adsr1', typeId: 'adsr',       x: 2 * SLOT_W, y: 0, params: { attack: 0.01, decay: 0.12, sustain: 0.65, release: 0.4 } },
-  { id: 'vca1',  typeId: 'vca',        x: 3 * SLOT_W, y: 0, params: { gain: 0 } },
-  { id: 'out1',  typeId: 'output',     x: 4 * SLOT_W, y: 0, params: { volume: 0.7 } },
+  { id: 'kb1',   typeId: 'keyboard',   x: 0 * SLOT_W, y: 0, params: {} },
+  { id: 'vco1',  typeId: 'analog_vco', x: 1 * SLOT_W, y: 0, params: { freq: 0, fine: 0, wave: 0 } },
+  { id: 'vcf1',  typeId: 'vcf',        x: 2 * SLOT_W, y: 0, params: { cutoff: 900, res: 2, type: 0 } },
+  { id: 'adsr1', typeId: 'adsr',       x: 3 * SLOT_W, y: 0, params: { attack: 0.01, decay: 0.12, sustain: 0.65, release: 0.4 } },
+  { id: 'vca1',  typeId: 'vca',        x: 4 * SLOT_W, y: 0, params: { gain: 0 } },
+  { id: 'out1',  typeId: 'output',     x: 5 * SLOT_W, y: 0, params: { volume: 0.7 } },
 ];
 
 const DEFAULT_CABLES: Cable[] = [
-  { id: 'c2', fromModuleId: 'vco1',  fromPortId: 'out',     toModuleId: 'vcf1',  toPortId: 'audio_in', color: '#f97316' },
-  { id: 'c3', fromModuleId: 'vcf1',  fromPortId: 'out',     toModuleId: 'vca1',  toPortId: 'audio_in', color: '#14b8a6' },
-  { id: 'c4', fromModuleId: 'adsr1', fromPortId: 'env_out', toModuleId: 'vca1',  toPortId: 'cv_in',    color: '#a855f7' },
-  { id: 'c5', fromModuleId: 'vca1',  fromPortId: 'out',     toModuleId: 'out1',  toPortId: 'in_l',     color: '#22c55e' },
+  { id: 'c0', fromModuleId: 'kb1',   fromPortId: 'voct_out', toModuleId: 'vco1',  toPortId: 'voct',     color: '#60a5fa' },
+  { id: 'c1', fromModuleId: 'kb1',   fromPortId: 'gate_out', toModuleId: 'adsr1', toPortId: 'gate_in',  color: '#eab308' },
+  { id: 'c2', fromModuleId: 'vco1',  fromPortId: 'out',      toModuleId: 'vcf1',  toPortId: 'audio_in', color: '#f97316' },
+  { id: 'c3', fromModuleId: 'vcf1',  fromPortId: 'out',      toModuleId: 'vca1',  toPortId: 'audio_in', color: '#14b8a6' },
+  { id: 'c4', fromModuleId: 'adsr1', fromPortId: 'env_out',  toModuleId: 'vca1',  toPortId: 'cv_in',    color: '#a855f7' },
+  { id: 'c5', fromModuleId: 'vca1',  fromPortId: 'out',      toModuleId: 'out1',  toPortId: 'in_l',     color: '#22c55e' },
 ];
 
 // ─── Module browser ───────────────────────────────────────────────────────────
@@ -618,27 +621,23 @@ export default function SynthApp() {
     const ctx = new AudioContext();
     audioCtxRef.current = ctx;
 
-    // Always-on keyboard module
-    const kb1 = createAudioModule(ctx, 'keyboard', { octave: 4 });
-    audioModulesRef.current.set('kb1', kb1);
-
-    // Rack modules
+    // All rack modules (kb1 is now part of DEFAULT_MODULES)
     for (const mod of DEFAULT_MODULES) {
       audioModulesRef.current.set(mod.id, createAudioModule(ctx, mod.typeId, { ...mod.params }));
     }
 
-    // Hard-wire keyboard → VCO voct
-    const vco1 = audioModulesRef.current.get('vco1');
-    if (vco1) connectAudioPorts(kb1, 'voct_out', vco1, 'voct');
-
-    // Hard-wire keyboard gate → ADSR
-    gateConnRef.current.set('kb1', new Set(['adsr1']));
-
-    // Connect default cables
+    // Connect default cables — handles both audio and gate cables
     for (const cable of DEFAULT_CABLES) {
-      const fromAudio = audioModulesRef.current.get(cable.fromModuleId);
-      const toAudio   = audioModulesRef.current.get(cable.toModuleId);
-      if (fromAudio && toAudio) connectAudioPorts(fromAudio, cable.fromPortId, toAudio, cable.toPortId);
+      const fromTypeDef = MODULE_TYPE_MAP.get(DEFAULT_MODULES.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
+      const fromPort    = fromTypeDef?.ports.find(p => p.id === cable.fromPortId);
+      if (fromPort?.type === 'gate_out') {
+        if (!gateConnRef.current.has(cable.fromModuleId)) gateConnRef.current.set(cable.fromModuleId, new Set());
+        gateConnRef.current.get(cable.fromModuleId)!.add(cable.toModuleId);
+      } else {
+        const fromAudio = audioModulesRef.current.get(cable.fromModuleId);
+        const toAudio   = audioModulesRef.current.get(cable.toModuleId);
+        if (fromAudio && toAudio) connectAudioPorts(fromAudio, cable.fromPortId, toAudio, cable.toPortId);
+      }
     }
 
     setStarted(true);
