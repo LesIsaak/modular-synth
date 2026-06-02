@@ -516,7 +516,7 @@ function FixedKeyboardPanel({
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {/* Cable opacity slider */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ fontSize: 7, color: '#333', letterSpacing: '0.12em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: 7, color: '#6b7280', letterSpacing: '0.12em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
               CABLE
             </span>
             <input
@@ -559,7 +559,7 @@ function FixedKeyboardPanel({
           >HOLD</button>
           {/* Octave controls */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 7, color: '#333', letterSpacing: '0.1em', textTransform: 'uppercase' }}>OCT</span>
+            <span style={{ fontSize: 7, color: '#6b7280', letterSpacing: '0.1em', textTransform: 'uppercase' }}>OCT</span>
             <button
               style={{
                 width: 20, height: 16, fontSize: 11, lineHeight: 1, borderRadius: 2,
