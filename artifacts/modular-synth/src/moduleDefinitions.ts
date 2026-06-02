@@ -1013,7 +1013,6 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
     ports: [
       { id: 'gate_out', name: 'GATE',  type: 'gate_out' },
       { id: 'voct_out', name: 'V/OCT', type: 'cv_out'   },
-      { id: 'mod_out',  name: 'MOD',   type: 'cv_out'   },
     ],
   },
   {
