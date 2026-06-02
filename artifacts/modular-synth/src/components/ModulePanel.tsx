@@ -200,9 +200,8 @@ export default function ModulePanel({
   const [showDelete, setShowDelete] = useState(false);
   if (!typeDef) return null;
 
-  const isKeyboard = module.typeId === 'keyboard';
   const isOutput = module.typeId === 'output';
-  const panelH = isKeyboard ? KEYBOARD_H : PANEL_H;
+  const panelH = PANEL_H;
   const bodyH = panelH - RAIL_H * 2;
 
   const canConnectPort = (portId: string, portType: PortType): boolean => {
@@ -241,40 +240,12 @@ export default function ModulePanel({
       onMouseLeave={() => setShowDelete(false)}
       data-testid={`module-${module.id}`}
     >
-      {/* Delete button — absolutely positioned so it never shifts the drag rail layout */}
-      {showDelete && (
-        <button
-          style={{
-            position: 'absolute', top: -8, right: -8, zIndex: 20,
-            width: 16, height: 16, borderRadius: '50%',
-            fontSize: 9, lineHeight: 1,
-            cursor: 'pointer', border: '1px solid #3a3a3a',
-            background: '#1a1a1a', color: '#555',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 1px 4px rgba(0,0,0,0.8)',
-          }}
-          onMouseEnter={e => {
-            (e.currentTarget as HTMLElement).style.background = '#3a0000';
-            (e.currentTarget as HTMLElement).style.color = '#ef4444';
-            (e.currentTarget as HTMLElement).style.borderColor = '#ef4444';
-          }}
-          onMouseLeave={e => {
-            (e.currentTarget as HTMLElement).style.background = '#1a1a1a';
-            (e.currentTarget as HTMLElement).style.color = '#555';
-            (e.currentTarget as HTMLElement).style.borderColor = '#3a3a3a';
-          }}
-          onMouseDown={e => e.stopPropagation()}
-          onClick={(e) => { e.stopPropagation(); onDelete(module.id); }}
-          data-testid={`delete-module-${module.id}`}
-        >✕</button>
-      )}
-
       {/* Top rail – drag handle */}
       <div
         style={{
           height: RAIL_H, flexShrink: 0, display: 'flex', alignItems: 'center',
           justifyContent: 'space-between', padding: '0 5px',
-          cursor: 'grab',
+          cursor: 'grab', position: 'relative',
           background: 'linear-gradient(180deg, #2c2c2c 0%, #1e1e1e 100%)',
           borderTop: `2px solid ${accent}`,
           borderBottom: '1px solid #0e0e0e',
@@ -292,7 +263,33 @@ export default function ModulePanel({
         }}>
           {typeDef.name}
         </span>
-        <Screw />
+        {/* Fixed-width slot — always same size, ✕ appears inside on hover, no layout shift */}
+        <div style={{ width: 14, height: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          {showDelete && (
+            <button
+              style={{
+                width: 14, height: 14, fontSize: 8, lineHeight: 1,
+                cursor: 'pointer', border: '1px solid #3a3a3a', borderRadius: 2,
+                background: 'none', color: '#555',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: 0,
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLElement).style.color = '#ef4444';
+                (e.currentTarget as HTMLElement).style.borderColor = '#ef4444';
+                (e.currentTarget as HTMLElement).style.background = '#2a0000';
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLElement).style.color = '#555';
+                (e.currentTarget as HTMLElement).style.borderColor = '#3a3a3a';
+                (e.currentTarget as HTMLElement).style.background = 'none';
+              }}
+              onMouseDown={e => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); onDelete(module.id); }}
+              data-testid={`delete-module-${module.id}`}
+            >✕</button>
+          )}
+        </div>
       </div>
 
       {/* Panel body */}
@@ -354,30 +351,6 @@ export default function ModulePanel({
               </div>
             );
           })}
-
-          {isKeyboard && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <PianoKeyboard
-                octave={Math.round(module.params.octave ?? 4)}
-                onKeyPress={(freq, on) => onKeyPress?.(module.id, freq, on)}
-              />
-              <div style={{ display: 'flex', justifyContent: 'center', gap: 3, flexWrap: 'wrap' }}>
-                {[1, 2, 3, 4, 5, 6, 7].map(oct => (
-                  <button
-                    key={oct}
-                    style={{
-                      width: 20, height: 20, fontSize: 8, borderRadius: 2, cursor: 'pointer',
-                      background: Math.round(module.params.octave ?? 4) === oct ? '#94a3b8' : '#1c1c1c',
-                      color: Math.round(module.params.octave ?? 4) === oct ? '#000' : '#4a4a4a',
-                      border: `1px solid ${Math.round(module.params.octave ?? 4) === oct ? '#94a3b8' : '#282828'}`,
-                    }}
-                    onClick={() => onParamChange(module.id, 'octave', oct)}
-                    data-testid={`octave-btn-${oct}`}
-                  >{oct}</button>
-                ))}
-              </div>
-            </div>
-          )}
 
           {isOutput && <OutputMeter analyser={analyser} />}
         </div>
