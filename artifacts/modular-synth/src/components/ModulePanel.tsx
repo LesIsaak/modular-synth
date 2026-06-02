@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useState } from 'react';
 import { ModuleInstance, PortType, PendingCable } from '../types';
 import { MODULE_TYPE_MAP } from '../moduleDefinitions';
 import Knob from './Knob';
@@ -17,12 +17,66 @@ interface ModulePanelProps {
   onKeyPress?: (moduleId: string, freq: number, on: boolean) => void;
 }
 
-const NOTE_WHITES = [0, 2, 4, 5, 7, 9, 11]; // C D E F G A B
-const NOTE_BLACKS = [1, 3, -1, 6, 8, 10, -1]; // C# D# - F# G# A# -
+const PANEL_H = 400;
+const KEYBOARD_H = 540;
+const RAIL_H = 28;
+
+const NOTE_WHITES = [0, 2, 4, 5, 7, 9, 11];
+const NOTE_BLACKS = [1, 3, -1, 6, 8, 10, -1];
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 function midiToHz(midi: number): number {
   return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
+function Screw() {
+  return (
+    <div style={{
+      width: 12, height: 12, borderRadius: '50%', flexShrink: 0,
+      background: 'radial-gradient(circle at 35% 30%, #c8c8c8, #5a5a5a 50%, #282828)',
+      border: '1px solid #111',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.9), inset 0 0.5px 0 rgba(255,255,255,0.12)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <svg width="7" height="7" viewBox="0 0 7 7" style={{ opacity: 0.55 }}>
+        <line x1="3.5" y1="0.8" x2="3.5" y2="6.2" stroke="#111" strokeWidth="1.2" strokeLinecap="round"/>
+        <line x1="0.8" y1="3.5" x2="6.2" y2="3.5" stroke="#111" strokeWidth="1.2" strokeLinecap="round"/>
+      </svg>
+    </div>
+  );
+}
+
+function PortWithLabel({
+  moduleId, port, isConnected, isPendingSource, canConnect, onPortClick, onRegisterRef,
+}: {
+  moduleId: string;
+  port: { id: string; name: string; type: PortType };
+  isConnected: boolean;
+  isPendingSource: boolean;
+  canConnect: boolean;
+  onPortClick: (moduleId: string, portId: string, type: PortType) => void;
+  onRegisterRef: (key: string, el: HTMLDivElement | null) => void;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, width: 28, flexShrink: 0 }}>
+      <PortJack
+        moduleId={moduleId}
+        portDef={port}
+        isConnected={isConnected}
+        isPendingSource={isPendingSource}
+        canConnect={canConnect}
+        onPortClick={onPortClick}
+        onRegisterRef={onRegisterRef}
+      />
+      <span style={{
+        fontSize: 6, color: '#5a5a5a', textTransform: 'uppercase',
+        letterSpacing: '0.04em', lineHeight: 1, textAlign: 'center',
+        maxWidth: 28, overflow: 'hidden', textOverflow: 'clip', whiteSpace: 'nowrap',
+      }}>
+        {port.name}
+      </span>
+    </div>
+  );
 }
 
 function PianoKeyboard({ octave, onKeyPress }: {
@@ -30,35 +84,22 @@ function PianoKeyboard({ octave, onKeyPress }: {
   onKeyPress: (freq: number, on: boolean) => void;
 }) {
   const [activeNote, setActiveNote] = useState<number | null>(null);
-  const octaveBase = octave * 12 + 12; // MIDI note for C of this octave (C4 = 60)
-
+  const octaveBase = octave * 12 + 12;
   const press = (semitone: number) => {
     const midi = octaveBase + semitone;
     setActiveNote(midi);
     onKeyPress(midiToHz(midi), true);
   };
-
-  const release = () => {
-    setActiveNote(null);
-    onKeyPress(0, false);
-  };
-
+  const release = () => { setActiveNote(null); onKeyPress(0, false); };
   return (
-    <div className="relative w-full" style={{ height: 64 }}>
-      {/* White keys */}
+    <div className="relative w-full" style={{ height: 72 }}>
       <div className="flex h-full gap-px">
         {NOTE_WHITES.map((semitone, i) => {
           const midi = octaveBase + semitone;
           const active = activeNote === midi;
           return (
-            <div
-              key={i}
-              className="flex-1 rounded-b cursor-pointer border border-gray-600 select-none"
-              style={{
-                background: active ? '#d97706' : '#e5e7eb',
-                boxShadow: active ? 'inset 0 2px 4px rgba(0,0,0,0.3)' : 'none',
-                transition: 'background 0.05s',
-              }}
+            <div key={i} className="flex-1 rounded-b cursor-pointer border border-gray-600 select-none"
+              style={{ background: active ? '#d97706' : '#e5e7eb', boxShadow: active ? 'inset 0 2px 4px rgba(0,0,0,0.3)' : 'none', transition: 'background 0.05s' }}
               onMouseDown={(e) => { e.preventDefault(); press(semitone); }}
               onMouseUp={release}
               onMouseLeave={() => { if (activeNote === midi) release(); }}
@@ -67,30 +108,15 @@ function PianoKeyboard({ octave, onKeyPress }: {
           );
         })}
       </div>
-      {/* Black keys overlay */}
-      <div className="absolute top-0 left-0 w-full flex pointer-events-none" style={{ height: 38 }}>
+      <div className="absolute top-0 left-0 w-full flex pointer-events-none" style={{ height: 44 }}>
         {NOTE_BLACKS.map((semitone, i) => {
-          if (semitone === -1) {
-            return <div key={i} className="flex-1" />;
-          }
+          if (semitone === -1) return <div key={i} className="flex-1" />;
           const midi = octaveBase + semitone;
           const active = activeNote === midi;
-          const whiteWidth = 100 / 7;
-          const leftPct = (i + 1) * whiteWidth - whiteWidth / 2;
+          const leftPct = (i + 1) * (100 / 7) - (100 / 7) / 2;
           return (
-            <div
-              key={i}
-              className="absolute rounded-b cursor-pointer pointer-events-auto select-none"
-              style={{
-                left: `${leftPct - 4}%`,
-                width: '8%',
-                height: '100%',
-                background: active ? '#d97706' : '#111',
-                border: '1px solid #000',
-                zIndex: 10,
-                boxShadow: active ? 'none' : '0 3px 4px rgba(0,0,0,0.5)',
-                transition: 'background 0.05s',
-              }}
+            <div key={i} className="absolute rounded-b cursor-pointer pointer-events-auto select-none"
+              style={{ left: `${leftPct - 4}%`, width: '8%', height: '100%', background: active ? '#d97706' : '#111', border: '1px solid #000', zIndex: 10, boxShadow: active ? 'none' : '0 3px 4px rgba(0,0,0,0.5)', transition: 'background 0.05s' }}
               onMouseDown={(e) => { e.preventDefault(); press(semitone); }}
               onMouseUp={release}
               onMouseLeave={() => { if (activeNote === midi) release(); }}
@@ -104,16 +130,8 @@ function PianoKeyboard({ octave, onKeyPress }: {
 }
 
 export default function ModulePanel({
-  module,
-  connectedPorts,
-  pendingCable,
-  onPortClick,
-  onParamChange,
-  onSelectorChange,
-  onDragStart,
-  onDelete,
-  onRegisterPortRef,
-  onKeyPress,
+  module, connectedPorts, pendingCable, onPortClick, onParamChange,
+  onSelectorChange, onDragStart, onDelete, onRegisterPortRef, onKeyPress,
 }: ModulePanelProps) {
   const typeDef = MODULE_TYPE_MAP.get(module.typeId);
   const [showDelete, setShowDelete] = useState(false);
@@ -121,6 +139,8 @@ export default function ModulePanel({
 
   const isKeyboard = module.typeId === 'keyboard';
   const isOutput = module.typeId === 'output';
+  const panelH = isKeyboard ? KEYBOARD_H : PANEL_H;
+  const bodyH = panelH - RAIL_H * 2;
 
   const canConnectPort = (portId: string, portType: PortType): boolean => {
     if (!pendingCable) return false;
@@ -128,7 +148,6 @@ export default function ModulePanel({
     const fromIsOut = pendingCable.fromPortType.endsWith('_out');
     const toIsIn = portType.endsWith('_in');
     if (!fromIsOut || !toIsIn) return false;
-    // Same signal type matching
     const fromSignal = pendingCable.fromPortType.replace('_out', '');
     const toSignal = portType.replace('_in', '');
     if (fromSignal === 'gate' && toSignal !== 'gate') return false;
@@ -139,160 +158,183 @@ export default function ModulePanel({
   const inPorts = typeDef.ports.filter(p => p.type.endsWith('_in'));
   const outPorts = typeDef.ports.filter(p => p.type.endsWith('_out'));
 
+  const portProps = (port: typeof typeDef.ports[0]) => ({
+    moduleId: module.id,
+    port,
+    isConnected: connectedPorts.has(`${module.id}-${port.id}`),
+    isPendingSource: pendingCable?.fromModuleId === module.id && pendingCable.fromPortId === port.id,
+    canConnect: canConnectPort(port.id, port.type),
+    onPortClick,
+    onRegisterRef: onRegisterPortRef,
+  });
+
+  const accent = typeDef.accentColor;
+
   return (
     <div
-      className="absolute module-panel rounded-sm flex flex-col select-none"
-      style={{ width: typeDef.width, minHeight: 200 }}
+      style={{ width: typeDef.width, height: panelH, display: 'flex', flexDirection: 'column' }}
       onMouseEnter={() => setShowDelete(true)}
       onMouseLeave={() => setShowDelete(false)}
       data-testid={`module-${module.id}`}
     >
-      {/* Accent header / drag handle */}
+      {/* Top rail – drag handle */}
       <div
-        className="flex items-center justify-between px-2 cursor-grab active:cursor-grabbing"
         style={{
-          height: 22,
-          background: `${typeDef.accentColor}22`,
-          borderBottom: `1px solid ${typeDef.accentColor}44`,
-          borderTop: `3px solid ${typeDef.accentColor}`,
+          height: RAIL_H, flexShrink: 0, display: 'flex', alignItems: 'center',
+          justifyContent: 'space-between', padding: '0 5px',
+          cursor: 'grab',
+          background: 'linear-gradient(180deg, #2c2c2c 0%, #1e1e1e 100%)',
+          borderTop: `2px solid ${accent}`,
+          borderBottom: '1px solid #0e0e0e',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.7)',
+          userSelect: 'none',
         }}
         onMouseDown={(e) => onDragStart(module.id, e)}
       >
-        <span
-          className="text-[9px] font-bold tracking-widest uppercase truncate"
-          style={{ color: typeDef.accentColor }}
-        >
+        <Screw />
+        <span style={{
+          fontSize: 8, fontWeight: 700, letterSpacing: '0.18em', color: accent,
+          textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden',
+          textOverflow: 'ellipsis', flex: 1, textAlign: 'center', padding: '0 4px',
+        }}>
           {typeDef.name}
         </span>
-        {showDelete && (
-          <button
-            className="text-[8px] text-gray-600 hover:text-red-400 transition-colors leading-none ml-1 px-1"
-            onClick={(e) => { e.stopPropagation(); onDelete(module.id); }}
-            data-testid={`delete-module-${module.id}`}
-          >
-            ✕
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          {showDelete && (
+            <button
+              style={{
+                fontSize: 9, color: '#444', lineHeight: 1, padding: '0 2px',
+                cursor: 'pointer', background: 'none', border: 'none',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#ef4444'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#444'; }}
+              onClick={(e) => { e.stopPropagation(); onDelete(module.id); }}
+              data-testid={`delete-module-${module.id}`}
+            >✕</button>
+          )}
+          <Screw />
+        </div>
       </div>
 
-      {/* Input ports row */}
-      {inPorts.length > 0 && (
-        <div className="flex justify-around px-2 pt-2 pb-1">
-          {inPorts.map(port => (
-            <PortJack
-              key={port.id}
-              moduleId={module.id}
-              portDef={port}
-              isConnected={connectedPorts.has(`${module.id}-${port.id}`)}
-              isPendingSource={pendingCable?.fromModuleId === module.id && pendingCable.fromPortId === port.id}
-              canConnect={canConnectPort(port.id, port.type)}
-              onPortClick={onPortClick}
-              onRegisterRef={onRegisterPortRef}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Body content */}
-      <div className="flex-1 px-3 py-2 flex flex-col gap-3">
-        {/* Knobs */}
-        {typeDef.knobs.length > 0 && (
-          <div className="flex flex-wrap justify-center gap-x-3 gap-y-2">
-            {typeDef.knobs.map(knob => (
-              <Knob
-                key={knob.id}
-                def={knob}
-                value={module.params[knob.id] ?? knob.default}
-                onChange={(val) => onParamChange(module.id, knob.id, val)}
-                size="md"
-              />
-            ))}
+      {/* Panel body */}
+      <div style={{
+        height: bodyH, flexShrink: 0, display: 'flex', flexDirection: 'column',
+        background: 'linear-gradient(180deg, #171717 0%, #1a1a1a 100%)',
+        borderLeft: '1px solid #242424',
+        borderRight: '1px solid #242424',
+        overflow: 'hidden',
+      }}>
+        {/* Input ports */}
+        {inPorts.length > 0 && (
+          <div style={{ flexShrink: 0, padding: '7px 5px 4px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 3px' }}>
+              {inPorts.map(port => (
+                <PortWithLabel key={port.id} {...portProps(port)} />
+              ))}
+            </div>
+            <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #2a2a2a, transparent)', margin: '5px 0 0' }} />
           </div>
         )}
 
-        {/* Selectors */}
-        {(typeDef.selectors ?? []).map(sel => {
-          const curVal = module.params[sel.id] ?? sel.default;
-          return (
-            <div key={sel.id} className="flex flex-col items-center gap-1">
-              <span className="text-[8px] text-gray-500 uppercase tracking-wider">{sel.name}</span>
-              <div className="flex gap-1 flex-wrap justify-center">
-                {sel.options.map((opt, i) => (
+        {/* Controls */}
+        <div style={{ flex: 1, padding: '6px 5px', display: 'flex', flexDirection: 'column', gap: 6, overflow: 'hidden' }}>
+          {typeDef.knobs.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 4px', justifyContent: 'center' }}>
+              {typeDef.knobs.map(knob => (
+                <Knob
+                  key={knob.id}
+                  def={knob}
+                  value={module.params[knob.id] ?? knob.default}
+                  onChange={(val) => onParamChange(module.id, knob.id, val)}
+                  size="sm"
+                />
+              ))}
+            </div>
+          )}
+
+          {(typeDef.selectors ?? []).map(sel => {
+            const curVal = module.params[sel.id] ?? sel.default;
+            return (
+              <div key={sel.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                <span style={{ fontSize: 7, color: '#484848', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{sel.name}</span>
+                <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
+                  {sel.options.map((opt, i) => (
+                    <button
+                      key={opt}
+                      style={{
+                        padding: '2px 5px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
+                        background: Math.round(curVal) === i ? accent : '#1c1c1c',
+                        color: Math.round(curVal) === i ? '#000' : '#4a4a4a',
+                        border: `1px solid ${Math.round(curVal) === i ? accent : '#282828'}`,
+                      }}
+                      onClick={() => onSelectorChange(module.id, sel.id, i)}
+                      data-testid={`selector-${module.id}-${sel.id}-${opt}`}
+                    >{opt}</button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+
+          {isKeyboard && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <PianoKeyboard
+                octave={Math.round(module.params.octave ?? 4)}
+                onKeyPress={(freq, on) => onKeyPress?.(module.id, freq, on)}
+              />
+              <div style={{ display: 'flex', justifyContent: 'center', gap: 3, flexWrap: 'wrap' }}>
+                {[1, 2, 3, 4, 5, 6, 7].map(oct => (
                   <button
-                    key={opt}
-                    className="px-1.5 py-0.5 text-[8px] rounded border transition-colors"
+                    key={oct}
                     style={{
-                      background: Math.round(curVal) === i ? typeDef.accentColor : '#1a1a1a',
-                      color: Math.round(curVal) === i ? '#000' : '#666',
-                      borderColor: Math.round(curVal) === i ? typeDef.accentColor : '#333',
+                      width: 20, height: 20, fontSize: 8, borderRadius: 2, cursor: 'pointer',
+                      background: Math.round(module.params.octave ?? 4) === oct ? '#94a3b8' : '#1c1c1c',
+                      color: Math.round(module.params.octave ?? 4) === oct ? '#000' : '#4a4a4a',
+                      border: `1px solid ${Math.round(module.params.octave ?? 4) === oct ? '#94a3b8' : '#282828'}`,
                     }}
-                    onClick={() => onSelectorChange(module.id, sel.id, i)}
-                    data-testid={`selector-${module.id}-${sel.id}-${opt}`}
-                  >
-                    {opt}
-                  </button>
+                    onClick={() => onParamChange(module.id, 'octave', oct)}
+                    data-testid={`octave-btn-${oct}`}
+                  >{oct}</button>
                 ))}
               </div>
             </div>
-          );
-        })}
+          )}
 
-        {/* Keyboard special UI */}
-        {isKeyboard && (
-          <div className="flex flex-col gap-1">
-            <PianoKeyboard
-              octave={Math.round(module.params.octave ?? 4)}
-              onKeyPress={(freq, on) => onKeyPress?.(module.id, freq, on)}
-            />
-            <div className="flex justify-center gap-2 mt-1">
-              {[1, 2, 3, 4, 5, 6, 7].map(oct => (
-                <button
-                  key={oct}
-                  className="w-5 h-5 text-[8px] rounded border transition-colors"
-                  style={{
-                    background: Math.round(module.params.octave ?? 4) === oct ? '#94a3b8' : '#1a1a1a',
-                    color: Math.round(module.params.octave ?? 4) === oct ? '#000' : '#666',
-                    borderColor: Math.round(module.params.octave ?? 4) === oct ? '#94a3b8' : '#333',
-                  }}
-                  onClick={() => onParamChange(module.id, 'octave', oct)}
-                  data-testid={`octave-btn-${oct}`}
-                >
-                  {oct}
-                </button>
+          {isOutput && (
+            <div style={{ display: 'flex', gap: 4, justifyContent: 'center', height: 60 }}>
+              {[0, 1].map(ch => (
+                <div key={ch} style={{ width: 12, borderRadius: 2, overflow: 'hidden', display: 'flex', flexDirection: 'column-reverse', background: '#111', border: '1px solid #272727' }}>
+                  <div style={{ width: '100%', borderRadius: 2, height: '60%', background: 'linear-gradient(to top, #22c55e, #fbbf24, #ef4444)' }} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Output ports */}
+        {outPorts.length > 0 && (
+          <div style={{ flexShrink: 0, padding: '4px 5px 7px' }}>
+            <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #2a2a2a, transparent)', margin: '0 0 5px' }} />
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 3px' }}>
+              {outPorts.map(port => (
+                <PortWithLabel key={port.id} {...portProps(port)} />
               ))}
             </div>
           </div>
         )}
-
-        {/* Output VU placeholder */}
-        {isOutput && (
-          <div className="flex gap-1 justify-center h-12">
-            {[0, 1].map(ch => (
-              <div key={ch} className="w-3 rounded-sm overflow-hidden flex flex-col-reverse" style={{ background: '#111', border: '1px solid #333' }}>
-                <div className="w-full rounded-sm" style={{ height: '60%', background: 'linear-gradient(to top, #22c55e, #fbbf24, #ef4444)' }} />
-              </div>
-            ))}
-          </div>
-        )}
       </div>
 
-      {/* Output ports row */}
-      {outPorts.length > 0 && (
-        <div className="flex justify-around px-2 pb-2 pt-1">
-          {outPorts.map(port => (
-            <PortJack
-              key={port.id}
-              moduleId={module.id}
-              portDef={port}
-              isConnected={connectedPorts.has(`${module.id}-${port.id}`)}
-              isPendingSource={pendingCable?.fromModuleId === module.id && pendingCable.fromPortId === port.id}
-              canConnect={canConnectPort(port.id, port.type)}
-              onPortClick={onPortClick}
-              onRegisterRef={onRegisterPortRef}
-            />
-          ))}
-        </div>
-      )}
+      {/* Bottom rail */}
+      <div style={{
+        height: RAIL_H, flexShrink: 0, display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', padding: '0 5px',
+        background: 'linear-gradient(180deg, #1e1e1e 0%, #2a2a2a 100%)',
+        borderTop: '1px solid #0e0e0e',
+        borderBottom: '2px solid #0a0a0a',
+      }}>
+        <Screw />
+        <Screw />
+      </div>
     </div>
   );
 }
