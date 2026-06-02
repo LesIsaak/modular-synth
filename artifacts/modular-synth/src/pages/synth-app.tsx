@@ -596,6 +596,7 @@ export default function SynthApp() {
   const rackRef          = useRef<HTMLDivElement>(null);
   const dragRef          = useRef<{
     moduleId: string; startX: number; startY: number; origX: number; origY: number;
+    origScrollLeft: number; origScrollTop: number;
   } | null>(null);
 
   // ─── Port DOM refs ──────────────────────────────────────────────────────────
@@ -833,11 +834,48 @@ export default function SynthApp() {
     e.preventDefault();
     const mod = modules.find(m => m.id === moduleId);
     if (!mod) return;
-    dragRef.current = { moduleId, startX: e.clientX, startY: e.clientY, origX: mod.x, origY: mod.y };
+    dragRef.current = {
+      moduleId, startX: e.clientX, startY: e.clientY, origX: mod.x, origY: mod.y,
+      origScrollLeft: rackRef.current?.scrollLeft ?? 0,
+      origScrollTop:  rackRef.current?.scrollTop  ?? 0,
+    };
   }, [modules]);
 
   useEffect(() => {
+    const EDGE = 60;      // px from edge to start scrolling
+    const MAX_SPD = 14;   // max scroll px per frame
+    let rafId = 0;
+    let lastMouse = { x: 0, y: 0 };
+
+    const edgeScroll = () => {
+      rafId = 0;
+      if (!dragRef.current || !rackRef.current) return;
+      const r = rackRef.current.getBoundingClientRect();
+      const mx = lastMouse.x;
+      const my = lastMouse.y;
+      let dx = 0, dy = 0;
+      if (mx < r.left + EDGE)  dx = -MAX_SPD * (1 - (mx - r.left)  / EDGE);
+      if (mx > r.right - EDGE) dx =  MAX_SPD * (1 - (r.right - mx) / EDGE);
+      if (my < r.top  + EDGE)  dy = -MAX_SPD * (1 - (my - r.top)   / EDGE);
+      if (my > r.bottom - EDGE)dy =  MAX_SPD * (1 - (r.bottom - my)/ EDGE);
+      if (dx || dy) {
+        rackRef.current.scrollLeft += dx;
+        rackRef.current.scrollTop  += dy;
+        // Keep module position in sync with scroll
+        const { moduleId, startX, startY, origX, origY } = dragRef.current;
+        setModules(prev => prev.map(m =>
+          m.id === moduleId
+            ? { ...m,
+                x: Math.max(0, origX + lastMouse.x - startX + rackRef.current!.scrollLeft - (dragRef.current!.origScrollLeft ?? 0)),
+                y: Math.max(0, origY + lastMouse.y - startY + rackRef.current!.scrollTop  - (dragRef.current!.origScrollTop  ?? 0)) }
+            : m
+        ));
+        rafId = requestAnimationFrame(edgeScroll);
+      }
+    };
+
     const onMouseMove = (e: MouseEvent) => {
+      lastMouse = { x: e.clientX, y: e.clientY };
       if (rackRef.current) {
         const r = rackRef.current.getBoundingClientRect();
         setMousePos({
@@ -847,18 +885,23 @@ export default function SynthApp() {
       }
       if (dragRef.current) {
         const { moduleId, startX, startY, origX, origY } = dragRef.current;
+        const sl = rackRef.current?.scrollLeft ?? 0;
+        const st = rackRef.current?.scrollTop  ?? 0;
         setModules(prev => prev.map(m =>
           m.id === moduleId
-            ? { ...m, x: Math.max(0, origX + e.clientX - startX), y: Math.max(0, origY + e.clientY - startY) }
+            ? { ...m,
+                x: Math.max(0, origX + e.clientX - startX + sl - (dragRef.current!.origScrollLeft ?? 0)),
+                y: Math.max(0, origY + e.clientY - startY + st - (dragRef.current!.origScrollTop  ?? 0)) }
             : m
         ));
+        if (!rafId) rafId = requestAnimationFrame(edgeScroll);
       }
     };
 
     const onMouseUp = () => {
+      if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
       if (dragRef.current) {
         const { moduleId } = dragRef.current;
-        // Snap to nearest rack slot on release
         setModules(prev => prev.map(m => {
           if (m.id !== moduleId) return m;
           const snapped = snapToSlot(m.x, m.y);
@@ -873,6 +916,7 @@ export default function SynthApp() {
     return () => {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup',   onMouseUp);
+      if (rafId) cancelAnimationFrame(rafId);
     };
   }, []);
 

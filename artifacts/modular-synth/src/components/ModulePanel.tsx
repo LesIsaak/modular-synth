@@ -264,7 +264,7 @@ export default function ModulePanel({
           {typeDef.name}
         </span>
         {/* Fixed-width slot — always same size, ✕ appears inside on hover, no layout shift */}
-        <div style={{ width: 14, height: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <div style={{ width: 14, height: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginRight: 3 }}>
           {showDelete && (
             <button
               style={{
@@ -290,6 +290,7 @@ export default function ModulePanel({
             >✕</button>
           )}
         </div>
+        <Screw />
       </div>
 
       {/* Panel body */}
