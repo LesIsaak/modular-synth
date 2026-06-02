@@ -360,13 +360,17 @@ function FixedKeyboardPanel({
   started,
   onNote,
   onBend,
+  onPitch,
+  onMod,
   onUndo,
   undoAvail,
 }: {
   started: boolean;
-  onNote: (freq: number, on: boolean) => void;
-  onBend: (freq: number) => void;
-  onUndo: () => void;
+  onNote:  (freq: number, on: boolean) => void;
+  onBend:  (freq: number) => void;
+  onPitch: (val: number) => void;
+  onMod:   (val: number) => void;
+  onUndo:  () => void;
   undoAvail: boolean;
 }) {
   const [octave,     setOctave]     = useState(4);
@@ -412,15 +416,16 @@ function FixedKeyboardPanel({
 
   const handlePitchChange = useCallback((val: number) => {
     pitchRef.current = val;
+    onPitch(val);
     if (heldFreqRef.current > 0) {
       const BEND_ST = 2;
       onBend(heldFreqRef.current * Math.pow(2, val * BEND_ST / 12));
     }
-  }, [onBend]);
+  }, [onBend, onPitch]);
 
-  const handleModChange = useCallback((_val: number) => {
-    // mod output — future: wire to kb1's mod_out ConstantSource
-  }, []);
+  const handleModChange = useCallback((val: number) => {
+    onMod(val);
+  }, [onMod]);
 
   const renderOctave = (octOff: number) => {
     const octBase = (octave + octOff) * 12 + 12;
@@ -590,11 +595,14 @@ function FixedKeyboardPanel({
 function useMIDI(
   onNote: (freq: number, on: boolean) => void,
   onBend: (freq: number) => void,
+  onMod:  (val: number) => void,
 ) {
   const onNoteRef  = useRef(onNote);
   const onBendRef  = useRef(onBend);
+  const onModRef   = useRef(onMod);
   onNoteRef.current = onNote;
   onBendRef.current = onBend;
+  onModRef.current  = onMod;
 
   useEffect(() => {
     if (!navigator.requestMIDIAccess) return;
@@ -625,8 +633,10 @@ function useMIDI(
           const BEND_ST = 2;
           onBendRef.current(baseFreqRef.current * Math.pow(2, norm * BEND_ST / 12));
         }
+      } else if (type === 0xb0 && d[1] === 1) {
+        // CC 1 = mod wheel (0–127 → 0–1)
+        onModRef.current(d[2] / 127);
       }
-      // CC 1 = mod wheel — future: expose via kb1 mod_out
     };
 
     let access: MIDIAccess | null = null;
@@ -801,8 +811,20 @@ export default function SynthApp() {
     }
   }, []);
 
+  const handleKeyPitch = useCallback((val: number) => {
+    const node = audioModulesRef.current.get('kb1')?.outputs.get('pitch_out') as
+      (AudioNode & { offset?: AudioParam }) | undefined;
+    if (node?.offset) node.offset.value = val;
+  }, []);
+
+  const handleKeyMod = useCallback((val: number) => {
+    const node = audioModulesRef.current.get('kb1')?.outputs.get('mod_out') as
+      (AudioNode & { offset?: AudioParam }) | undefined;
+    if (node?.offset) node.offset.value = val;
+  }, []);
+
   // MIDI input — routes USB keyboard events through the same handlers as the on-screen keys
-  useMIDI(handleKeyNote, handleKeyBend);
+  useMIDI(handleKeyNote, handleKeyBend, handleKeyMod);
 
   // ─── Add module ─────────────────────────────────────────────────────────────
   const handleAddModule = useCallback((typeId: string) => {
@@ -1203,6 +1225,8 @@ export default function SynthApp() {
         started={started}
         onNote={handleKeyNote}
         onBend={handleKeyBend}
+        onPitch={handleKeyPitch}
+        onMod={handleKeyMod}
         onUndo={handleUndo}
         undoAvail={undoAvail}
       />

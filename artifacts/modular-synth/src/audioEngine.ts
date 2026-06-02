@@ -2223,15 +2223,23 @@ export function createAudioModule(
     }
 
     case 'keyboard': {
-      const freqSource = ctx.createConstantSource();
-      freqSource.offset.value = 440;
-      freqSource.start();
+      const freqSource  = ctx.createConstantSource(); freqSource.offset.value  = 440; freqSource.start();
+      const pitchSource = ctx.createConstantSource(); pitchSource.offset.value = 0;   pitchSource.start();
+      const modSource   = ctx.createConstantSource(); modSource.offset.value   = 0;   modSource.start();
       return {
-        outputs: new Map([['voct_out', freqSource]]),
+        outputs: new Map<string, AudioNode>([
+          ['voct_out',  freqSource],
+          ['pitch_out', pitchSource],
+          ['mod_out',   modSource],
+        ]),
         inputs: new Map(),
-        noteOn: (_time, freq) => { freqSource.offset.value = freq; },
+        noteOn:  (_time, freq) => { freqSource.offset.value = freq; },
         setParam: () => {},
-        destroy: () => { freqSource.stop(); freqSource.disconnect(); },
+        destroy: () => {
+          freqSource.stop();  freqSource.disconnect();
+          pitchSource.stop(); pitchSource.disconnect();
+          modSource.stop();   modSource.disconnect();
+        },
       };
     }
 
