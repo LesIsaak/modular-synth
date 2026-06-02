@@ -158,9 +158,8 @@ function PatchCables({
               <path d={d} fill="none" stroke="white" strokeWidth={1.2} strokeLinecap="round" opacity={0.12} />
             </g>
 
-            {/* 3.5mm plug at FROM end — grab to re-patch */}
-            <g style={{ pointerEvents: 'auto', cursor: 'grab' }}
-              onMouseDown={e => { e.preventDefault(); e.stopPropagation(); onGrabCableEnd(c.id); }}>
+            {/* 3.5mm plug at FROM end — visual only, click falls through to port jack */}
+            <g style={{ pointerEvents: 'none' }}>
               <circle cx={from.x} cy={from.y} r={16} fill="transparent" />
               <circle cx={from.x} cy={from.y} r={13} fill="black" opacity={0.4} />
               <circle cx={from.x} cy={from.y} r={12} fill="#383838" stroke="#555" strokeWidth={0.6} />
