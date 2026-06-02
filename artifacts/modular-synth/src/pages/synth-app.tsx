@@ -129,17 +129,28 @@ function makeCablePath(x1: number, y1: number, x2: number, y2: number) {
   return `M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`;
 }
 
+// ─── Cable path ref type ─────────────────────────────────────────────────────
+type CablePathSet = { hit: SVGPathElement | null; shadow: SVGPathElement | null; color: SVGPathElement | null };
+
 // ─── Patch cables SVG ─────────────────────────────────────────────────────────
 function PatchCables({
-  cables, pendingCable, pendingPathRef, getPortCenter, onRemoveCable, scrollTick: _,
+  cables, pendingCable, pendingPathRef, cablePathsRef, getPortCenter, onRemoveCable,
 }: {
   cables: Cable[];
   pendingCable: PendingCable | null;
   pendingPathRef: RefObject<SVGPathElement | null>;
+  cablePathsRef: RefObject<Map<string, CablePathSet>>;
   getPortCenter: (modId: string, portId: string) => { x: number; y: number } | null;
   onRemoveCable: (id: string) => void;
-  scrollTick: number;
 }) {
+  // Inline ref callback that registers each slot of a cable's paths
+  const reg = (id: string, slot: keyof CablePathSet) => (el: SVGPathElement | null) => {
+    let entry = cablePathsRef.current.get(id);
+    if (!entry) { entry = { hit: null, shadow: null, color: null }; cablePathsRef.current.set(id, entry); }
+    entry[slot] = el;
+    if (!entry.hit && !entry.shadow && !entry.color) cablePathsRef.current.delete(id);
+  };
+
   return (
     <svg
       className="pointer-events-none"
@@ -160,11 +171,12 @@ function PatchCables({
         const d = makeCablePath(from.x, from.y, to.x, to.y);
         return (
           <g key={c.id} className="pointer-events-auto">
-            <path d={d} fill="none" stroke="transparent" strokeWidth={14} style={{ cursor: 'pointer' }}
-              onContextMenu={e => { e.preventDefault(); onRemoveCable(c.id); }} />
-            <path d={d} fill="none" stroke="#000" strokeWidth={5} strokeLinecap="round" opacity={0.5} />
-            <path d={d} fill="none" stroke={c.color} strokeWidth={3.5} strokeLinecap="round"
-              filter={`url(#glow-${c.id})`} />
+            <path ref={reg(c.id, 'hit')}    d={d} fill="none" stroke="transparent" strokeWidth={14}
+              style={{ cursor: 'pointer' }} onContextMenu={e => { e.preventDefault(); onRemoveCable(c.id); }} />
+            <path ref={reg(c.id, 'shadow')} d={d} fill="none" stroke="#000" strokeWidth={5}
+              strokeLinecap="round" opacity={0.5} />
+            <path ref={reg(c.id, 'color')}  d={d} fill="none" stroke={c.color} strokeWidth={3.5}
+              strokeLinecap="round" filter={`url(#glow-${c.id})`} />
           </g>
         );
       })}
@@ -605,10 +617,13 @@ export default function SynthApp() {
   const [modules,      setModules]      = useState<ModuleInstance[]>(DEFAULT_MODULES);
   const [cables,       setCables]       = useState<Cable[]>(DEFAULT_CABLES);
   const [pendingCable, setPendingCable] = useState<PendingCable | null>(null);
-  const [scrollTick,   setScrollTick]   = useState(0);
-  // Refs for zero-latency pending cable drawing (bypass React state entirely)
+  // Refs for zero-latency cable drawing (bypass React state entirely)
   const fromCenterRef  = useRef<{ x: number; y: number } | null>(null);
   const pendingPathRef = useRef<SVGPathElement | null>(null);
+  const cablePathsRef  = useRef<Map<string, CablePathSet>>(new Map());
+  // Always-current cables ref for use inside event handlers without stale closures
+  const cablesRef      = useRef(cables);
+  cablesRef.current = cables; // sync on every render so scroll handler sees latest cables
 
   const audioCtxRef      = useRef<AudioContext | null>(null);
   const audioModulesRef  = useRef<Map<string, ReturnType<typeof createAudioModule>>>(new Map());
@@ -867,6 +882,27 @@ export default function SynthApp() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // Scroll handler — update all connected cable paths directly in the DOM (zero React re-renders)
+  useEffect(() => {
+    const rack = rackRef.current;
+    if (!rack) return;
+    const onScroll = () => {
+      for (const cable of cablesRef.current) {
+        const paths = cablePathsRef.current.get(cable.id);
+        if (!paths) continue;
+        const from = getPortCenter(cable.fromModuleId, cable.fromPortId);
+        const to   = getPortCenter(cable.toModuleId,   cable.toPortId);
+        if (!from || !to) continue;
+        const d = makeCablePath(from.x, from.y, to.x, to.y);
+        if (paths.hit)    paths.hit.setAttribute('d', d);
+        if (paths.shadow) paths.shadow.setAttribute('d', d);
+        if (paths.color)  paths.color.setAttribute('d', d);
+      }
+    };
+    rack.addEventListener('scroll', onScroll, { passive: true });
+    return () => rack.removeEventListener('scroll', onScroll);
+  }, [getPortCenter]);
+
   // Legacy keyboard handler (for any keyboard module instances in modules list — none by default)
   const handleModuleKeyPress = useCallback((moduleId: string, freq: number, on: boolean) => {
     const ctx = audioCtxRef.current;
@@ -930,7 +966,6 @@ export default function SynthApp() {
         className="flex-1 overflow-auto relative rack-bg"
         style={{ paddingBottom: KB_H }}
         onClick={() => { if (pendingCable) setPendingCable(null); }}
-        onScroll={() => setScrollTick(t => t + 1)}
         data-testid="rack-workspace"
       >
         <div className="relative" style={{ width: CONTENT_W, height: CONTENT_H }}>
@@ -972,9 +1007,9 @@ export default function SynthApp() {
         cables={cables}
         pendingCable={pendingCable}
         pendingPathRef={pendingPathRef}
+        cablePathsRef={cablePathsRef}
         getPortCenter={getPortCenter}
         onRemoveCable={handleRemoveCable}
-        scrollTick={scrollTick}
       />
 
       {/* Fixed keyboard panel — always at the bottom */}
