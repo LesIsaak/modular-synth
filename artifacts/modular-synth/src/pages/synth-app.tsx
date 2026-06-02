@@ -360,10 +360,14 @@ function FixedKeyboardPanel({
   started,
   onNote,
   onBend,
+  onUndo,
+  undoAvail,
 }: {
   started: boolean;
   onNote: (freq: number, on: boolean) => void;
   onBend: (freq: number) => void;
+  onUndo: () => void;
+  undoAvail: boolean;
 }) {
   const [octave,     setOctave]     = useState(4);
   const [activeNote, setActiveNote] = useState<number | null>(null);
@@ -500,6 +504,23 @@ function FixedKeyboardPanel({
         </span>
         {/* Controls right side */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* UNDO button */}
+          <button
+            onClick={onUndo}
+            disabled={!undoAvail}
+            title="Undo (Ctrl+Z)"
+            data-testid="undo-button"
+            style={{
+              height: 16, padding: '0 7px', fontSize: 7, letterSpacing: '0.16em',
+              borderRadius: 2, cursor: undoAvail ? 'pointer' : 'default',
+              fontWeight: 700, textTransform: 'uppercase',
+              border: `1px solid ${undoAvail ? '#374151' : '#222'}`,
+              background: '#181818',
+              color: undoAvail ? '#9ca3af' : '#2a2a2a',
+              transition: 'all 0.1s',
+              opacity: undoAvail ? 1 : 0.4,
+            }}
+          >↩ UNDO</button>
           {/* HOLD button */}
           <button
             onClick={toggleHold}
@@ -635,6 +656,67 @@ export default function SynthApp() {
   const [pendingCable, setPendingCable] = useState<PendingCable | null>(null);
   const [mousePos,     setMousePos]     = useState({ x: 0, y: 0 });
 
+  // ─── Undo history ──────────────────────────────────────────────────────────
+  const undoStackRef   = useRef<Array<{ cables: Cable[]; modules: ModuleInstance[] }>>([]);
+  const [undoAvail, setUndoAvail] = useState(false);
+  const pushUndo = useCallback((cabs: Cable[], mods: ModuleInstance[]) => {
+    undoStackRef.current = [...undoStackRef.current.slice(-19), { cables: cabs, modules: mods }];
+    setUndoAvail(true);
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    const stack = undoStackRef.current;
+    if (stack.length === 0) return;
+    const snap = stack[stack.length - 1];
+    undoStackRef.current = stack.slice(0, -1);
+    setUndoAvail(undoStackRef.current.length > 0);
+
+    // Disconnect cables present now but absent in snapshot
+    const toDisconnect = cables.filter(c => !snap.cables.find(p => p.id === c.id));
+    for (const cable of toDisconnect) {
+      const ftd = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
+      const fp  = ftd?.ports.find(p => p.id === cable.fromPortId);
+      if (fp?.type === 'gate_out') {
+        gateConnRef.current.get(cable.fromModuleId)?.delete(cable.toModuleId);
+      } else {
+        const fa = audioModulesRef.current.get(cable.fromModuleId);
+        const ta = audioModulesRef.current.get(cable.toModuleId);
+        if (fa && ta) disconnectAudioPorts(fa, cable.fromPortId, ta, cable.toPortId);
+      }
+    }
+    // Reconnect cables absent now but present in snapshot
+    const toConnect = snap.cables.filter(c => !cables.find(p => p.id === c.id));
+    for (const cable of toConnect) {
+      const ftd = MODULE_TYPE_MAP.get(snap.modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
+      const fp  = ftd?.ports.find(p => p.id === cable.fromPortId);
+      if (fp?.type === 'gate_out') {
+        if (!gateConnRef.current.has(cable.fromModuleId)) gateConnRef.current.set(cable.fromModuleId, new Set());
+        gateConnRef.current.get(cable.fromModuleId)!.add(cable.toModuleId);
+      } else {
+        const fa = audioModulesRef.current.get(cable.fromModuleId);
+        const ta = audioModulesRef.current.get(cable.toModuleId);
+        if (fa && ta) connectAudioPorts(fa, cable.fromPortId, ta, cable.toPortId);
+      }
+    }
+    // Clean up modules that were added (in current but not in snapshot)
+    const addedMods = modules.filter(m => !snap.modules.find(p => p.id === m.id));
+    for (const mod of addedMods) {
+      audioModulesRef.current.get(mod.id)?.destroy();
+      audioModulesRef.current.delete(mod.id);
+      gateConnRef.current.delete(mod.id);
+      for (const s of gateConnRef.current.values()) s.delete(mod.id);
+    }
+    // Re-create modules that were deleted (in snapshot but not current)
+    const removedMods = snap.modules.filter(m => !modules.find(p => p.id === m.id));
+    for (const mod of removedMods) {
+      if (audioCtxRef.current)
+        audioModulesRef.current.set(mod.id, createAudioModule(audioCtxRef.current, mod.typeId, { ...mod.params }));
+    }
+
+    setCables(snap.cables);
+    setModules(snap.modules);
+  }, [cables, modules]);
+
   const audioCtxRef      = useRef<AudioContext | null>(null);
   const audioModulesRef  = useRef<Map<string, ReturnType<typeof createAudioModule>>>(new Map());
   const gateConnRef      = useRef<Map<string, Set<string>>>(new Map());
@@ -730,6 +812,7 @@ export default function SynthApp() {
     const id     = `${typeId}_${Date.now()}`;
     const params = getDefaultParams(typeDef);
 
+    pushUndo(cables, modules);
     setModules(prev => {
       const { x, y } = findNextSlot(prev);
       return [...prev, { id, typeId, x, y, params }];
@@ -742,6 +825,7 @@ export default function SynthApp() {
 
   // ─── Delete module ──────────────────────────────────────────────────────────
   const handleDeleteModule = useCallback((moduleId: string) => {
+    pushUndo(cables, modules);
     setCables(prev => {
       const toRemove = prev.filter(c => c.fromModuleId === moduleId || c.toModuleId === moduleId);
       for (const cable of toRemove) {
@@ -806,6 +890,7 @@ export default function SynthApp() {
       return;
     }
 
+    pushUndo(cables, modules);
     const color    = CABLE_COLORS[cables.length % CABLE_COLORS.length];
     const newCable: Cable = {
       id: `cable_${Date.now()}`, fromModuleId, fromPortId, toModuleId: moduleId, toPortId: portId, color,
@@ -839,6 +924,7 @@ export default function SynthApp() {
 
   // ─── Double-click output port → cut all its cables ──────────────────────────
   const handlePortDoubleClick = useCallback((moduleId: string, portId: string) => {
+    pushUndo(cables, modules);
     setCables(prev => {
       const toRemove = prev.filter(c => c.fromModuleId === moduleId && c.fromPortId === portId);
       toRemove.forEach(cable => {
@@ -859,6 +945,7 @@ export default function SynthApp() {
 
   // ─── Remove cable ───────────────────────────────────────────────────────────
   const handleRemoveCable = useCallback((cableId: string) => {
+    pushUndo(cables, modules);
     setCables(prev => {
       const cable = prev.find(c => c.id === cableId);
       if (!cable) return prev;
@@ -879,6 +966,7 @@ export default function SynthApp() {
   const handleGrabCableEnd = useCallback((cableId: string) => {
     const cable = cables.find(c => c.id === cableId);
     if (!cable) return;
+    pushUndo(cables, modules);
     const fromTypeDef = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
     const fromPort    = fromTypeDef?.ports.find(p => p.id === cable.fromPortId);
     if (fromPort?.type === 'gate_out') {
@@ -992,10 +1080,13 @@ export default function SynthApp() {
 
   // Cancel pending cable on Escape
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPendingCable(null); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setPendingCable(null); return; }
+      if (e.key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleUndo(); }
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [handleUndo]);
 
   // Legacy keyboard handler (for any keyboard module instances in modules list — none by default)
   const handleModuleKeyPress = useCallback((moduleId: string, freq: number, on: boolean) => {
@@ -1112,6 +1203,8 @@ export default function SynthApp() {
         started={started}
         onNote={handleKeyNote}
         onBend={handleKeyBend}
+        onUndo={handleUndo}
+        undoAvail={undoAvail}
       />
     </div>
   );
