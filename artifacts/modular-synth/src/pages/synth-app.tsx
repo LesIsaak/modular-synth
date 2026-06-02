@@ -106,7 +106,7 @@ function ModuleBrowser({ onAdd }: { onAdd: (typeId: string) => void }) {
 
 // ─── Patch cables SVG ─────────────────────────────────────────────────────────
 function PatchCables({
-  cables, modules, pendingCable, mousePos, getPortCenter, onRemoveCable, onGrabCableEnd,
+  cables, modules, pendingCable, mousePos, getPortCenter, onRemoveCable, onGrabCableEnd, cableOpacity,
 }: {
   cables: Cable[];
   modules: ModuleInstance[];
@@ -115,6 +115,7 @@ function PatchCables({
   getPortCenter: (modId: string, portId: string) => { x: number; y: number } | null;
   onRemoveCable: (id: string) => void;
   onGrabCableEnd: (cableId: string) => void;
+  cableOpacity: number;
 }) {
   const makePath = (x1: number, y1: number, x2: number, y2: number) => {
     const dy = Math.abs(y2 - y1);
@@ -146,16 +147,16 @@ function PatchCables({
         const d = makePath(from.x, from.y, to.x, to.y);
         return (
           <g key={c.id} className="pointer-events-auto">
-            {/* Hit area */}
+            {/* Hit area — always present for interaction */}
             <path d={d} fill="none" stroke="transparent" strokeWidth={14} style={{ cursor: 'pointer' }}
               onContextMenu={e => { e.preventDefault(); onRemoveCable(c.id); }} />
-            {/* Cable shadow */}
-            <path d={d} fill="none" stroke="#000" strokeWidth={6} strokeLinecap="round" opacity={0.45} />
-            {/* Cable body */}
-            <path d={d} fill="none" stroke={c.color} strokeWidth={4} strokeLinecap="round"
-              filter={`url(#glow-${c.id})`} />
-            {/* Cable highlight */}
-            <path d={d} fill="none" stroke="white" strokeWidth={1.2} strokeLinecap="round" opacity={0.12} />
+            {/* Cable lines — opacity controlled by slider */}
+            <g opacity={cableOpacity}>
+              <path d={d} fill="none" stroke="#000" strokeWidth={6} strokeLinecap="round" opacity={0.45} />
+              <path d={d} fill="none" stroke={c.color} strokeWidth={4} strokeLinecap="round"
+                filter={`url(#glow-${c.id})`} />
+              <path d={d} fill="none" stroke="white" strokeWidth={1.2} strokeLinecap="round" opacity={0.12} />
+            </g>
 
             {/* 3.5mm plug at FROM end — grab to re-patch */}
             <g style={{ pointerEvents: 'auto', cursor: 'grab' }}
@@ -364,14 +365,18 @@ function FixedKeyboardPanel({
   onMod,
   onUndo,
   undoAvail,
+  cableOpacity,
+  onCableOpacity,
 }: {
   started: boolean;
-  onNote:  (freq: number, on: boolean) => void;
-  onBend:  (freq: number) => void;
-  onPitch: (val: number) => void;
-  onMod:   (val: number) => void;
-  onUndo:  () => void;
-  undoAvail: boolean;
+  onNote:        (freq: number, on: boolean) => void;
+  onBend:        (freq: number) => void;
+  onPitch:       (val: number) => void;
+  onMod:         (val: number) => void;
+  onUndo:        () => void;
+  undoAvail:     boolean;
+  cableOpacity:  number;
+  onCableOpacity:(val: number) => void;
 }) {
   const [octave,     setOctave]     = useState(4);
   const [activeNote, setActiveNote] = useState<number | null>(null);
@@ -509,6 +514,18 @@ function FixedKeyboardPanel({
         </span>
         {/* Controls right side */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* Cable opacity slider */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ fontSize: 7, color: '#333', letterSpacing: '0.12em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+              CABLE
+            </span>
+            <input
+              type="range" min={0} max={1} step={0.01}
+              value={cableOpacity}
+              onChange={e => onCableOpacity(parseFloat(e.target.value))}
+              style={{ width: 52, height: 4, cursor: 'pointer', accentColor: '#555' }}
+            />
+          </div>
           {/* UNDO button */}
           <button
             onClick={onUndo}
@@ -665,6 +682,7 @@ export default function SynthApp() {
   const [cables,       setCables]       = useState<Cable[]>(DEFAULT_CABLES);
   const [pendingCable, setPendingCable] = useState<PendingCable | null>(null);
   const [mousePos,     setMousePos]     = useState({ x: 0, y: 0 });
+  const [cableOpacity, setCableOpacity] = useState(1);
 
   // ─── Undo history ──────────────────────────────────────────────────────────
   const undoStackRef   = useRef<Array<{ cables: Cable[]; modules: ModuleInstance[] }>>([]);
@@ -1184,6 +1202,7 @@ export default function SynthApp() {
             getPortCenter={getPortCenter}
             onRemoveCable={handleRemoveCable}
             onGrabCableEnd={handleGrabCableEnd}
+            cableOpacity={cableOpacity}
           />
 
           {modules.map(mod => (
@@ -1229,6 +1248,8 @@ export default function SynthApp() {
         onMod={handleKeyMod}
         onUndo={handleUndo}
         undoAvail={undoAvail}
+        cableOpacity={cableOpacity}
+        onCableOpacity={setCableOpacity}
       />
     </div>
   );
