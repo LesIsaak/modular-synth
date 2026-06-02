@@ -86,6 +86,20 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
     ],
   },
   {
+    id: 'noise',
+    name: 'Noise',
+    category: 'oscillator',
+    accentColor: '#f97316',
+    width: 140,
+    knobs: [
+      { id: 'level', name: 'LEVEL', min: 0, max: 1, default: 0.8 },
+    ],
+    selectors: [{ id: 'color', name: 'COLOR', options: ['WHITE', 'PINK'], default: 0 }],
+    ports: [
+      { id: 'out', name: 'OUT', type: 'audio_out' },
+    ],
+  },
+  {
     id: 'chord_osc',
     name: 'Chord OSC',
     category: 'oscillator',
