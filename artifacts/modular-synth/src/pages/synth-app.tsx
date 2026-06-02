@@ -156,21 +156,27 @@ function PatchCables({
             {/* Cable highlight */}
             <path d={d} fill="none" stroke="white" strokeWidth={1.2} strokeLinecap="round" opacity={0.12} />
 
-            {/* 3.5mm plug at FROM end */}
-            <circle cx={from.x} cy={from.y} r={7} fill="#111" stroke="#555" strokeWidth={0.8} />
-            <circle cx={from.x} cy={from.y} r={5.5} fill={c.color}
-              style={{ filter: `drop-shadow(0 0 3px ${c.color})` }} />
-            <circle cx={from.x} cy={from.y} r={3.8} fill="#1a1a1a" />
-            <circle cx={from.x} cy={from.y} r={1.8} fill="#3a3a3a" />
-            <ellipse cx={from.x - 1.5} cy={from.y - 1.5} rx={1.5} ry={0.9} fill="white" opacity={0.18} />
+            {/* 3.5mm plug at FROM end — collar is larger than socket face so it's clearly visible */}
+            <circle cx={from.x} cy={from.y} r={13} fill="black" opacity={0.4} />
+            <circle cx={from.x} cy={from.y} r={12} fill="#383838" stroke="#555" strokeWidth={0.6} />
+            <circle cx={from.x} cy={from.y} r={10} fill={c.color} opacity={0.9} />
+            <circle cx={from.x} cy={from.y} r={8}  fill="#1c1c1c" />
+            <circle cx={from.x} cy={from.y} r={5.5} fill="#404040" />
+            <circle cx={from.x} cy={from.y} r={2.5} fill="#888" />
+            <ellipse cx={from.x - 3} cy={from.y - 3} rx={3} ry={1.8} fill="white" opacity={0.15} />
+            <circle cx={from.x} cy={from.y} r={12} fill="none" stroke={c.color} strokeWidth={1}
+              opacity={0.7} />
 
             {/* 3.5mm plug at TO end */}
-            <circle cx={to.x} cy={to.y} r={7} fill="#111" stroke="#555" strokeWidth={0.8} />
-            <circle cx={to.x} cy={to.y} r={5.5} fill={c.color}
-              style={{ filter: `drop-shadow(0 0 3px ${c.color})` }} />
-            <circle cx={to.x} cy={to.y} r={3.8} fill="#1a1a1a" />
-            <circle cx={to.x} cy={to.y} r={1.8} fill="#3a3a3a" />
-            <ellipse cx={to.x - 1.5} cy={to.y - 1.5} rx={1.5} ry={0.9} fill="white" opacity={0.18} />
+            <circle cx={to.x} cy={to.y} r={13} fill="black" opacity={0.4} />
+            <circle cx={to.x} cy={to.y} r={12} fill="#383838" stroke="#555" strokeWidth={0.6} />
+            <circle cx={to.x} cy={to.y} r={10} fill={c.color} opacity={0.9} />
+            <circle cx={to.x} cy={to.y} r={8}  fill="#1c1c1c" />
+            <circle cx={to.x} cy={to.y} r={5.5} fill="#404040" />
+            <circle cx={to.x} cy={to.y} r={2.5} fill="#888" />
+            <ellipse cx={to.x - 3} cy={to.y - 3} rx={3} ry={1.8} fill="white" opacity={0.15} />
+            <circle cx={to.x} cy={to.y} r={12} fill="none" stroke={c.color} strokeWidth={1}
+              opacity={0.7} />
           </g>
         );
       })}
