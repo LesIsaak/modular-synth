@@ -854,20 +854,22 @@ export default function SynthApp() {
       const mx = lastMouse.x;
       const my = lastMouse.y;
       let dx = 0, dy = 0;
-      if (mx < r.left + EDGE)  dx = -MAX_SPD * (1 - (mx - r.left)  / EDGE);
-      if (mx > r.right - EDGE) dx =  MAX_SPD * (1 - (r.right - mx) / EDGE);
-      if (my < r.top  + EDGE)  dy = -MAX_SPD * (1 - (my - r.top)   / EDGE);
-      if (my > r.bottom - EDGE)dy =  MAX_SPD * (1 - (r.bottom - my)/ EDGE);
+      if (mx < r.left + EDGE)   dx = -MAX_SPD * (1 - (mx - r.left)   / EDGE);
+      if (mx > r.right - EDGE)  dx =  MAX_SPD * (1 - (r.right - mx)  / EDGE);
+      if (my < r.top  + EDGE)   dy = -MAX_SPD * (1 - (my - r.top)    / EDGE);
+      if (my > r.bottom - EDGE) dy =  MAX_SPD * (1 - (r.bottom - my) / EDGE);
       if (dx || dy) {
         rackRef.current.scrollLeft += dx;
         rackRef.current.scrollTop  += dy;
-        // Keep module position in sync with scroll
-        const { moduleId, startX, startY, origX, origY } = dragRef.current;
+        // Snapshot ref fields into locals before the async setState
+        const { moduleId, startX, startY, origX, origY, origScrollLeft, origScrollTop } = dragRef.current;
+        const sl = rackRef.current.scrollLeft;
+        const st = rackRef.current.scrollTop;
         setModules(prev => prev.map(m =>
           m.id === moduleId
             ? { ...m,
-                x: Math.max(0, origX + lastMouse.x - startX + rackRef.current!.scrollLeft - (dragRef.current!.origScrollLeft ?? 0)),
-                y: Math.max(0, origY + lastMouse.y - startY + rackRef.current!.scrollTop  - (dragRef.current!.origScrollTop  ?? 0)) }
+                x: Math.max(0, origX + mx - startX + sl - origScrollLeft),
+                y: Math.max(0, origY + my - startY + st - origScrollTop) }
             : m
         ));
         rafId = requestAnimationFrame(edgeScroll);
@@ -884,14 +886,14 @@ export default function SynthApp() {
         });
       }
       if (dragRef.current) {
-        const { moduleId, startX, startY, origX, origY } = dragRef.current;
+        const { moduleId, startX, startY, origX, origY, origScrollLeft, origScrollTop } = dragRef.current;
         const sl = rackRef.current?.scrollLeft ?? 0;
         const st = rackRef.current?.scrollTop  ?? 0;
         setModules(prev => prev.map(m =>
           m.id === moduleId
             ? { ...m,
-                x: Math.max(0, origX + e.clientX - startX + sl - (dragRef.current!.origScrollLeft ?? 0)),
-                y: Math.max(0, origY + e.clientY - startY + st - (dragRef.current!.origScrollTop  ?? 0)) }
+                x: Math.max(0, origX + e.clientX - startX + sl - origScrollLeft),
+                y: Math.max(0, origY + e.clientY - startY + st - origScrollTop) }
             : m
         ));
         if (!rafId) rafId = requestAnimationFrame(edgeScroll);
