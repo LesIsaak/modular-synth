@@ -318,9 +318,11 @@ function FixedKeyboardPanel({
 }) {
   const [octave,     setOctave]     = useState(4);
   const [activeNote, setActiveNote] = useState<number | null>(null);
+  const [hold,       setHold]       = useState(false);
   const pitchRef    = useRef(0);    // current pitch bend -1..1
   const heldFreqRef = useRef(0);    // base freq of held note
   const heldMidiRef = useRef<number | null>(null);
+  const holdRef     = useRef(false);
 
   const pressKey = (semitone: number, octOff = 0) => {
     if (!started) return;
@@ -336,10 +338,23 @@ function FixedKeyboardPanel({
 
   const releaseKey = (midi: number) => {
     if (heldMidiRef.current !== midi) return;
+    if (holdRef.current) return;     // hold mode: don't release
     heldFreqRef.current = 0;
     heldMidiRef.current = null;
     setActiveNote(null);
     onNote(0, false);
+  };
+
+  const toggleHold = () => {
+    const next = !holdRef.current;
+    holdRef.current = next;
+    setHold(next);
+    if (!next && heldFreqRef.current > 0) {
+      heldFreqRef.current = 0;
+      heldMidiRef.current = null;
+      setActiveNote(null);
+      onNote(0, false);
+    }
   };
 
   const handlePitchChange = useCallback((val: number) => {
@@ -434,30 +449,47 @@ function FixedKeyboardPanel({
         <span style={{ fontSize: 7, letterSpacing: '0.22em', color: '#3a3a3a', textTransform: 'uppercase' }}>
           KEYBOARD CONTROLLER
         </span>
-        {/* Octave controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 7, color: '#333', letterSpacing: '0.1em', textTransform: 'uppercase' }}>OCT</span>
+        {/* Controls right side */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* HOLD button */}
           <button
+            onClick={toggleHold}
+            data-testid="hold-button"
             style={{
-              width: 20, height: 16, fontSize: 11, lineHeight: 1, borderRadius: 2,
-              cursor: 'pointer', background: '#181818', color: '#555', border: '1px solid #2a2a2a',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              height: 16, padding: '0 7px', fontSize: 7, letterSpacing: '0.16em',
+              borderRadius: 2, cursor: 'pointer', fontWeight: 700, textTransform: 'uppercase',
+              border: `1px solid ${hold ? '#d97706' : '#2a2a2a'}`,
+              background: hold ? '#1c1000' : '#181818',
+              color: hold ? '#d97706' : '#444',
+              boxShadow: hold ? '0 0 6px rgba(217,119,6,0.4)' : 'none',
+              transition: 'all 0.1s',
             }}
-            onClick={() => setOctave(o => Math.max(1, o - 1))}
-            data-testid="octave-down"
-          >−</button>
-          <span style={{ fontSize: 10, color: '#888', minWidth: 14, textAlign: 'center', fontWeight: 700 }}>
-            {octave}
-          </span>
-          <button
-            style={{
-              width: 20, height: 16, fontSize: 11, lineHeight: 1, borderRadius: 2,
-              cursor: 'pointer', background: '#181818', color: '#555', border: '1px solid #2a2a2a',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-            onClick={() => setOctave(o => Math.min(7, o + 1))}
-            data-testid="octave-up"
-          >+</button>
+          >HOLD</button>
+          {/* Octave controls */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 7, color: '#333', letterSpacing: '0.1em', textTransform: 'uppercase' }}>OCT</span>
+            <button
+              style={{
+                width: 20, height: 16, fontSize: 11, lineHeight: 1, borderRadius: 2,
+                cursor: 'pointer', background: '#181818', color: '#555', border: '1px solid #2a2a2a',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+              onClick={() => setOctave(o => Math.max(1, o - 1))}
+              data-testid="octave-down"
+            >−</button>
+            <span style={{ fontSize: 10, color: '#888', minWidth: 14, textAlign: 'center', fontWeight: 700 }}>
+              {octave}
+            </span>
+            <button
+              style={{
+                width: 20, height: 16, fontSize: 11, lineHeight: 1, borderRadius: 2,
+                cursor: 'pointer', background: '#181818', color: '#555', border: '1px solid #2a2a2a',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+              onClick={() => setOctave(o => Math.min(7, o + 1))}
+              data-testid="octave-up"
+            >+</button>
+          </div>
         </div>
       </div>
 
@@ -736,6 +768,19 @@ export default function SynthApp() {
     if (fromSig === 'gate') {
       if (!gateConnRef.current.has(fromModuleId)) gateConnRef.current.set(fromModuleId, new Set());
       gateConnRef.current.get(fromModuleId)!.add(moduleId);
+      // For self-clocking modules (arp, sequencers) register a trigger callback
+      const fromAudio = audioModulesRef.current.get(fromModuleId);
+      if (fromAudio?.setGateTrigger) {
+        fromAudio.setGateTrigger((on, freq) => {
+          const ctx = audioCtxRef.current;
+          if (!ctx) return;
+          for (const id of gateConnRef.current.get(fromModuleId) ?? []) {
+            const m = audioModulesRef.current.get(id);
+            if (on) m?.noteOn?.(ctx.currentTime, freq);
+            else    m?.noteOff?.(ctx.currentTime);
+          }
+        });
+      }
     } else {
       const fromAudio = audioModulesRef.current.get(fromModuleId);
       const toAudio   = audioModulesRef.current.get(moduleId);

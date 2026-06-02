@@ -1128,6 +1128,107 @@ export function createAudioModule(
       };
     }
 
+    // ── Arpeggiator ──────────────────────────────────────────────────
+    case 'arpeggiator': {
+      const voct = ctx.createConstantSource(); voct.offset.value = 0; voct.start();
+      const heldNotes: number[] = [];   // freqs in play order
+      let lastNoteFreq = 0;
+      let stepIdx = 0;
+      let gateCb: ((on: boolean, freq: number) => void) | null = null;
+
+      // div selector: 1/16 1/8 1/4 1/2 1/1  → beat fractions
+      const DIV_MULTS = [0.25, 0.5, 1, 2, 4];
+      const getStepMs = () => 60000 / (p.bpm ?? 120) * DIV_MULTS[Math.round(p.div ?? 1)];
+
+      const buildSeq = (): number[] => {
+        const oct = Math.round(p.octaves ?? 1);
+        const base = [...heldNotes].sort((a, b) => a - b);
+        const result = [...base];
+        for (let o = 1; o < oct; o++) for (const f of base) result.push(f * Math.pow(2, o));
+        return result;
+      };
+
+      const getNextFreq = (): number | null => {
+        const seq = buildSeq();
+        const n = seq.length;
+        if (n === 0) return null;
+        const mode = Math.round(p.mode ?? 0);
+        let freq: number;
+        switch (mode) {
+          case 0: // UP
+            freq = seq[stepIdx % n]; stepIdx = (stepIdx + 1) % n; break;
+          case 1: // DOWN
+            freq = seq[(n - 1 - stepIdx % n)]; stepIdx = (stepIdx + 1) % n; break;
+          case 2: { // UP/DOWN ping-pong
+            const total = n <= 1 ? 1 : (n - 1) * 2;
+            const pos = stepIdx % total;
+            freq = pos < n ? seq[pos] : seq[total - pos];
+            stepIdx = (stepIdx + 1) % total; break;
+          }
+          case 3: { // DOWN/UP ping-pong
+            const total = n <= 1 ? 1 : (n - 1) * 2;
+            const pos = stepIdx % total;
+            freq = pos < n ? seq[n - 1 - pos] : seq[pos - n + 1];
+            stepIdx = (stepIdx + 1) % total; break;
+          }
+          case 4: // RANDOM
+            freq = seq[Math.floor(Math.random() * n)]; break;
+          case 5: // AS PLAYED (insertion order)
+            freq = heldNotes[stepIdx % Math.max(1, heldNotes.length)] ?? seq[0];
+            stepIdx = (stepIdx + 1) % Math.max(1, heldNotes.length); break;
+          case 6: { // OUTSIDE IN
+            const oi = stepIdx % n;
+            freq = oi % 2 === 0 ? seq[n - 1 - Math.floor(oi / 2)] : seq[Math.floor(oi / 2)];
+            stepIdx = (stepIdx + 1) % n; break;
+          }
+          case 7: { // INSIDE OUT
+            const mid = Math.floor(n / 2);
+            const io = stepIdx % n;
+            const f = io % 2 === 0
+              ? seq[Math.max(0, mid - Math.floor(io / 2))]
+              : seq[Math.min(n - 1, mid + Math.ceil(io / 2))];
+            freq = f; stepIdx = (stepIdx + 1) % n; break;
+          }
+          case 8: // UP×2 — each note twice before advancing
+            freq = seq[Math.floor(stepIdx / 2) % n]; stepIdx++; if (stepIdx >= n * 2) stepIdx = 0; break;
+          case 9: // RANDOM WALK — drift ±1 step
+            stepIdx = Math.max(0, Math.min(n - 1, stepIdx + (Math.random() > 0.5 ? 1 : -1)));
+            freq = seq[stepIdx]; break;
+          default:
+            freq = seq[stepIdx % n]; stepIdx = (stepIdx + 1) % n;
+        }
+        return freq;
+      };
+
+      const tick = () => {
+        const freq = getNextFreq();
+        if (freq === null) return;
+        voct.offset.value = freq;
+        gateCb?.(true, freq);
+        const gl = Math.min(0.95, p.gate_len ?? 0.5);
+        setTimeout(() => gateCb?.(false, freq), getStepMs() * gl);
+      };
+
+      let timer = makeClockTimer(getStepMs, tick);
+
+      return {
+        outputs: new Map([['voct_out', voct]]),
+        inputs: new Map(),
+        noteOn: (_t, freq) => { if (!heldNotes.includes(freq)) heldNotes.push(freq); lastNoteFreq = freq; },
+        noteOff: (_t) => {
+          const idx = heldNotes.indexOf(lastNoteFreq);
+          if (idx >= 0) { heldNotes.splice(idx, 1); if (stepIdx >= Math.max(1, heldNotes.length)) stepIdx = 0; }
+        },
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'bpm' || id === 'div') { timer.destroy(); stepIdx = 0; timer = makeClockTimer(getStepMs, tick); }
+        },
+        setSelector: (id, val) => { p[id] = val; stepIdx = 0; },
+        setGateTrigger: fn => { gateCb = fn; },
+        destroy: () => { timer.destroy(); voct.stop(); voct.disconnect(); },
+      };
+    }
+
     // ── Clock ────────────────────────────────────────────────────────
     case 'clock_gen': {
       let gateCb: ((on: boolean, freq: number) => void) | null = null;
