@@ -77,7 +77,7 @@ function OutputMeter({ analyser }: { analyser?: AnalyserNode }) {
   );
 }
 
-const PANEL_H = 400;
+const PANEL_H = 300;
 const KEYBOARD_H = 540;
 const RAIL_H = 28;
 

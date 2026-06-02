@@ -9,7 +9,7 @@ import ModulePanel from '../components/ModulePanel';
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 const SLOT_W  = 220;   // rack slot width (snap grid)
-const SLOT_H  = 400;   // rack slot height (= PANEL_H)
+const SLOT_H  = 300;   // rack slot height (= PANEL_H)
 const CONTENT_W = 2400;
 const CONTENT_H = 1400;
 const KB_H    = 152;   // fixed keyboard panel height
