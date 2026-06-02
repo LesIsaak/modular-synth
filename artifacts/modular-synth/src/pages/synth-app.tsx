@@ -712,7 +712,21 @@ export default function SynthApp() {
       c.fromModuleId === fromModuleId && c.fromPortId === fromPortId &&
       c.toModuleId   === moduleId     && c.toPortId   === portId
     );
-    if (exists) { setPendingCable(null); return; }
+    if (exists) {
+      // Second click on the other end of an existing cable → cut it
+      const fromTypeDef = MODULE_TYPE_MAP.get(modules.find(m => m.id === fromModuleId)?.typeId ?? '');
+      const fromPort    = fromTypeDef?.ports.find(p => p.id === fromPortId);
+      if (fromPort?.type === 'gate_out') {
+        gateConnRef.current.get(fromModuleId)?.delete(moduleId);
+      } else {
+        const fromAudio = audioModulesRef.current.get(fromModuleId);
+        const toAudio   = audioModulesRef.current.get(moduleId);
+        if (fromAudio && toAudio) disconnectAudioPorts(fromAudio, fromPortId, toAudio, portId);
+      }
+      setCables(prev => prev.filter(c => c.id !== exists.id));
+      setPendingCable(null);
+      return;
+    }
 
     const color    = CABLE_COLORS[cables.length % CABLE_COLORS.length];
     const newCable: Cable = {
@@ -730,7 +744,7 @@ export default function SynthApp() {
 
     setCables(prev => [...prev, newCable]);
     setPendingCable(null);
-  }, [pendingCable, cables]);
+  }, [pendingCable, cables, modules]);
 
   // ─── Remove cable ───────────────────────────────────────────────────────────
   const handleRemoveCable = useCallback((cableId: string) => {
