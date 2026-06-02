@@ -145,11 +145,32 @@ function PatchCables({
         const d = makePath(from.x, from.y, to.x, to.y);
         return (
           <g key={c.id} className="pointer-events-auto">
+            {/* Hit area */}
             <path d={d} fill="none" stroke="transparent" strokeWidth={14} style={{ cursor: 'pointer' }}
               onContextMenu={e => { e.preventDefault(); onRemoveCable(c.id); }} />
-            <path d={d} fill="none" stroke="#000" strokeWidth={5} strokeLinecap="round" opacity={0.5} />
-            <path d={d} fill="none" stroke={c.color} strokeWidth={3.5} strokeLinecap="round"
+            {/* Cable shadow */}
+            <path d={d} fill="none" stroke="#000" strokeWidth={6} strokeLinecap="round" opacity={0.45} />
+            {/* Cable body */}
+            <path d={d} fill="none" stroke={c.color} strokeWidth={4} strokeLinecap="round"
               filter={`url(#glow-${c.id})`} />
+            {/* Cable highlight */}
+            <path d={d} fill="none" stroke="white" strokeWidth={1.2} strokeLinecap="round" opacity={0.12} />
+
+            {/* 3.5mm plug at FROM end */}
+            <circle cx={from.x} cy={from.y} r={7} fill="#111" stroke="#555" strokeWidth={0.8} />
+            <circle cx={from.x} cy={from.y} r={5.5} fill={c.color}
+              style={{ filter: `drop-shadow(0 0 3px ${c.color})` }} />
+            <circle cx={from.x} cy={from.y} r={3.8} fill="#1a1a1a" />
+            <circle cx={from.x} cy={from.y} r={1.8} fill="#3a3a3a" />
+            <ellipse cx={from.x - 1.5} cy={from.y - 1.5} rx={1.5} ry={0.9} fill="white" opacity={0.18} />
+
+            {/* 3.5mm plug at TO end */}
+            <circle cx={to.x} cy={to.y} r={7} fill="#111" stroke="#555" strokeWidth={0.8} />
+            <circle cx={to.x} cy={to.y} r={5.5} fill={c.color}
+              style={{ filter: `drop-shadow(0 0 3px ${c.color})` }} />
+            <circle cx={to.x} cy={to.y} r={3.8} fill="#1a1a1a" />
+            <circle cx={to.x} cy={to.y} r={1.8} fill="#3a3a3a" />
+            <ellipse cx={to.x - 1.5} cy={to.y - 1.5} rx={1.5} ry={0.9} fill="white" opacity={0.18} />
           </g>
         );
       })}

@@ -12,22 +12,13 @@ interface PortJackProps {
   onRegisterRef: (key: string, el: HTMLDivElement | null) => void;
 }
 
-const PORT_COLORS: Record<PortType, string> = {
+export const PORT_COLORS: Record<PortType, string> = {
   audio_out: '#fbbf24',
-  audio_in: '#6b7280',
-  cv_out: '#67e8f9',
-  cv_in: '#6b7280',
-  gate_out: '#86efac',
-  gate_in: '#6b7280',
-};
-
-const PORT_GLOW: Record<PortType, string> = {
-  audio_out: '0 0 8px rgba(251,191,36,0.7)',
-  audio_in: 'none',
-  cv_out: '0 0 8px rgba(103,232,249,0.7)',
-  cv_in: 'none',
-  gate_out: '0 0 8px rgba(134,239,172,0.7)',
-  gate_in: 'none',
+  audio_in:  '#6b7280',
+  cv_out:    '#67e8f9',
+  cv_in:     '#6b7280',
+  gate_out:  '#86efac',
+  gate_in:   '#6b7280',
 };
 
 export default function PortJack({
@@ -48,50 +39,92 @@ export default function PortJack({
     return () => onRegisterRef(key, null);
   }, [key, onRegisterRef]);
 
-  const isOut = portDef.type.endsWith('_out');
-  const color = isConnected || isPendingSource ? PORT_COLORS[portDef.type] : (isOut ? PORT_COLORS[portDef.type] : '#374151');
-  const glow = (isConnected || isPendingSource) ? PORT_GLOW[portDef.type] : 'none';
+  const isOut    = portDef.type.endsWith('_out');
+  const active   = isConnected || isPendingSource;
+  const ringColor = active ? PORT_COLORS[portDef.type] : (isOut ? PORT_COLORS[portDef.type] : '#4b5563');
+
+  const rimId    = `rim-${key}`;
+  const holeId   = `hole-${key}`;
+  const shineId  = `shine-${key}`;
 
   return (
     <div className="flex flex-col items-center gap-0.5" data-testid={`port-${moduleId}-${portDef.id}`}>
       <div
         ref={ref}
-        onClick={(e) => {
-          e.stopPropagation();
-          onPortClick(moduleId, portDef.id, portDef.type);
-        }}
-        onDoubleClick={(e) => {
-          e.stopPropagation();
-          if (portDef.type.endsWith('_out')) onPortDoubleClick?.(moduleId, portDef.id);
-        }}
-        className="relative cursor-pointer transition-transform hover:scale-110 active:scale-95"
-        style={{ width: 20, height: 20 }}
+        onClick={e => { e.stopPropagation(); onPortClick(moduleId, portDef.id, portDef.type); }}
+        onDoubleClick={e => { e.stopPropagation(); if (isOut) onPortDoubleClick?.(moduleId, portDef.id); }}
+        className="cursor-pointer hover:scale-110 active:scale-95 transition-transform"
+        style={{ width: 26, height: 26 }}
       >
-        {/* Outer ring */}
-        <div
-          className="absolute inset-0 rounded-full"
-          style={{
-            background: '#111',
-            border: `2px solid ${color}`,
-            boxShadow: glow,
-          }}
-        />
-        {/* Inner dot */}
-        <div
-          className="absolute rounded-full"
-          style={{
-            background: isConnected ? color : '#0a0a0a',
-            width: 8, height: 8,
-            top: 4, left: 4,
-          }}
-        />
-        {/* Highlight ring when pending/can connect */}
-        {canConnect && (
-          <div
-            className="absolute inset-0 rounded-full animate-pulse"
-            style={{ border: '2px solid white', opacity: 0.6 }}
+        <svg width={26} height={26} viewBox="0 0 26 26" style={{ display: 'block' }}>
+          <defs>
+            <radialGradient id={rimId} cx="38%" cy="32%" r="60%">
+              <stop offset="0%"   stopColor="#909090" />
+              <stop offset="45%"  stopColor="#606060" />
+              <stop offset="100%" stopColor="#282828" />
+            </radialGradient>
+            <radialGradient id={holeId} cx="50%" cy="50%" r="50%">
+              <stop offset="0%"   stopColor={active ? ringColor : '#1c1c1c'} stopOpacity={active ? 0.35 : 1} />
+              <stop offset="100%" stopColor="#040404" />
+            </radialGradient>
+            <radialGradient id={shineId} cx="35%" cy="28%" r="55%">
+              <stop offset="0%"   stopColor="white" stopOpacity="0.15" />
+              <stop offset="100%" stopColor="white" stopOpacity="0" />
+            </radialGradient>
+          </defs>
+
+          {/* Drop shadow base */}
+          <circle cx="13" cy="14" r="11.5" fill="black" opacity="0.55" />
+
+          {/* Outer metal collar */}
+          <circle cx="13" cy="13" r="11.5" fill={`url(#${rimId})`} />
+
+          {/* Collar groove / dark ring */}
+          <circle cx="13" cy="13" r="8.5"  fill="#111" />
+
+          {/* Inner socket wall */}
+          <circle cx="13" cy="13" r="7.5"
+            fill="#242424"
+            stroke="#383838"
+            strokeWidth="0.6"
           />
-        )}
+
+          {/* Socket bore */}
+          <circle cx="13" cy="13" r="6" fill={`url(#${holeId})`} />
+
+          {/* Center contact (TRS tip) */}
+          <circle cx="13" cy="13" r="2.2"
+            fill={active ? ringColor : '#2e2e2e'}
+            stroke={active ? 'none' : '#1a1a1a'}
+            strokeWidth="0.5"
+            style={{ filter: active ? `drop-shadow(0 0 3px ${ringColor})` : 'none' }}
+          />
+
+          {/* Metal sheen highlight */}
+          <circle cx="13" cy="13" r="11.5" fill={`url(#${shineId})`} />
+
+          {/* Colored ring when active */}
+          {active && (
+            <circle cx="13" cy="13" r="11.5"
+              fill="none"
+              stroke={ringColor}
+              strokeWidth="1.2"
+              opacity="0.65"
+              style={{ filter: `drop-shadow(0 0 4px ${ringColor})` }}
+            />
+          )}
+
+          {/* Pulse ring when connectable */}
+          {canConnect && (
+            <circle cx="13" cy="13" r="11.5"
+              fill="none"
+              stroke="white"
+              strokeWidth="1.5"
+              opacity="0.7"
+              className="animate-pulse"
+            />
+          )}
+        </svg>
       </div>
       <span
         className="text-[8px] uppercase tracking-wider"
