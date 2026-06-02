@@ -9,6 +9,7 @@ interface ModulePanelProps {
   connectedPorts: Set<string>;
   pendingCable: PendingCable | null;
   onPortClick: (moduleId: string, portId: string, type: PortType) => void;
+  onPortDoubleClick: (moduleId: string, portId: string) => void;
   onParamChange: (moduleId: string, paramId: string, value: number) => void;
   onSelectorChange: (moduleId: string, selectorId: string, value: number) => void;
   onDragStart: (moduleId: string, e: React.MouseEvent) => void;
@@ -107,7 +108,7 @@ function Screw() {
 }
 
 function PortWithLabel({
-  moduleId, port, isConnected, isPendingSource, canConnect, onPortClick, onRegisterRef,
+  moduleId, port, isConnected, isPendingSource, canConnect, onPortClick, onPortDoubleClick, onRegisterRef,
 }: {
   moduleId: string;
   port: { id: string; name: string; type: PortType };
@@ -115,6 +116,7 @@ function PortWithLabel({
   isPendingSource: boolean;
   canConnect: boolean;
   onPortClick: (moduleId: string, portId: string, type: PortType) => void;
+  onPortDoubleClick: (moduleId: string, portId: string) => void;
   onRegisterRef: (key: string, el: HTMLDivElement | null) => void;
 }) {
   return (
@@ -126,6 +128,7 @@ function PortWithLabel({
         isPendingSource={isPendingSource}
         canConnect={canConnect}
         onPortClick={onPortClick}
+        onPortDoubleClick={onPortDoubleClick}
         onRegisterRef={onRegisterRef}
       />
       <span style={{
@@ -190,7 +193,7 @@ function PianoKeyboard({ octave, onKeyPress }: {
 }
 
 export default function ModulePanel({
-  module, connectedPorts, pendingCable, onPortClick, onParamChange,
+  module, connectedPorts, pendingCable, onPortClick, onPortDoubleClick, onParamChange,
   onSelectorChange, onDragStart, onDelete, onRegisterPortRef, onKeyPress, analyser,
 }: ModulePanelProps) {
   const typeDef = MODULE_TYPE_MAP.get(module.typeId);
@@ -225,6 +228,7 @@ export default function ModulePanel({
     isPendingSource: pendingCable?.fromModuleId === module.id && pendingCable.fromPortId === port.id,
     canConnect: canConnectPort(port.id, port.type),
     onPortClick,
+    onPortDoubleClick,
     onRegisterRef: onRegisterPortRef,
   });
 

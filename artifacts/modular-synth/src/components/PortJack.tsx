@@ -8,6 +8,7 @@ interface PortJackProps {
   isPendingSource: boolean;
   canConnect: boolean;
   onPortClick: (moduleId: string, portId: string, type: PortType) => void;
+  onPortDoubleClick?: (moduleId: string, portId: string) => void;
   onRegisterRef: (key: string, el: HTMLDivElement | null) => void;
 }
 
@@ -36,6 +37,7 @@ export default function PortJack({
   isPendingSource,
   canConnect,
   onPortClick,
+  onPortDoubleClick,
   onRegisterRef,
 }: PortJackProps) {
   const ref = useRef<HTMLDivElement>(null);
@@ -57,6 +59,10 @@ export default function PortJack({
         onClick={(e) => {
           e.stopPropagation();
           onPortClick(moduleId, portDef.id, portDef.type);
+        }}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          if (portDef.type.endsWith('_out')) onPortDoubleClick?.(moduleId, portDef.id);
         }}
         className="relative cursor-pointer transition-transform hover:scale-110 active:scale-95"
         style={{ width: 20, height: 20 }}

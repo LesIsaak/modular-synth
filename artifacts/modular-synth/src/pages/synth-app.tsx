@@ -746,6 +746,26 @@ export default function SynthApp() {
     setPendingCable(null);
   }, [pendingCable, cables, modules]);
 
+  // ─── Double-click output port → cut all its cables ──────────────────────────
+  const handlePortDoubleClick = useCallback((moduleId: string, portId: string) => {
+    setCables(prev => {
+      const toRemove = prev.filter(c => c.fromModuleId === moduleId && c.fromPortId === portId);
+      toRemove.forEach(cable => {
+        const fromTypeDef = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
+        const fromPort    = fromTypeDef?.ports.find(p => p.id === cable.fromPortId);
+        if (fromPort?.type === 'gate_out') {
+          gateConnRef.current.get(cable.fromModuleId)?.delete(cable.toModuleId);
+        } else {
+          const fromAudio = audioModulesRef.current.get(cable.fromModuleId);
+          const toAudio   = audioModulesRef.current.get(cable.toModuleId);
+          if (fromAudio && toAudio) disconnectAudioPorts(fromAudio, cable.fromPortId, toAudio, cable.toPortId);
+        }
+      });
+      return prev.filter(c => !(c.fromModuleId === moduleId && c.fromPortId === portId));
+    });
+    setPendingCable(null);
+  }, [modules]);
+
   // ─── Remove cable ───────────────────────────────────────────────────────────
   const handleRemoveCable = useCallback((cableId: string) => {
     setCables(prev => {
@@ -905,6 +925,7 @@ export default function SynthApp() {
                 connectedPorts={connectedPortsSet}
                 pendingCable={pendingCable}
                 onPortClick={handlePortClick}
+                onPortDoubleClick={handlePortDoubleClick}
                 onParamChange={handleParamChange}
                 onSelectorChange={handleSelectorChange}
                 onDragStart={handleDragStart}
