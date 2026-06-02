@@ -6,6 +6,7 @@ import {
 } from '../moduleDefinitions';
 import { createAudioModule, connectAudioPorts, disconnectAudioPorts } from '../audioEngine';
 import ModulePanel from '../components/ModulePanel';
+import PortJack from '../components/PortJack';
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 const SLOT_W  = 220;   // rack slot width (snap grid)
@@ -46,10 +47,12 @@ const DEFAULT_MODULES: ModuleInstance[] = [
 ];
 
 const DEFAULT_CABLES: Cable[] = [
-  { id: 'c2', fromModuleId: 'vco1',  fromPortId: 'out',     toModuleId: 'vcf1',  toPortId: 'audio_in', color: '#f97316' },
-  { id: 'c3', fromModuleId: 'vcf1',  fromPortId: 'out',     toModuleId: 'vca1',  toPortId: 'audio_in', color: '#14b8a6' },
-  { id: 'c4', fromModuleId: 'adsr1', fromPortId: 'env_out', toModuleId: 'vca1',  toPortId: 'cv_in',    color: '#a855f7' },
-  { id: 'c5', fromModuleId: 'vca1',  fromPortId: 'out',     toModuleId: 'out1',  toPortId: 'in_l',     color: '#22c55e' },
+  { id: 'c1', fromModuleId: 'kb1',  fromPortId: 'voct_out', toModuleId: 'vco1',  toPortId: 'voct',     color: '#67e8f9' },
+  { id: 'c6', fromModuleId: 'kb1',  fromPortId: 'gate_out', toModuleId: 'adsr1', toPortId: 'gate_in',  color: '#86efac' },
+  { id: 'c2', fromModuleId: 'vco1', fromPortId: 'out',      toModuleId: 'vcf1',  toPortId: 'audio_in', color: '#f97316' },
+  { id: 'c3', fromModuleId: 'vcf1', fromPortId: 'out',      toModuleId: 'vca1',  toPortId: 'audio_in', color: '#14b8a6' },
+  { id: 'c4', fromModuleId: 'adsr1',fromPortId: 'env_out',  toModuleId: 'vca1',  toPortId: 'cv_in',    color: '#a855f7' },
+  { id: 'c5', fromModuleId: 'vca1', fromPortId: 'out',      toModuleId: 'out1',  toPortId: 'in_l',     color: '#22c55e' },
 ];
 
 // ─── Module browser ───────────────────────────────────────────────────────────
@@ -103,7 +106,7 @@ function ModuleBrowser({ onAdd }: { onAdd: (typeId: string) => void }) {
 
 // ─── Patch cables SVG ─────────────────────────────────────────────────────────
 function PatchCables({
-  cables, modules, pendingCable, mousePos, getPortCenter, onRemoveCable,
+  cables, modules, pendingCable, mousePos, getPortCenter, onRemoveCable, scrollTick: _,
 }: {
   cables: Cable[];
   modules: ModuleInstance[];
@@ -111,6 +114,7 @@ function PatchCables({
   mousePos: { x: number; y: number };
   getPortCenter: (modId: string, portId: string) => { x: number; y: number } | null;
   onRemoveCable: (id: string) => void;
+  scrollTick: number;
 }) {
   const makePath = (x1: number, y1: number, x2: number, y2: number) => {
     const dy = Math.abs(y2 - y1);
@@ -122,10 +126,8 @@ function PatchCables({
 
   return (
     <svg
-      className="absolute top-0 left-0 pointer-events-none"
-      width={CONTENT_W}
-      height={CONTENT_H}
-      style={{ zIndex: 20 }}
+      className="pointer-events-none"
+      style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 20 }}
     >
       <defs>
         {cables.map(c => (
@@ -311,10 +313,20 @@ function FixedKeyboardPanel({
   started,
   onNote,
   onBend,
+  onMod,
+  connectedPorts,
+  pendingCable,
+  onPortClick,
+  onRegisterPortRef,
 }: {
   started: boolean;
   onNote: (freq: number, on: boolean) => void;
   onBend: (freq: number) => void;
+  onMod: (val: number) => void;
+  connectedPorts: Set<string>;
+  pendingCable: PendingCable | null;
+  onPortClick: (moduleId: string, portId: string, type: PortType) => void;
+  onRegisterPortRef: (key: string, el: HTMLDivElement | null) => void;
 }) {
   const [octave,     setOctave]     = useState(4);
   const [activeNote, setActiveNote] = useState<number | null>(null);
@@ -350,9 +362,9 @@ function FixedKeyboardPanel({
     }
   }, [onBend]);
 
-  const handleModChange = useCallback((_val: number) => {
-    // mod output — future: wire to kb1's mod_out ConstantSource
-  }, []);
+  const handleModChange = useCallback((val: number) => {
+    onMod(val);
+  }, [onMod]);
 
   const renderOctave = (octOff: number) => {
     const octBase = (octave + octOff) * 12 + 12;
@@ -479,6 +491,40 @@ function FixedKeyboardPanel({
           <div style={{ width: 2, background: '#1a1a1a', flexShrink: 0, borderRadius: 1 }} />
           {renderOctave(1)}
         </div>
+
+        {/* Vertical divider before patchbay */}
+        <div style={{ width: 1, background: '#202020', flexShrink: 0 }} />
+
+        {/* KB Patchbay — port jacks for kb1 outputs */}
+        <div style={{
+          width: 80, flexShrink: 0, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: 10,
+          padding: '18px 8px 6px',
+          position: 'relative',
+        }}>
+          <div style={{
+            fontSize: 6, letterSpacing: '0.22em', color: '#2e2e2e',
+            textTransform: 'uppercase', position: 'absolute', top: 6,
+          }}>
+            KB OUT
+          </div>
+          {([
+            { id: 'gate_out', name: 'GATE',  type: 'gate_out' as PortType },
+            { id: 'voct_out', name: 'V/OCT', type: 'cv_out'   as PortType },
+            { id: 'mod_out',  name: 'MOD',   type: 'cv_out'   as PortType },
+          ] as Array<{ id: string; name: string; type: PortType }>).map(port => (
+            <PortJack
+              key={port.id}
+              moduleId="kb1"
+              portDef={port}
+              isConnected={connectedPorts.has(`kb1-${port.id}`)}
+              isPendingSource={pendingCable?.fromModuleId === 'kb1' && pendingCable?.fromPortId === port.id}
+              canConnect={false}
+              onPortClick={onPortClick}
+              onRegisterRef={onRegisterPortRef}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -553,6 +599,7 @@ export default function SynthApp() {
   const [cables,       setCables]       = useState<Cable[]>(DEFAULT_CABLES);
   const [pendingCable, setPendingCable] = useState<PendingCable | null>(null);
   const [mousePos,     setMousePos]     = useState({ x: 0, y: 0 });
+  const [scrollTick,   setScrollTick]   = useState(0);
 
   const audioCtxRef      = useRef<AudioContext | null>(null);
   const audioModulesRef  = useRef<Map<string, ReturnType<typeof createAudioModule>>>(new Map());
@@ -570,15 +617,10 @@ export default function SynthApp() {
   }, []);
 
   const getPortCenter = useCallback((modId: string, portId: string) => {
-    const el   = portRefsRef.current.get(`${modId}-${portId}`);
-    const rack = rackRef.current;
-    if (!el || !rack) return null;
+    const el = portRefsRef.current.get(`${modId}-${portId}`);
+    if (!el) return null;
     const eR = el.getBoundingClientRect();
-    const rR = rack.getBoundingClientRect();
-    return {
-      x: eR.left - rR.left + rack.scrollLeft + eR.width  / 2,
-      y: eR.top  - rR.top  + rack.scrollTop  + eR.height / 2,
-    };
+    return { x: eR.left + eR.width / 2, y: eR.top + eR.height / 2 };
   }, []);
 
   // ─── Initialize audio ───────────────────────────────────────────────────────
@@ -595,18 +637,22 @@ export default function SynthApp() {
       audioModulesRef.current.set(mod.id, createAudioModule(ctx, mod.typeId, { ...mod.params }));
     }
 
-    // Hard-wire keyboard → VCO voct
-    const vco1 = audioModulesRef.current.get('vco1');
-    if (vco1) connectAudioPorts(kb1, 'voct_out', vco1, 'voct');
-
-    // Hard-wire keyboard gate → ADSR
-    gateConnRef.current.set('kb1', new Set(['adsr1']));
-
-    // Connect default cables
+    // Connect all default cables — detect gate vs audio by port type
+    const allModTypeIds = new Map<string, string>([
+      ['kb1', 'keyboard'],
+      ...DEFAULT_MODULES.map(m => [m.id, m.typeId] as [string, string]),
+    ]);
     for (const cable of DEFAULT_CABLES) {
-      const fromAudio = audioModulesRef.current.get(cable.fromModuleId);
-      const toAudio   = audioModulesRef.current.get(cable.toModuleId);
-      if (fromAudio && toAudio) connectAudioPorts(fromAudio, cable.fromPortId, toAudio, cable.toPortId);
+      const fromTypeDef = MODULE_TYPE_MAP.get(allModTypeIds.get(cable.fromModuleId) ?? '');
+      const fromPort    = fromTypeDef?.ports.find(p => p.id === cable.fromPortId);
+      if (fromPort?.type === 'gate_out') {
+        if (!gateConnRef.current.has(cable.fromModuleId)) gateConnRef.current.set(cable.fromModuleId, new Set());
+        gateConnRef.current.get(cable.fromModuleId)!.add(cable.toModuleId);
+      } else {
+        const fromAudio = audioModulesRef.current.get(cable.fromModuleId);
+        const toAudio   = audioModulesRef.current.get(cable.toModuleId);
+        if (fromAudio && toAudio) connectAudioPorts(fromAudio, cable.fromPortId, toAudio, cable.toPortId);
+      }
     }
 
     setStarted(true);
@@ -643,6 +689,12 @@ export default function SynthApp() {
 
   // MIDI input — routes USB keyboard events through the same handlers as the on-screen keys
   useMIDI(handleKeyNote, handleKeyBend);
+
+  // ─── Mod wheel → kb1 mod_out ConstantSource ─────────────────────────────────
+  const handleKeyMod = useCallback((val: number) => {
+    const kb1 = audioModulesRef.current.get('kb1');
+    kb1?.setParam?.('mod', val);
+  }, []);
 
   // ─── Add module ─────────────────────────────────────────────────────────────
   const handleAddModule = useCallback((typeId: string) => {
@@ -737,7 +789,9 @@ export default function SynthApp() {
     setCables(prev => {
       const cable = prev.find(c => c.id === cableId);
       if (!cable) return prev;
-      const fromTypeDef = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
+      const fromTypeId  = modules.find(m => m.id === cable.fromModuleId)?.typeId
+        ?? (cable.fromModuleId === 'kb1' ? 'keyboard' : '');
+      const fromTypeDef = MODULE_TYPE_MAP.get(fromTypeId);
       const fromPort    = fromTypeDef?.ports.find(p => p.id === cable.fromPortId);
       if (fromPort?.type === 'gate_out') {
         gateConnRef.current.get(cable.fromModuleId)?.delete(cable.toModuleId);
@@ -760,13 +814,7 @@ export default function SynthApp() {
 
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
-      if (rackRef.current) {
-        const r = rackRef.current.getBoundingClientRect();
-        setMousePos({
-          x: e.clientX - r.left + rackRef.current.scrollLeft,
-          y: e.clientY - r.top  + rackRef.current.scrollTop,
-        });
-      }
+      setMousePos({ x: e.clientX, y: e.clientY });
       if (dragRef.current) {
         const { moduleId, startX, startY, origX, origY } = dragRef.current;
         setModules(prev => prev.map(m =>
@@ -868,18 +916,10 @@ export default function SynthApp() {
         className="flex-1 overflow-auto relative rack-bg"
         style={{ paddingBottom: KB_H }}
         onClick={() => { if (pendingCable) setPendingCable(null); }}
+        onScroll={() => setScrollTick(t => t + 1)}
         data-testid="rack-workspace"
       >
         <div className="relative" style={{ width: CONTENT_W, height: CONTENT_H }}>
-          <PatchCables
-            cables={cables}
-            modules={modules}
-            pendingCable={pendingCable}
-            mousePos={mousePos}
-            getPortCenter={getPortCenter}
-            onRemoveCable={handleRemoveCable}
-          />
-
           {modules.map(mod => (
             <div
               key={mod.id}
@@ -913,11 +953,27 @@ export default function SynthApp() {
         </div>
       </div>
 
+      {/* Cable SVG — fixed overlay, viewport coords, no scroll correction needed */}
+      <PatchCables
+        cables={cables}
+        modules={modules}
+        pendingCable={pendingCable}
+        mousePos={mousePos}
+        getPortCenter={getPortCenter}
+        onRemoveCable={handleRemoveCable}
+        scrollTick={scrollTick}
+      />
+
       {/* Fixed keyboard panel — always at the bottom */}
       <FixedKeyboardPanel
         started={started}
         onNote={handleKeyNote}
         onBend={handleKeyBend}
+        onMod={handleKeyMod}
+        connectedPorts={connectedPortsSet}
+        pendingCable={pendingCable}
+        onPortClick={handlePortClick}
+        onRegisterPortRef={registerPortRef}
       />
     </div>
   );

@@ -2125,12 +2125,18 @@ export function createAudioModule(
       const freqSource = ctx.createConstantSource();
       freqSource.offset.value = 440;
       freqSource.start();
+      const modSource = ctx.createConstantSource();
+      modSource.offset.value = 0;
+      modSource.start();
       return {
-        outputs: new Map([['voct_out', freqSource]]),
+        outputs: new Map([['voct_out', freqSource], ['mod_out', modSource]]),
         inputs: new Map(),
         noteOn: (_time, freq) => { freqSource.offset.value = freq; },
-        setParam: () => {},
-        destroy: () => { freqSource.stop(); freqSource.disconnect(); },
+        setParam: (id, val) => { if (id === 'mod') modSource.offset.value = val as number; },
+        destroy: () => {
+          freqSource.stop(); freqSource.disconnect();
+          modSource.stop(); modSource.disconnect();
+        },
       };
     }
 
