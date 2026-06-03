@@ -2452,10 +2452,17 @@ export function createAudioModule(
         // Clock passthrough — every tick
         fire('clk_out', dur);
 
-        // Pack 8×4-bit track positions into stepRef for UI polling
+        // Pack 8×4-bit track positions into stepRef for UI polling.
+        // Delay the visual update to match when the audio actually plays so the
+        // step indicator stays in sync even with lookahead scheduling.
         let packed = 0;
         for (let t = 0; t < NTRACKS; t++) packed |= (trackPos[t] << (t * 4));
-        stepRef.value = packed;
+        const _p = packed;
+        const _visualDelay = _currentTickAudioTime
+          ? Math.max(0, (_currentTickAudioTime - ctx.currentTime) * 1000 - 10)
+          : 0;
+        if (_visualDelay > 0) setTimeout(() => { stepRef.value = _p; }, _visualDelay);
+        else stepRef.value = _p;
 
         // Master position CV — all tracks share global_len
         const masterLenIdx = Math.max(0, Math.min(3, Math.round(p.global_len ?? 3)));
