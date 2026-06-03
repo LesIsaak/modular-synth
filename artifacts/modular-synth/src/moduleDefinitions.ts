@@ -552,7 +552,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
 
   // ─── Arpeggiator ──────────────────────────────────────────────────
   {
-    id: 'arpeggiator', name: 'ARPEGGIATOR', category: 'sequencer', accentColor: SEQ, width: 220,
+    id: 'arpeggiator', name: 'ARPEGGIATOR', category: 'sequencer', accentColor: SEQ, width: 280,
     knobs: [
       { id: 'bpm',      name: 'BPM',  min: 40,   max: 300,  default: 120, step: 1 },
       { id: 'gate_len', name: 'GATE', min: 0.05, max: 0.95, default: 0.5 },
