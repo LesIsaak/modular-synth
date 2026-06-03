@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ModuleInstance, PortType, PendingCable } from '../types';
+import { ModuleInstance, PortType, PendingCable, MidiMonitorData } from '../types';
 import { MODULE_TYPE_MAP } from '../moduleDefinitions';
 import Knob from './Knob';
 import PortJack from './PortJack';
@@ -17,6 +17,100 @@ interface ModulePanelProps {
   onRegisterPortRef: (key: string, el: HTMLDivElement | null) => void;
   onKeyPress?: (moduleId: string, freq: number, on: boolean) => void;
   analyser?: AnalyserNode;
+  midiMonitorData?: MidiMonitorData;
+}
+
+// ─── MIDI Monitor display ─────────────────────────────────────────────────────
+function MidiMonitorDisplay({ d }: { d: MidiMonitorData }) {
+  const accent = '#22d3ee';
+  const bar = (val: number, color: string, w = '100%') => (
+    <div style={{ flex: 1, height: 5, background: '#111', borderRadius: 2, overflow: 'hidden', width: w }}>
+      <div style={{ height: '100%', width: `${Math.round(val * 100)}%`, background: color, borderRadius: 2, transition: 'width 0.05s' }} />
+    </div>
+  );
+  const bipolarBar = (val: number) => {
+    const pct = Math.abs(val) * 50;
+    const left = val < 0 ? 50 - pct : 50;
+    return (
+      <div style={{ flex: 1, height: 5, background: '#111', borderRadius: 2, overflow: 'hidden', position: 'relative' }}>
+        <div style={{ position: 'absolute', top: 0, left: '50%', width: 1, height: '100%', background: '#333' }} />
+        <div style={{
+          position: 'absolute', top: 0, height: '100%',
+          left: `${left}%`, width: `${pct}%`,
+          background: accent, borderRadius: 2,
+        }} />
+      </div>
+    );
+  };
+  const label = (text: string) => (
+    <span style={{ fontSize: 6, color: '#4a4a4a', letterSpacing: '0.1em', textTransform: 'uppercase', whiteSpace: 'nowrap', minWidth: 24 }}>{text}</span>
+  );
+  const val = (text: string) => (
+    <span style={{ fontSize: 7, color: '#6b7280', fontVariantNumeric: 'tabular-nums', minWidth: 22, textAlign: 'right' }}>{text}</span>
+  );
+  const row = (lbl: string, content: React.ReactNode, v: string) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      {label(lbl)}{content}{val(v)}
+    </div>
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: '6px 8px', height: '100%' }}>
+      {/* Gate + Note name */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {/* Gate LED */}
+        <div style={{
+          width: 10, height: 10, borderRadius: '50%', flexShrink: 0,
+          background: d.gate ? '#22c55e' : '#1a1a1a',
+          boxShadow: d.gate ? '0 0 6px #22c55e' : 'none',
+          border: `1px solid ${d.gate ? '#16a34a' : '#2a2a2a'}`,
+          transition: 'all 0.05s',
+        }} />
+        {/* Note name — big */}
+        <span style={{
+          fontSize: 26, fontWeight: 700, color: d.gate ? accent : '#2a2a2a',
+          letterSpacing: '-0.02em', lineHeight: 1, fontVariantNumeric: 'tabular-nums',
+          transition: 'color 0.1s', minWidth: 52,
+        }}>
+          {d.noteName === '---' ? '---' : d.noteName}
+        </span>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1, marginLeft: 'auto' }}>
+          <span style={{ fontSize: 6, color: '#333', textTransform: 'uppercase', letterSpacing: '0.1em' }}>MIDI</span>
+          <span style={{ fontSize: 11, color: '#4a4a4a', fontVariantNumeric: 'tabular-nums' }}>#{d.note.toString().padStart(3,'0')}</span>
+          <span style={{ fontSize: 6, color: '#333', textTransform: 'uppercase', letterSpacing: '0.08em' }}>CH {d.channel.toString().padStart(2,'0')}</span>
+        </div>
+      </div>
+
+      {/* Divider */}
+      <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #1e1e1e, transparent)' }} />
+
+      {/* Velocity */}
+      {row('VEL', bar(d.velocity / 127, '#22c55e'), String(d.velocity))}
+      {/* Pitch bend */}
+      {row('PIT', bipolarBar(d.pitchBend), (d.pitchBend >= 0 ? '+' : '') + (d.pitchBend * 100).toFixed(0) + '%')}
+      {/* Mod wheel */}
+      {row('MOD', bar(d.modWheel, '#a855f7'), (d.modWheel * 127).toFixed(0))}
+
+      {/* Divider */}
+      <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #1e1e1e, transparent)' }} />
+
+      {/* Last CC */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        {label('CC')}
+        <span style={{ fontSize: 8, color: d.lastCC ? '#4a5568' : '#222', fontVariantNumeric: 'tabular-nums', flex: 1 }}>
+          {d.lastCC ? `#${d.lastCC.num.toString().padStart(3,'0')} = ${d.lastCC.val.toString().padStart(3,' ')}` : '— — —'}
+        </span>
+      </div>
+
+      {/* Note count */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        {label('NOTES')}
+        <span style={{ fontSize: 8, color: '#333', fontVariantNumeric: 'tabular-nums' }}>
+          {d.noteCount.toString().padStart(6, '0')}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 // ─── Live VU meter ────────────────────────────────────────────────────────────
@@ -194,7 +288,7 @@ function PianoKeyboard({ octave, onKeyPress }: {
 
 export default function ModulePanel({
   module, connectedPorts, pendingCable, onPortClick, onPortDoubleClick, onParamChange,
-  onSelectorChange, onDragStart, onDelete, onRegisterPortRef, onKeyPress, analyser,
+  onSelectorChange, onDragStart, onDelete, onRegisterPortRef, onKeyPress, analyser, midiMonitorData,
 }: ModulePanelProps) {
   const typeDef = MODULE_TYPE_MAP.get(module.typeId);
   const [showDelete, setShowDelete] = useState(false);
@@ -354,6 +448,9 @@ export default function ModulePanel({
           })}
 
           {isOutput && <OutputMeter analyser={analyser} />}
+          {module.typeId === 'midi_monitor' && midiMonitorData && (
+            <MidiMonitorDisplay d={midiMonitorData} />
+          )}
         </div>
 
         {/* Output ports */}

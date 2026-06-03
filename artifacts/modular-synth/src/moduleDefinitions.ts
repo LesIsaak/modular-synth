@@ -1037,6 +1037,10 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
     ],
   },
   {
+    id: 'midi_monitor', name: 'MIDI MON', category: 'utility', accentColor: '#22d3ee', width: 200,
+    knobs: [], selectors: [], ports: [],
+  },
+  {
     id: 'output', name: 'Output', category: 'utility', accentColor: UTL, width: 180,
     knobs: [{ id: 'volume', name: 'MASTER', min: 0, max: 1, default: 0.7 }],
     ports: [

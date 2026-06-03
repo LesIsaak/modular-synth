@@ -63,3 +63,15 @@ export interface PendingCable {
   fromPortType: PortType;
   color?: string;
 }
+
+export interface MidiMonitorData {
+  gate:      boolean;
+  note:      number;     // 0-127
+  noteName:  string;     // e.g. "C#4"
+  velocity:  number;     // 0-127
+  pitchBend: number;     // -1..+1
+  modWheel:  number;     // 0..1
+  lastCC:    { num: number; val: number } | null;
+  noteCount: number;
+  channel:   number;     // 1-16
+}

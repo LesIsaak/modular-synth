@@ -2243,6 +2243,10 @@ export function createAudioModule(
       };
     }
 
+    case 'midi_monitor': {
+      return { outputs: new Map(), inputs: new Map(), setParam: () => {}, destroy: () => {} };
+    }
+
     case 'output': {
       const master = ctx.createGain();
       master.gain.value = p.volume ?? 0.7;

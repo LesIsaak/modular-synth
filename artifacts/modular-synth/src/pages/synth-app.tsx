@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { ModuleInstance, Cable, PendingCable, PortType } from '../types';
+import { ModuleInstance, Cable, PendingCable, PortType, MidiMonitorData } from '../types';
 import {
   MODULE_TYPE_MAP, CATEGORY_ORDER, CATEGORY_LABELS, CATEGORY_COLORS,
   CABLE_COLORS, getDefaultParams, MODULE_TYPES,
@@ -608,17 +608,26 @@ function FixedKeyboardPanel({
 }
 
 // ─── MIDI input hook ─────────────────────────────────────────────────────────
+type MidiMonEvent =
+  | { type: 'noteOn';  channel: number; note: number; velocity: number }
+  | { type: 'noteOff'; channel: number; note: number }
+  | { type: 'bend';    channel: number; bend: number }
+  | { type: 'cc';      channel: number; num: number; val: number };
+
 function useMIDI(
   onNote: (freq: number, on: boolean) => void,
   onBend: (freq: number) => void,
   onMod:  (val: number) => void,
+  onMon:  (ev: MidiMonEvent) => void,
 ) {
   const onNoteRef  = useRef(onNote);
   const onBendRef  = useRef(onBend);
   const onModRef   = useRef(onMod);
+  const onMonRef   = useRef(onMon);
   onNoteRef.current = onNote;
   onBendRef.current = onBend;
   onModRef.current  = onMod;
+  onMonRef.current  = onMon;
 
   useEffect(() => {
     if (!navigator.requestMIDIAccess) return;
@@ -632,15 +641,18 @@ function useMIDI(
       const note = d[1];
       const vel  = d[2];
 
+      const ch = (d[0] & 0x0f) + 1;
       if (type === 0x90 && vel > 0) {
         // Note On
         const freq = 440 * Math.pow(2, (note - 69) / 12);
         baseFreqRef.current = freq;
         onNoteRef.current(freq, true);
+        onMonRef.current({ type: 'noteOn', channel: ch, note, velocity: vel });
       } else if (type === 0x80 || (type === 0x90 && vel === 0)) {
         // Note Off
         baseFreqRef.current = 0;
         onNoteRef.current(0, false);
+        onMonRef.current({ type: 'noteOff', channel: ch, note });
       } else if (type === 0xe0) {
         // Pitch bend: LSB = d[1], MSB = d[2], center 8192
         const bend14 = (d[2] << 7) | d[1];
@@ -649,9 +661,14 @@ function useMIDI(
           const BEND_ST = 2;
           onBendRef.current(baseFreqRef.current * Math.pow(2, norm * BEND_ST / 12));
         }
+        onMonRef.current({ type: 'bend', channel: ch, bend: (bend14 - 8192) / 8192 });
       } else if (type === 0xb0 && d[1] === 1) {
         // CC 1 = mod wheel (0–127 → 0–1)
         onModRef.current(d[2] / 127);
+        onMonRef.current({ type: 'cc', channel: ch, num: 1, val: d[2] });
+      } else if (type === 0xb0) {
+        // Other CC
+        onMonRef.current({ type: 'cc', channel: ch, num: d[1], val: d[2] });
       }
     };
 
@@ -682,6 +699,12 @@ export default function SynthApp() {
   const [pendingCable, setPendingCable] = useState<PendingCable | null>(null);
   const [mousePos,     setMousePos]     = useState({ x: 0, y: 0 });
   const [cableOpacity, setCableOpacity] = useState(1);
+
+  const NOTE_NAMES_MON = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  const [midiMonData, setMidiMonData] = useState<MidiMonitorData>({
+    gate: false, note: 60, noteName: '---', velocity: 0,
+    pitchBend: 0, modWheel: 0, lastCC: null, noteCount: 0, channel: 1,
+  });
 
   // ─── Undo history ──────────────────────────────────────────────────────────
   const undoStackRef   = useRef<Array<{ cables: Cable[]; modules: ModuleInstance[] }>>([]);
@@ -840,8 +863,22 @@ export default function SynthApp() {
     if (node?.offset) node.offset.value = val;
   }, []);
 
+  const handleMidiMon = useCallback((ev: MidiMonEvent) => {
+    setMidiMonData(prev => {
+      if (ev.type === 'noteOn') {
+        const name = NOTE_NAMES_MON[ev.note % 12] + (Math.floor(ev.note / 12) - 1);
+        return { ...prev, gate: true, note: ev.note, noteName: name, velocity: ev.velocity, channel: ev.channel, noteCount: prev.noteCount + 1 };
+      }
+      if (ev.type === 'noteOff')  return { ...prev, gate: false };
+      if (ev.type === 'bend')     return { ...prev, pitchBend: ev.bend };
+      if (ev.type === 'cc' && ev.num === 1) return { ...prev, modWheel: ev.val / 127, lastCC: { num: ev.num, val: ev.val } };
+      if (ev.type === 'cc')       return { ...prev, lastCC: { num: ev.num, val: ev.val } };
+      return prev;
+    });
+  }, []);
+
   // MIDI input — routes USB keyboard events through the same handlers as the on-screen keys
-  useMIDI(handleKeyNote, handleKeyBend, handleKeyMod);
+  useMIDI(handleKeyNote, handleKeyBend, handleKeyMod, handleMidiMon);
 
   // ─── Add module ─────────────────────────────────────────────────────────────
   const handleAddModule = useCallback((typeId: string) => {
@@ -1218,6 +1255,7 @@ export default function SynthApp() {
                 onPortDoubleClick={handlePortDoubleClick}
                 onParamChange={handleParamChange}
                 onSelectorChange={handleSelectorChange}
+                midiMonitorData={mod.typeId === 'midi_monitor' ? midiMonData : undefined}
                 onDragStart={handleDragStart}
                 onDelete={handleDeleteModule}
                 onRegisterPortRef={registerPortRef}
