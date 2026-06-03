@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { ModuleInstance, Cable, PendingCable, PortType, MidiMonitorData } from '../types';
 import {
   MODULE_TYPE_MAP, CATEGORY_ORDER, CATEGORY_LABELS, CATEGORY_COLORS,
@@ -1363,6 +1363,27 @@ export default function SynthApp() {
 
   // Connected ports set
   const connectedPortsSet = new Set<string>();
+  // ─── CV-to-knob live animation map ─────────────────────────────────────────
+  // Maps moduleId → (paramId → getLevel fn) for knobs that have a CV cable.
+  // Port naming convention: portId ending in "_cv" modulates the param whose id
+  // is the portion before "_cv" (e.g. "res_cv" → "res", "cutoff_cv" → "cutoff").
+  const cvLevelMap = useMemo(() => {
+    const map = new Map<string, Map<string, () => number>>();
+    for (const cable of cables) {
+      if (!cable.toPortId.endsWith('_cv')) continue;
+      const paramId   = cable.toPortId.slice(0, -3); // strip "_cv"
+      const toMod     = modules.find(m => m.id === cable.toModuleId);
+      const toTypeDef = toMod ? MODULE_TYPE_MAP.get(toMod.typeId) : undefined;
+      if (!toTypeDef?.knobs.find(k => k.id === paramId)) continue;
+      const srcGetLevel = audioModulesRef.current.get(cable.fromModuleId)?.getLevel;
+      if (!srcGetLevel) continue;
+      if (!map.has(cable.toModuleId)) map.set(cable.toModuleId, new Map());
+      map.get(cable.toModuleId)!.set(paramId, srcGetLevel);
+    }
+    return map;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cables, modules, started]); // `started` gates audioModulesRef population
+
   for (const c of cables) {
     connectedPortsSet.add(`${c.fromModuleId}-${c.fromPortId}`);
     connectedPortsSet.add(`${c.toModuleId}-${c.toPortId}`);
@@ -1450,6 +1471,7 @@ export default function SynthApp() {
                   ? audioModulesRef.current.get(mod.id)?.stepRef
                   : undefined}
                 getLevelFn={audioModulesRef.current.get(mod.id)?.getLevel}
+                cvLevels={cvLevelMap.get(mod.id)}
               />
             </div>
           ))}

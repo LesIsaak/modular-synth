@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { KnobDef } from '../types';
 
 interface KnobProps {
@@ -6,6 +6,8 @@ interface KnobProps {
   value: number;
   onChange: (val: number) => void;
   size?: 'sm' | 'md' | 'lg';
+  /** When set, the knob shows a live cyan CV indicator sweeping with the signal */
+  cvGetLevel?: () => number;
 }
 
 function formatValue(value: number, def: KnobDef): string {
@@ -18,7 +20,7 @@ function formatValue(value: number, def: KnobDef): string {
   return value.toFixed(2);
 }
 
-export default function Knob({ def, value, onChange, size = 'md' }: KnobProps) {
+export default function Knob({ def, value, onChange, size = 'md', cvGetLevel }: KnobProps) {
   const [showValue, setShowValue] = useState(false);
 
   // Local drag state — knob renders from this during drag so the parent never
@@ -30,6 +32,40 @@ export default function Knob({ def, value, onChange, size = 'md' }: KnobProps) {
   const startVal      = useRef(0);
   const rafId         = useRef(0);
   const pendingVal    = useRef<number | null>(null);
+
+  // CV indicator — animated via direct DOM mutation, zero React re-renders
+  const cvNeedleRef = useRef<HTMLDivElement>(null);
+  const cvArcRef    = useRef<SVGCircleElement>(null);
+  const cvRafRef    = useRef(0);
+
+  const sizeMap = { sm: 32, md: 40, lg: 48 };
+  const px = sizeMap[size];
+
+  useEffect(() => {
+    if (!cvGetLevel) {
+      cancelAnimationFrame(cvRafRef.current);
+      // Hide the CV indicators
+      if (cvNeedleRef.current) cvNeedleRef.current.style.opacity = '0';
+      if (cvArcRef.current)    cvArcRef.current.setAttribute('stroke-dasharray', '0 999');
+      return;
+    }
+    const r = px / 2 - 3;
+    const fullCircum = (270 / 360) * 2 * Math.PI * r;
+    const tick = () => {
+      const v = Math.max(0, Math.min(1, cvGetLevel()));
+      const cvAngle = v * 270 - 135;
+      if (cvNeedleRef.current) {
+        cvNeedleRef.current.style.opacity = '1';
+        cvNeedleRef.current.style.transform = `rotate(${cvAngle}deg)`;
+      }
+      if (cvArcRef.current) {
+        cvArcRef.current.setAttribute('stroke-dasharray', `${(v * fullCircum).toFixed(1)} 999`);
+      }
+      cvRafRef.current = requestAnimationFrame(tick);
+    };
+    cvRafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(cvRafRef.current);
+  }, [cvGetLevel, px]);
 
   const toNorm = (v: number) => {
     if (def.log) {
@@ -54,9 +90,6 @@ export default function Knob({ def, value, onChange, size = 'md' }: KnobProps) {
   const displayValue = localValue !== null ? localValue : value;
   const norm  = toNorm(displayValue);
   const angle = norm * 270 - 135;
-
-  const sizeMap = { sm: 32, md: 40, lg: 48 };
-  const px = sizeMap[size];
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -148,6 +181,18 @@ export default function Knob({ def, value, onChange, size = 'md' }: KnobProps) {
             transform={`rotate(135 ${px / 2} ${px / 2})`}
             style={{ opacity: norm > 0.01 ? 1 : 0 }}
           />
+          {/* CV arc — animated directly via ref, hidden when no CV connected */}
+          <circle
+            ref={cvArcRef}
+            cx={px / 2} cy={px / 2} r={px / 2 - 3}
+            fill="none"
+            stroke="#22d3ee"
+            strokeWidth="2"
+            strokeDasharray="0 999"
+            strokeLinecap="round"
+            transform={`rotate(135 ${px / 2} ${px / 2})`}
+            style={{ opacity: 0.75 }}
+          />
         </svg>
 
         {/* Knob body */}
@@ -160,7 +205,7 @@ export default function Knob({ def, value, onChange, size = 'md' }: KnobProps) {
           onMouseDown={handleMouseDown}
           onDoubleClick={e => { e.stopPropagation(); onChange(def.default); }}
         >
-          {/* Indicator line */}
+          {/* Base indicator line (orange/white — shows set value) */}
           <div
             className="absolute inset-0 flex justify-center"
             style={{ transform: `rotate(${angle}deg)` }}
@@ -168,6 +213,20 @@ export default function Knob({ def, value, onChange, size = 'md' }: KnobProps) {
             <div
               className="absolute rounded-full bg-white/90"
               style={{ width: 2, height: Math.floor(px / 4), top: 4 }}
+            />
+          </div>
+          {/* CV indicator needle — animated directly via ref (cyan, thinner) */}
+          <div
+            ref={cvNeedleRef}
+            className="absolute inset-0 flex justify-center pointer-events-none"
+            style={{ transform: 'rotate(-135deg)', opacity: 0 }}
+          >
+            <div
+              style={{
+                position: 'absolute', width: 2, height: Math.floor(px / 4),
+                top: 3, borderRadius: 1, background: '#22d3ee',
+                boxShadow: '0 0 4px #22d3ee',
+              }}
             />
           </div>
         </div>

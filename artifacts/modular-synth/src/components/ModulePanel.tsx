@@ -25,6 +25,8 @@ interface ModulePanelProps {
   moduleStepRef?: { value: number };
   /** Returns 0–1 activity level; polled at ~60 fps for the indicator LED */
   getLevelFn?: () => number;
+  /** Map of paramId → getLevel fn for knobs that have a live CV signal patched in */
+  cvLevels?: Map<string, () => number>;
 }
 
 function ActivityLED({ getLevelFn, color }: { getLevelFn: () => number; color: string }) {
@@ -457,7 +459,7 @@ function PianoKeyboard({ octave, onKeyPress }: {
 export default function ModulePanel({
   module, connectedPorts, pendingCable, onPortClick, onPortDoubleClick, onParamChange,
   onSelectorChange, onDragStart, onDelete, onRegisterPortRef, onKeyPress,
-  analyser, midiMonitorData, isMidiTarget, moduleStepRef, getLevelFn,
+  analyser, midiMonitorData, isMidiTarget, moduleStepRef, getLevelFn, cvLevels,
 }: ModulePanelProps) {
   const typeDef = MODULE_TYPE_MAP.get(module.typeId);
   const [showDelete, setShowDelete] = useState(false);
@@ -708,6 +710,7 @@ export default function ModulePanel({
                         value={module.params[knob.id] ?? knob.default}
                         onChange={(val) => onParamChange(module.id, knob.id, val)}
                         size="sm"
+                        cvGetLevel={cvLevels?.get(knob.id)}
                       />
                     ))}
                   </div>
@@ -758,6 +761,7 @@ export default function ModulePanel({
                         value={module.params[knob.id] ?? knob.default}
                         onChange={(val) => onParamChange(module.id, knob.id, val)}
                         size="sm"
+                        cvGetLevel={cvLevels?.get(knob.id)}
                       />
                     ))}
                   </div>
