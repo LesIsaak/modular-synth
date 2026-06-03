@@ -2264,6 +2264,22 @@ export function createAudioModule(
         return [...pattern.slice(shift), ...pattern.slice(0, shift)];
       };
 
+      // ── CV input taps — sampled at tick time (accurate for DC/slow CV) ────
+      const makeCVTap = () => {
+        const mix = ctx.createGain(); mix.gain.value = 1;
+        const tap = ctx.createAnalyser(); tap.fftSize = 32;
+        mix.connect(tap);
+        const buf = new Float32Array(1);
+        return {
+          input: { node: mix as AudioNode },
+          read:  () => { tap.getFloatTimeDomainData(buf); return buf[0]; },
+          destroy: () => { mix.disconnect(); tap.disconnect(); },
+        };
+      };
+      const stepsCV = makeCVTap();
+      const fillCV  = makeCVTap();
+      const shiftCV = makeCVTap();
+
       let gateCb:    ((on: boolean, freq: number) => void) | null = null;
       let invGateCb: ((on: boolean, freq: number) => void) | null = null;
       const stepRef = { value: 0 };
@@ -2274,9 +2290,13 @@ export function createAudioModule(
       const getMs = () => 60000 / (p.bpm ?? 120) * (divMults[Math.round(p.div ?? 2)] ?? 1);
 
       const tick = (_beat: number) => {
-        const steps = Math.max(2, Math.min(16, Math.round(p.steps ?? 8)));
-        const fill  = Math.max(0, Math.min(steps, Math.round(p.fill ?? 4)));
-        const shift = Math.round(p.shift ?? 0);
+        // knob base + CV offset (1 CV unit ≈ 1 step of modulation)
+        const stepsBase = Math.round(p.steps ?? 8);
+        const fillBase  = Math.round(p.fill  ?? 4);
+        const shiftBase = Math.round(p.shift ?? 0);
+        const steps = Math.max(2, Math.min(16, stepsBase + Math.round(stepsCV.read())));
+        const fill  = Math.max(0, Math.min(steps, fillBase + Math.round(fillCV.read())));
+        const shift = shiftBase + Math.round(shiftCV.read());
         const pattern = eucPat(steps, fill, shift);
         const step = clockStep % steps;
         stepRef.value = step;
@@ -2295,15 +2315,18 @@ export function createAudioModule(
       const restartTimer = () => { timer.destroy(); clockStep = 0; timer = makeClockTimer(getMs, tick); };
       let timer = makeClockTimer(getMs, tick);
 
-      // inv_out: separate gate callback for inverted pattern
-      const gateCallbacks = new Map<string, ((on: boolean, freq: number) => void) | null>([
-        ['gate_out', null], ['inv_out', null],
-      ]);
-
       return {
         outputs: new Map(),
-        inputs:  new Map(),
+        inputs: new Map([
+          ['steps_cv', stepsCV.input],
+          ['fill_cv',  fillCV.input],
+          ['shift_cv', shiftCV.input],
+        ]),
         stepRef,
+        portNoteOn: new Map([
+          // SYNC: reset pattern to step 0 on rising gate edge
+          ['sync', () => { clockStep = 0; }],
+        ]),
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'bpm') restartTimer();
@@ -2312,11 +2335,11 @@ export function createAudioModule(
           p[id] = val;
           if (id === 'div') restartTimer();
         },
-        setGateTrigger: fn => {
-          gateCb = fn;
-          gateCallbacks.set('gate_out', fn);
+        setGateTrigger: fn => { gateCb = fn; },
+        destroy: () => {
+          timer.destroy();
+          stepsCV.destroy(); fillCV.destroy(); shiftCV.destroy();
         },
-        destroy: () => { timer.destroy(); },
       };
     }
 
