@@ -368,18 +368,20 @@ function FixedKeyboardPanel({
   onCableOpacity,
   midiStatus,
   midiDeviceCount,
+  midiActiveNotes,
 }: {
   started: boolean;
-  onNote:          (freq: number, on: boolean) => void;
-  onBend:          (freq: number) => void;
-  onPitch:         (val: number) => void;
-  onMod:           (val: number) => void;
-  onUndo:          () => void;
-  undoAvail:       boolean;
-  cableOpacity:    number;
-  onCableOpacity:  (val: number) => void;
-  midiStatus:      MidiStatus;
-  midiDeviceCount: number;
+  onNote:           (freq: number, on: boolean) => void;
+  onBend:           (freq: number) => void;
+  onPitch:          (val: number) => void;
+  onMod:            (val: number) => void;
+  onUndo:           () => void;
+  undoAvail:        boolean;
+  cableOpacity:     number;
+  onCableOpacity:   (val: number) => void;
+  midiStatus:       MidiStatus;
+  midiDeviceCount:  number;
+  midiActiveNotes?: ReadonlySet<number>;
 }) {
   const [octave,     setOctave]     = useState(4);
   const [activeNote, setActiveNote] = useState<number | null>(null);
@@ -442,17 +444,21 @@ function FixedKeyboardPanel({
         {/* White keys */}
         <div style={{ display: 'flex', height: '100%', gap: 1.5 }}>
           {NOTE_WHITES.map((semitone, i) => {
-            const midi   = octBase + semitone;
-            const active = activeNote === midi;
+            const midi      = octBase + semitone;
+            const pressed   = activeNote === midi;
+            const midiOn    = midiActiveNotes?.has(midi) ?? false;
+            const active    = pressed || midiOn;
+            const bg        = midiOn ? '#0891b2' : pressed ? '#d97706' : '#dde1e5';
+            const bdr       = midiOn ? '#06b6d4' : pressed ? '#b45309' : '#777';
             return (
               <div
                 key={i}
                 style={{
                   flex: 1, borderRadius: '0 0 5px 5px', cursor: 'pointer',
-                  background: active ? '#d97706' : '#dde1e5',
-                  border: active ? '1px solid #b45309' : '1px solid #777',
+                  background: bg,
+                  border: `1px solid ${bdr}`,
                   boxShadow: active
-                    ? 'inset 0 3px 5px rgba(0,0,0,0.35)'
+                    ? `inset 0 3px 5px rgba(0,0,0,0.35)${midiOn ? ', 0 0 6px rgba(6,182,212,0.5)' : ''}`
                     : '0 5px 0 rgba(0,0,0,0.4), inset 0 -1px 0 rgba(0,0,0,0.1)',
                   transition: 'background 0.04s',
                   userSelect: 'none',
@@ -469,19 +475,25 @@ function FixedKeyboardPanel({
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '60%', pointerEvents: 'none' }}>
           {NOTE_BLACKS.map((semitone, i) => {
             if (semitone === -1) return <div key={i} />;
-            const midi   = octBase + semitone;
-            const active = activeNote === midi;
-            const leftPct = (i + 1) * (100 / 7) - (100 / 7) / 2;
+            const midi     = octBase + semitone;
+            const pressed  = activeNote === midi;
+            const midiOn   = midiActiveNotes?.has(midi) ?? false;
+            const active   = pressed || midiOn;
+            const bg       = midiOn ? '#0891b2' : pressed ? '#d97706' : '#1a1a1a';
+            const bdr      = midiOn ? '#06b6d4' : pressed ? '#b45309' : '#000';
+            const leftPct  = (i + 1) * (100 / 7) - (100 / 7) / 2;
             return (
               <div
                 key={i}
                 style={{
                   position: 'absolute', left: `${leftPct - 4}%`, width: '8%', height: '100%',
                   borderRadius: '0 0 4px 4px', cursor: 'pointer', pointerEvents: 'auto',
-                  background: active ? '#d97706' : '#1a1a1a',
-                  border: active ? '1px solid #b45309' : '1px solid #000',
+                  background: bg,
+                  border: `1px solid ${bdr}`,
                   zIndex: 10,
-                  boxShadow: active ? 'none' : '0 5px 8px rgba(0,0,0,0.9)',
+                  boxShadow: active
+                    ? midiOn ? '0 0 8px rgba(6,182,212,0.6)' : 'none'
+                    : '0 5px 8px rgba(0,0,0,0.9)',
                   transition: 'background 0.04s',
                   userSelect: 'none',
                 }}
@@ -730,8 +742,9 @@ export default function SynthApp() {
   const [cables,       setCables]       = useState<Cable[]>(DEFAULT_CABLES);
   const [pendingCable, setPendingCable] = useState<PendingCable | null>(null);
   const [mousePos,     setMousePos]     = useState({ x: 0, y: 0 });
-  const [cableOpacity,    setCableOpacity]    = useState(1);
-  const [focusedModuleId, setFocusedModuleId] = useState<string | null>(null);
+  const [cableOpacity,     setCableOpacity]     = useState(1);
+  const [focusedModuleId,  setFocusedModuleId]  = useState<string | null>(null);
+  const [midiActiveNotes,  setMidiActiveNotes]  = useState<ReadonlySet<number>>(new Set());
   const ccOrderRef = useRef<number[]>([]); // CC numbers in order of first touch
 
   const NOTE_NAMES_MON = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -962,6 +975,13 @@ export default function SynthApp() {
       if (ev.type === 'cc')       return { ...prev, lastCC: { num: ev.num, val: ev.val } };
       return prev;
     });
+
+    // ── Light up keyboard keys for incoming MIDI notes ──
+    if (ev.type === 'noteOn') {
+      setMidiActiveNotes(prev => { const s = new Set(prev); s.add(ev.note); return s; });
+    } else if (ev.type === 'noteOff') {
+      setMidiActiveNotes(prev => { const s = new Set(prev); s.delete(ev.note); return s; });
+    }
 
     // ── CC → knob auto-mapping (skip CC1 = mod wheel) ──
     if (ev.type === 'cc' && ev.num !== 1 && focusedModuleId) {
@@ -1350,6 +1370,7 @@ export default function SynthApp() {
         onCableOpacity={setCableOpacity}
         midiStatus={midiStatus}
         midiDeviceCount={midiDeviceCount}
+        midiActiveNotes={midiActiveNotes}
       />
     </div>
   );
