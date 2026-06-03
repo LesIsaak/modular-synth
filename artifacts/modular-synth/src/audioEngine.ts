@@ -2435,7 +2435,7 @@ export function createAudioModule(
       let fillActive = false;
       let clkStep    = 0;
 
-      const getMs      = () => Math.max(20, 60000 / Math.max(1, (p.bpm ?? 120) + bpmCv.read() * 120));
+      const getMs      = () => Math.max(5, 15000 / Math.max(1, (p.bpm ?? 120) + bpmCv.read() * 120));
       const getSwing   = () => Math.min(0.49, Math.max(0, (p.swing ?? 0) + swingCv.read() * 0.25));
       const getGateLen = () => Math.max(0.05, Math.min(0.9, p.gate_len ?? 0.4));
 
