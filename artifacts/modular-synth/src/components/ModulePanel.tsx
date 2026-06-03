@@ -3,6 +3,7 @@ import { ModuleInstance, KnobDef, PortType, PendingCable, MidiMonitorData } from
 import { MODULE_TYPE_MAP } from '../moduleDefinitions';
 import Knob from './Knob';
 import PortJack from './PortJack';
+import ModuleInfoPopup from './ModuleInfoPopup';
 
 interface ModulePanelProps {
   module: ModuleInstance;
@@ -434,6 +435,8 @@ export default function ModulePanel({
 }: ModulePanelProps) {
   const typeDef = MODULE_TYPE_MAP.get(module.typeId);
   const [showDelete, setShowDelete] = useState(false);
+  const [showInfo,   setShowInfo]   = useState(false);
+  const [infoAnchor, setInfoAnchor] = useState({ x: 0, y: 0 });
   const [eucStep, setEucStep] = useState(0);
 
   useEffect(() => {
@@ -510,6 +513,29 @@ export default function ModulePanel({
         }}>
           {typeDef.name}
         </span>
+        {/* Info button — always visible */}
+        <button
+          style={{
+            width: 13, height: 13, fontSize: 8, lineHeight: 1,
+            cursor: 'pointer', border: '1px solid #2e2e2e', borderRadius: 2,
+            background: showInfo ? `${accent}22` : '#1a1a1a',
+            color: showInfo ? accent : '#555',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0, marginRight: 2, padding: 0,
+            transition: 'color 0.1s, background 0.1s',
+          }}
+          onMouseDown={e => e.stopPropagation()}
+          onClick={e => {
+            e.stopPropagation();
+            const rect = e.currentTarget.getBoundingClientRect();
+            setInfoAnchor({ x: rect.left, y: rect.bottom });
+            setShowInfo(v => !v);
+          }}
+          onMouseEnter={e => { if (!showInfo) (e.currentTarget as HTMLElement).style.color = '#aaa'; }}
+          onMouseLeave={e => { if (!showInfo) (e.currentTarget as HTMLElement).style.color = '#555'; }}
+          title="Module info"
+          data-testid={`info-module-${module.id}`}
+        >ⓘ</button>
         {/* Fixed-width slot — always same size, ✕ appears inside on hover, no layout shift */}
         <div style={{ width: 14, height: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginRight: 3 }}>
           {showDelete && (
@@ -720,6 +746,15 @@ export default function ModulePanel({
         <Screw />
         <Screw />
       </div>
+
+      {/* Module info popup */}
+      {showInfo && (
+        <ModuleInfoPopup
+          typeDef={typeDef}
+          anchor={infoAnchor}
+          onClose={() => setShowInfo(false)}
+        />
+      )}
     </div>
   );
 }
