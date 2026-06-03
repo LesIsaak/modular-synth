@@ -15,6 +15,8 @@ export interface AudioModuleNodes {
   analyser?: AnalyserNode;
   /** Current sequencer step — polled by the UI at ~30 fps */
   stepRef?: { value: number };
+  /** Returns a 0–1 activity level; polled by the UI at ~60 fps for indicator LEDs */
+  getLevel?: () => number;
   /** Per-port gate handlers (e.g. individual drum voice triggers) */
   portNoteOn?: Map<string, (time: number, freq?: number) => void>;
 }
@@ -986,7 +988,7 @@ export function createAudioModule(
     // ── LFOs ─────────────────────────────────────────────────────────
     case 'lfo': {
       const waveMap: OscillatorType[] = ['sine', 'triangle', 'sawtooth', 'square'];
-      const allOscs = waveMap.map((t, i) => {
+      const allOscs = waveMap.map(t => {
         const o = ctx.createOscillator(); o.type = t;
         o.frequency.value = p.rate ?? 1; o.start();
         return o;
@@ -995,14 +997,14 @@ export function createAudioModule(
         const g = ctx.createGain(); g.gain.value = p.depth ?? 200; return g;
       });
       allOscs.forEach((o, i) => o.connect(allGains[i]));
-      // main selector output (single osc active)
       const mainGain = ctx.createGain(); mainGain.gain.value = 1;
       let selIdx = Math.round(p.wave ?? 0);
       allGains[selIdx].connect(mainGain);
-      const rateCv = ctx.createConstantSource(); rateCv.offset.value = p.rate ?? 1; rateCv.start();
+      // rateCv starts at 0 — it's an additive CV input, not the base frequency
+      const rateCv = ctx.createConstantSource(); rateCv.offset.value = 0; rateCv.start();
       rateCv.connect(allOscs[0].frequency); rateCv.connect(allOscs[1].frequency);
       rateCv.connect(allOscs[2].frequency); rateCv.connect(allOscs[3].frequency);
-      const depthCv = ctx.createConstantSource(); depthCv.offset.value = p.depth ?? 200; depthCv.start();
+      const depthCv = ctx.createConstantSource(); depthCv.offset.value = 0; depthCv.start();
       return {
         outputs: new Map<string, AudioNode>([
           ['cv_out', mainGain],
@@ -1010,14 +1012,14 @@ export function createAudioModule(
           ['saw_out', allGains[2]], ['sqr_out', allGains[3]],
         ]),
         inputs: new Map([
-          ['rate_cv', { node: rateCv, param: rateCv.offset }],
+          ['rate_cv',  { node: rateCv,  param: rateCv.offset  }],
           ['depth_cv', { node: depthCv, param: depthCv.offset }],
           ['reset_in', { node: rateCv }],
         ]),
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'rate') { allOscs.forEach(o => { o.frequency.value = val; }); rateCv.offset.value = val; }
-          if (id === 'depth') { allGains.forEach(g => { g.gain.value = val; }); depthCv.offset.value = val; }
+          if (id === 'rate')  allOscs.forEach(o => { o.frequency.value = val; });
+          if (id === 'depth') allGains.forEach(g => { g.gain.value = val; });
         },
         setSelector: (id, val) => {
           if (id === 'wave') {
@@ -1026,6 +1028,7 @@ export function createAudioModule(
             allGains[selIdx].connect(mainGain);
           }
         },
+        getLevel: () => (Math.sin(2 * Math.PI * (p.rate ?? 1) * ctx.currentTime) + 1) / 2,
         destroy: () => {
           rateCv.stop(); rateCv.disconnect(); depthCv.stop(); depthCv.disconnect();
           allOscs.forEach(o => { o.stop(); o.disconnect(); });
@@ -1049,10 +1052,10 @@ export function createAudioModule(
       const mainGain = ctx.createGain(); mainGain.gain.value = 1;
       let selIdx = Math.round(p.wave ?? 0);
       allGains[selIdx].connect(mainGain);
-      const rateCv = ctx.createConstantSource(); rateCv.offset.value = p.rate ?? 0.5; rateCv.start();
+      const rateCv = ctx.createConstantSource(); rateCv.offset.value = 0; rateCv.start();
       rateCv.connect(allOscs[0].frequency); rateCv.connect(allOscs[1].frequency);
       rateCv.connect(allOscs[2].frequency); rateCv.connect(allOscs[3].frequency);
-      const depthCv = ctx.createConstantSource(); depthCv.offset.value = p.depth ?? 200; depthCv.start();
+      const depthCv = ctx.createConstantSource(); depthCv.offset.value = 0; depthCv.start();
       return {
         outputs: new Map<string, AudioNode>([
           ['cv_out', mainGain],
@@ -1060,13 +1063,13 @@ export function createAudioModule(
           ['saw_out', allGains[2]], ['sqr_out', allGains[3]],
         ]),
         inputs: new Map([
-          ['rate_cv', { node: rateCv, param: rateCv.offset }],
+          ['rate_cv',  { node: rateCv,  param: rateCv.offset  }],
           ['depth_cv', { node: depthCv, param: depthCv.offset }],
         ]),
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'rate') { allOscs.forEach(o => { o.frequency.value = val; }); rateCv.offset.value = val; }
-          if (id === 'depth') { allGains.forEach(g => { g.gain.value = val; }); }
+          if (id === 'rate')  allOscs.forEach(o => { o.frequency.value = val; });
+          if (id === 'depth') allGains.forEach(g => { g.gain.value = val; });
           if (id === 'drift') driftGain.gain.value = val * 0.3;
         },
         setSelector: (id, val) => {
@@ -1076,6 +1079,7 @@ export function createAudioModule(
             allGains[selIdx].connect(mainGain);
           }
         },
+        getLevel: () => (Math.sin(2 * Math.PI * (p.rate ?? 0.5) * ctx.currentTime) + 1) / 2,
         destroy: () => {
           rateCv.stop(); rateCv.disconnect(); depthCv.stop(); depthCv.disconnect();
           drift.stop(); drift.disconnect(); driftGain.disconnect();
@@ -1095,9 +1099,9 @@ export function createAudioModule(
       const mainGain = ctx.createGain(); mainGain.gain.value = 1;
       let selIdx = Math.round(p.wave ?? 0);
       allGains[selIdx].connect(mainGain);
-      const rateCv = ctx.createConstantSource(); rateCv.offset.value = p.rate ?? 2; rateCv.start();
+      const rateCv = ctx.createConstantSource(); rateCv.offset.value = 0; rateCv.start();
       allOscs.forEach(o => rateCv.connect(o.frequency));
-      const depthCv = ctx.createConstantSource(); depthCv.offset.value = p.depth ?? 200; depthCv.start();
+      const depthCv = ctx.createConstantSource(); depthCv.offset.value = 0; depthCv.start();
       return {
         outputs: new Map<string, AudioNode>([
           ['cv_out', mainGain],
@@ -1105,13 +1109,13 @@ export function createAudioModule(
           ['saw_out', allGains[2]], ['tri_out', allGains[3]],
         ]),
         inputs: new Map([
-          ['rate_cv', { node: rateCv, param: rateCv.offset }],
+          ['rate_cv',  { node: rateCv,  param: rateCv.offset  }],
           ['depth_cv', { node: depthCv, param: depthCv.offset }],
         ]),
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'rate') { allOscs.forEach(o => { o.frequency.value = val; }); rateCv.offset.value = val; }
-          if (id === 'depth') { allGains.forEach(g => { g.gain.value = val; }); }
+          if (id === 'rate')  allOscs.forEach(o => { o.frequency.value = val; });
+          if (id === 'depth') allGains.forEach(g => { g.gain.value = val; });
         },
         setSelector: (id, val) => {
           if (id === 'wave') {
@@ -1120,6 +1124,7 @@ export function createAudioModule(
             allGains[selIdx].connect(mainGain);
           }
         },
+        getLevel: () => (Math.sin(2 * Math.PI * (p.rate ?? 2) * ctx.currentTime) + 1) / 2,
         destroy: () => {
           rateCv.stop(); rateCv.disconnect(); depthCv.stop(); depthCv.disconnect();
           allOscs.forEach(o => { o.stop(); o.disconnect(); });
@@ -1136,24 +1141,25 @@ export function createAudioModule(
       const oscs = [sinO, triO, sawO, sqrO];
       const gains = oscs.map(() => { const g = ctx.createGain(); g.gain.value = p.depth ?? 200; return g; });
       oscs.forEach((o, i) => { o.connect(gains[i]); o.start(); });
-      const rateCv = ctx.createConstantSource(); rateCv.offset.value = p.rate ?? 1; rateCv.start();
+      const rateCv = ctx.createConstantSource(); rateCv.offset.value = 0; rateCv.start();
       oscs.forEach(o => rateCv.connect(o.frequency));
-      const depthCv = ctx.createConstantSource(); depthCv.offset.value = p.depth ?? 200; depthCv.start();
+      const depthCv = ctx.createConstantSource(); depthCv.offset.value = 0; depthCv.start();
       return {
         outputs: new Map([
           ['sin_out', gains[0]], ['tri_out', gains[1]],
           ['saw_out', gains[2]], ['sqr_out', gains[3]],
         ]),
         inputs: new Map([
-          ['rate_cv', { node: rateCv, param: rateCv.offset }],
+          ['rate_cv',  { node: rateCv,  param: rateCv.offset  }],
           ['depth_cv', { node: depthCv, param: depthCv.offset }],
           ['reset_in', { node: rateCv }],
         ]),
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'rate') { oscs.forEach(o => { o.frequency.value = val; }); rateCv.offset.value = val; }
+          if (id === 'rate')  oscs.forEach(o => { o.frequency.value = val; });
           if (id === 'depth') gains.forEach(g => { g.gain.value = val; });
         },
+        getLevel: () => (Math.sin(2 * Math.PI * (p.rate ?? 1) * ctx.currentTime) + 1) / 2,
         destroy: () => {
           rateCv.stop(); rateCv.disconnect(); depthCv.stop(); depthCv.disconnect();
           oscs.forEach(o => { o.stop(); o.disconnect(); });
@@ -1422,12 +1428,14 @@ export function createAudioModule(
     case 'clock_gen': {
       let gateCb: ((on: boolean, freq: number) => void) | null = null;
       let beat = 0;
+      let lastGateMs = 0;
       const getMs = () => 60000 / (p.bpm ?? 120);
       let timer = makeClockTimer(getMs, (i) => {
         beat = i;
         const ms = getMs();
         const swingOffset = (beat % 2 === 1) ? ms * (p.swing ?? 0) : 0;
         setTimeout(() => {
+          lastGateMs = performance.now();
           gateCb?.(true, 440);
           setTimeout(() => gateCb?.(false, 440), ms * 0.45);
         }, swingOffset);
@@ -1437,6 +1445,7 @@ export function createAudioModule(
         inputs: new Map(),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
+        getLevel: () => Math.max(0, 1 - (performance.now() - lastGateMs) / 120),
         destroy: () => { timer.destroy(); },
       };
     }
@@ -2415,6 +2424,7 @@ export function createAudioModule(
       const freqSource  = ctx.createConstantSource(); freqSource.offset.value  = 440; freqSource.start();
       const pitchSource = ctx.createConstantSource(); pitchSource.offset.value = 0;   pitchSource.start();
       const modSource   = ctx.createConstantSource(); modSource.offset.value   = 0;   modSource.start();
+      let lastGateMs = 0;
       return {
         outputs: new Map<string, AudioNode>([
           ['voct_out',  freqSource],
@@ -2422,8 +2432,9 @@ export function createAudioModule(
           ['mod_out',   modSource],
         ]),
         inputs: new Map(),
-        noteOn:  (_time, freq) => { freqSource.offset.value = freq; },
+        noteOn:  (_time, freq) => { freqSource.offset.value = freq; lastGateMs = performance.now(); },
         setParam: () => {},
+        getLevel: () => Math.max(0, 1 - (performance.now() - lastGateMs) / 200),
         destroy: () => {
           freqSource.stop();  freqSource.disconnect();
           pitchSource.stop(); pitchSource.disconnect();

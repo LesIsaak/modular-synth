@@ -23,6 +23,31 @@ interface ModulePanelProps {
   isMidiTarget?: boolean;
   /** Polled at ~30 fps by custom displays (drum machine step, euclidean LED ring) */
   moduleStepRef?: { value: number };
+  /** Returns 0–1 activity level; polled at ~60 fps for the indicator LED */
+  getLevelFn?: () => number;
+}
+
+function ActivityLED({ getLevelFn, color }: { getLevelFn: () => number; color: string }) {
+  const dotRef = useRef<HTMLDivElement>(null);
+  const rafRef = useRef(0);
+  useEffect(() => {
+    const tick = () => {
+      if (dotRef.current) {
+        const v = getLevelFn();
+        dotRef.current.style.opacity = String(0.12 + v * 0.88);
+        dotRef.current.style.boxShadow = v > 0.08 ? `0 0 ${Math.round(4 + v * 6)}px ${color}` : 'none';
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [getLevelFn, color]);
+  return (
+    <div ref={dotRef} style={{
+      width: 5, height: 5, borderRadius: '50%', flexShrink: 0,
+      background: color, opacity: 0.12,
+    }} />
+  );
 }
 
 // ─── MIDI Monitor display ─────────────────────────────────────────────────────
@@ -432,7 +457,7 @@ function PianoKeyboard({ octave, onKeyPress }: {
 export default function ModulePanel({
   module, connectedPorts, pendingCable, onPortClick, onPortDoubleClick, onParamChange,
   onSelectorChange, onDragStart, onDelete, onRegisterPortRef, onKeyPress,
-  analyser, midiMonitorData, isMidiTarget, moduleStepRef,
+  analyser, midiMonitorData, isMidiTarget, moduleStepRef, getLevelFn,
 }: ModulePanelProps) {
   const typeDef = MODULE_TYPE_MAP.get(module.typeId);
   const [showDelete, setShowDelete] = useState(false);
@@ -508,6 +533,9 @@ export default function ModulePanel({
         onDoubleClick={e => e.preventDefault()}
       >
         <Screw />
+        {getLevelFn && (
+          <ActivityLED getLevelFn={getLevelFn} color={accent} />
+        )}
         <span style={{
           fontSize: 8, fontWeight: 700, letterSpacing: '0.18em', color: accent,
           textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden',

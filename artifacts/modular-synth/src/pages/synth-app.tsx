@@ -1449,6 +1449,7 @@ export default function SynthApp() {
                 moduleStepRef={(mod.typeId === 'drum_machine' || mod.typeId === 'euclidean_trig' || mod.typeId === 'poly_step')
                   ? audioModulesRef.current.get(mod.id)?.stepRef
                   : undefined}
+                getLevelFn={audioModulesRef.current.get(mod.id)?.getLevel}
               />
             </div>
           ))}
