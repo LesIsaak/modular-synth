@@ -180,7 +180,7 @@ export default function Knob({ def, value, onChange, size = 'md' }: KnobProps) {
             {formatValue(displayValue, def)}{def.unit && def.unit !== 'Hz' && def.unit !== 's' && def.unit !== 'ct' ? ` ${def.unit}` : ''}
           </span>
         ) : (
-          <span className="text-[9px] text-gray-500 uppercase tracking-widest">{def.name}</span>
+          <span className="text-[9px] text-gray-400 uppercase tracking-widest">{def.name}</span>
         )}
       </div>
     </div>

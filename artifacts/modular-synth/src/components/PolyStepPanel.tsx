@@ -76,8 +76,8 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
                 width: 32, height: 24, fontSize: 12,
                 padding: 0, borderRadius: 4, cursor: 'pointer',
                 background: isActive ? btn.active : '#1a1a1a',
-                color:      isActive ? btn.activeText : '#333',
-                border: `1px solid ${isActive ? btn.active : '#252525'}`,
+                color:      isActive ? btn.activeText : '#888',
+                border: `1px solid ${isActive ? btn.active : '#2a2a2a'}`,
                 lineHeight: 1,
               }}
             >{btn.label}</button>
@@ -94,7 +94,7 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
 
         {/* Global step-length */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ fontSize: 8, color: '#383838', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Steps</span>
+          <span style={{ fontSize: 8, color: '#888', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Steps</span>
           <div style={{ display: 'flex', gap: 3 }}>
             {LEN_OPTS.map((l, i) => (
               <button
@@ -104,8 +104,8 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
                 style={{
                   width: 30, height: 20, fontSize: 8, borderRadius: 3, cursor: 'pointer',
                   background: lenIdx === i ? '#c084fc' : '#1a1a1a',
-                  color:      lenIdx === i ? '#000'    : '#3a3a3a',
-                  border: `1px solid ${lenIdx === i ? '#c084fc' : '#222'}`,
+                  color:      lenIdx === i ? '#000'    : '#888',
+                  border: `1px solid ${lenIdx === i ? '#c084fc' : '#2a2a2a'}`,
                   fontWeight: lenIdx === i ? 700 : 400,
                 }}
               >{l}</button>
@@ -128,7 +128,7 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
         </div>
 
         <span style={{
-          fontSize: 8, color: '#363636', fontVariantNumeric: 'tabular-nums',
+          fontSize: 8, color: '#888', fontVariantNumeric: 'tabular-nums',
           width: 36, textAlign: 'right', flexShrink: 0,
         }}>
           {liveStep >= 0 ? `${liveStep + 1} / ${len}` : '– / –'}
@@ -148,7 +148,7 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
             <div
               key={s}
               style={{
-                flex: 1, textAlign: 'center', fontSize: 6, color: '#2a2a2a',
+                flex: 1, textAlign: 'center', fontSize: 6, color: '#606060',
                 marginLeft: s > 0 && s % 4 === 0 ? 4 : 0,
               }}
             >{s + 1}</div>
@@ -189,12 +189,12 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
               >
                 <div style={{
                   width: 3, height: 32, borderRadius: 1, flexShrink: 0,
-                  background: muted ? '#222' : color,
+                  background: muted ? '#333' : color,
                   boxShadow: muted ? 'none' : `0 0 6px ${color}44`,
                 }} />
                 <span style={{
                   fontSize: 8, fontWeight: 700,
-                  color: muted ? '#272727' : color,
+                  color: muted ? '#404040' : color,
                   textTransform: 'uppercase', letterSpacing: '0.05em',
                 }}>{TL[t]}</span>
               </div>
@@ -245,8 +245,8 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
                   width: 24, height: 20, fontSize: 7, borderRadius: 3,
                   cursor: 'pointer', fontWeight: 700,
                   background: muted ? color    : '#1a1a1a',
-                  color:      muted ? '#000'   : '#303030',
-                  border: `1px solid ${muted ? color : '#222'}`,
+                  color:      muted ? '#000'   : '#888',
+                  border: `1px solid ${muted ? color : '#2a2a2a'}`,
                 }}
               >M</button>
             </div>

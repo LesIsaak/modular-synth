@@ -48,10 +48,10 @@ function MidiMonitorDisplay({ d }: { d: MidiMonitorData }) {
     );
   };
   const label = (text: string) => (
-    <span style={{ fontSize: 6, color: '#4a4a4a', letterSpacing: '0.1em', textTransform: 'uppercase', whiteSpace: 'nowrap', minWidth: 24 }}>{text}</span>
+    <span style={{ fontSize: 6, color: '#888', letterSpacing: '0.1em', textTransform: 'uppercase', whiteSpace: 'nowrap', minWidth: 24 }}>{text}</span>
   );
   const val = (text: string) => (
-    <span style={{ fontSize: 7, color: '#6b7280', fontVariantNumeric: 'tabular-nums', minWidth: 22, textAlign: 'right' }}>{text}</span>
+    <span style={{ fontSize: 7, color: '#9ca3af', fontVariantNumeric: 'tabular-nums', minWidth: 22, textAlign: 'right' }}>{text}</span>
   );
   const row = (lbl: string, content: React.ReactNode, v: string) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -73,16 +73,16 @@ function MidiMonitorDisplay({ d }: { d: MidiMonitorData }) {
         }} />
         {/* Note name — big */}
         <span style={{
-          fontSize: 26, fontWeight: 700, color: d.gate ? accent : '#2a2a2a',
+          fontSize: 26, fontWeight: 700, color: d.gate ? accent : '#505050',
           letterSpacing: '-0.02em', lineHeight: 1, fontVariantNumeric: 'tabular-nums',
           transition: 'color 0.1s', minWidth: 52,
         }}>
           {d.noteName === '---' ? '---' : d.noteName}
         </span>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 6, color: '#333', textTransform: 'uppercase', letterSpacing: '0.1em' }}>MIDI</span>
-          <span style={{ fontSize: 11, color: '#4a4a4a', fontVariantNumeric: 'tabular-nums' }}>#{d.note.toString().padStart(3,'0')}</span>
-          <span style={{ fontSize: 6, color: '#333', textTransform: 'uppercase', letterSpacing: '0.08em' }}>CH {d.channel.toString().padStart(2,'0')}</span>
+          <span style={{ fontSize: 6, color: '#777', textTransform: 'uppercase', letterSpacing: '0.1em' }}>MIDI</span>
+          <span style={{ fontSize: 11, color: '#999', fontVariantNumeric: 'tabular-nums' }}>#{d.note.toString().padStart(3,'0')}</span>
+          <span style={{ fontSize: 6, color: '#777', textTransform: 'uppercase', letterSpacing: '0.08em' }}>CH {d.channel.toString().padStart(2,'0')}</span>
         </div>
       </div>
 
@@ -102,7 +102,7 @@ function MidiMonitorDisplay({ d }: { d: MidiMonitorData }) {
       {/* Last CC */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         {label('CC')}
-        <span style={{ fontSize: 8, color: d.lastCC ? '#4a5568' : '#222', fontVariantNumeric: 'tabular-nums', flex: 1 }}>
+        <span style={{ fontSize: 8, color: d.lastCC ? '#7a8a9a' : '#555', fontVariantNumeric: 'tabular-nums', flex: 1 }}>
           {d.lastCC ? `#${d.lastCC.num.toString().padStart(3,'0')} = ${d.lastCC.val.toString().padStart(3,' ')}` : '— — —'}
         </span>
       </div>
@@ -110,7 +110,7 @@ function MidiMonitorDisplay({ d }: { d: MidiMonitorData }) {
       {/* Note count */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         {label('NOTES')}
-        <span style={{ fontSize: 8, color: '#333', fontVariantNumeric: 'tabular-nums' }}>
+        <span style={{ fontSize: 8, color: '#777', fontVariantNumeric: 'tabular-nums' }}>
           {d.noteCount.toString().padStart(6, '0')}
         </span>
       </div>
@@ -172,7 +172,7 @@ function OutputMeter({ analyser }: { analyser?: AnalyserNode }) {
         <div style={track}><div ref={leftRef}  style={fill} /></div>
         <div style={track}><div ref={rightRef} style={fill} /></div>
       </div>
-      <span style={{ fontSize: 6, color: '#2a2a2a', letterSpacing: '0.14em', textTransform: 'uppercase' }}>L &nbsp; R</span>
+      <span style={{ fontSize: 6, color: '#666', letterSpacing: '0.14em', textTransform: 'uppercase' }}>L &nbsp; R</span>
     </div>
   );
 }
@@ -299,7 +299,7 @@ function DrumVoicePanel({ module, knobDefs, onParamChange }: {
             display: 'flex', flexDirection: 'column', gap: 1,
           }}>
             <span style={{
-              fontSize: 5.5, color: '#484848', textTransform: 'uppercase',
+              fontSize: 5.5, color: '#888', textTransform: 'uppercase',
               letterSpacing: '0.1em',
             }}>VOL</span>
             <input
@@ -369,7 +369,7 @@ function PortWithLabel({
         onRegisterRef={onRegisterRef}
       />
       <span style={{
-        fontSize: 6, color: '#5a5a5a', textTransform: 'uppercase',
+        fontSize: 6, color: '#909090', textTransform: 'uppercase',
         letterSpacing: '0.04em', lineHeight: 1, textAlign: 'center',
         maxWidth: 28, overflow: 'hidden', textOverflow: 'clip', whiteSpace: 'nowrap',
       }}>
@@ -687,7 +687,7 @@ export default function ModulePanel({
                     const curVal = module.params[sel.id] ?? sel.default;
                     return (
                       <div key={sel.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-                        <span style={{ fontSize: 7, color: '#484848', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{sel.name}</span>
+                        <span style={{ fontSize: 7, color: '#888', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{sel.name}</span>
                         <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
                           {sel.options.map((opt, i) => (
                             <button
@@ -695,7 +695,7 @@ export default function ModulePanel({
                               style={{
                                 padding: '2px 5px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
                                 background: Math.round(curVal) === i ? accent : '#1c1c1c',
-                                color: Math.round(curVal) === i ? '#000' : '#4a4a4a',
+                                color: Math.round(curVal) === i ? '#000' : '#888',
                                 border: `1px solid ${Math.round(curVal) === i ? accent : '#282828'}`,
                               }}
                               onClick={() => onSelectorChange(module.id, sel.id, i)}

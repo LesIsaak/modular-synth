@@ -24,7 +24,7 @@ const PORT_TYPE_LABELS: Record<PortType, string> = {
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div style={{
-      fontSize: 6.5, color: '#444', textTransform: 'uppercase',
+      fontSize: 6.5, color: '#777', textTransform: 'uppercase',
       letterSpacing: '0.15em', marginBottom: 3, marginTop: 2,
     }}>
       {children}
@@ -45,7 +45,7 @@ function PortRow({ port }: { port: { id: string; name: string; type: PortType } 
         textTransform: 'uppercase', letterSpacing: '0.08em',
         minWidth: 40,
       }}>{port.name}</span>
-      <span style={{ fontSize: 7, color: '#4a4a4a' }}>
+      <span style={{ fontSize: 7, color: '#888' }}>
         {PORT_TYPE_LABELS[port.type]}
       </span>
     </div>
@@ -120,7 +120,7 @@ export default function ModuleInfoPopup({
             {typeDef.name}
           </div>
           <div style={{
-            fontSize: 6.5, color: '#484848', textTransform: 'uppercase',
+            fontSize: 6.5, color: '#888', textTransform: 'uppercase',
             letterSpacing: '0.12em', marginTop: 2,
           }}>
             {CATEGORY_LABELS[typeDef.category] ?? typeDef.category}
@@ -129,7 +129,7 @@ export default function ModuleInfoPopup({
         <button
           style={{
             width: 14, height: 14, flexShrink: 0,
-            fontSize: 9, color: '#444', background: 'none',
+            fontSize: 9, color: '#666', background: 'none',
             border: '1px solid #2a2a2a', borderRadius: 2,
             cursor: 'pointer', padding: 0, lineHeight: 1,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -137,7 +137,7 @@ export default function ModuleInfoPopup({
           onClick={onClose}
           onMouseDown={e => e.stopPropagation()}
           onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#aaa'; }}
-          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#444'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#666'; }}
         >✕</button>
       </div>
 
@@ -148,7 +148,7 @@ export default function ModuleInfoPopup({
           borderBottom: '1px solid #1a1a1a',
         }}>
           <p style={{
-            fontSize: 8, color: '#6a6a6a', lineHeight: 1.6,
+            fontSize: 8, color: '#999', lineHeight: 1.6,
             margin: 0, letterSpacing: '0.01em',
           }}>
             {description}
@@ -182,14 +182,14 @@ export default function ModuleInfoPopup({
             {typeDef.knobs.map(k => (
               <div key={k.id} style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
                 <span style={{
-                  fontSize: 7.5, color: '#999', fontWeight: 700,
+                  fontSize: 7.5, color: '#bbb', fontWeight: 700,
                   textTransform: 'uppercase', letterSpacing: '0.08em',
                   minWidth: 42, flexShrink: 0,
                 }}>{k.name}</span>
-                <span style={{ fontSize: 7, color: '#3d3d3d', lineHeight: 1.4 }}>
+                <span style={{ fontSize: 7, color: '#666', lineHeight: 1.4 }}>
                   {k.min}–{k.max}{k.unit ? ` ${k.unit}` : ''}
                   {' · '}
-                  <span style={{ color: '#525252' }}>default {k.default}</span>
+                  <span style={{ color: '#777' }}>default {k.default}</span>
                 </span>
               </div>
             ))}
@@ -201,11 +201,11 @@ export default function ModuleInfoPopup({
               {(typeDef.selectors ?? []).map(s => (
                 <div key={s.id} style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
                   <span style={{
-                    fontSize: 7.5, color: '#999', fontWeight: 700,
+                    fontSize: 7.5, color: '#bbb', fontWeight: 700,
                     textTransform: 'uppercase', letterSpacing: '0.08em',
                     minWidth: 42, flexShrink: 0,
                   }}>{s.name}</span>
-                  <span style={{ fontSize: 7, color: '#3d3d3d' }}>
+                  <span style={{ fontSize: 7, color: '#666' }}>
                     {s.options.join(' · ')}
                   </span>
                 </div>

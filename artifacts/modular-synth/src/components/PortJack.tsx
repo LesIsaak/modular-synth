@@ -132,7 +132,7 @@ export default function PortJack({
       </div>
       <span
         className="text-[8px] uppercase tracking-wider"
-        style={{ color: isOut ? PORT_COLORS[portDef.type] : '#9ca3af' }}
+        style={{ color: isOut ? PORT_COLORS[portDef.type] : '#c0c8d4' }}
       >
         {portDef.name}
       </span>
