@@ -2409,8 +2409,8 @@ export function createAudioModule(
         for (let t = 0; t < NTRACKS; t++) packed |= (trackPos[t] << (t * 4));
         stepRef.value = packed;
 
-        // Master position CV (track 1 length as the master)
-        const masterLenIdx = Math.max(0, Math.min(3, Math.round(p.t1_len ?? 3)));
+        // Master position CV — all tracks share global_len
+        const masterLenIdx = Math.max(0, Math.min(3, Math.round(p.global_len ?? 3)));
         const masterLen    = LEN_MAP[masterLenIdx];
         const masterStep   = trackPos[0];
         posNode.offset.value  = masterLen > 1 ? masterStep / (masterLen - 1) : 0;
@@ -2421,9 +2421,8 @@ export function createAudioModule(
 
         // Per-track processing
         for (let t = 0; t < NTRACKS; t++) {
-          const tn    = t + 1;
-          const lenI  = Math.max(0, Math.min(3, Math.round(p[`t${tn}_len`] ?? (t < 2 ? 3 : 1))));
-          const len   = LEN_MAP[lenI];
+          const tn  = t + 1;
+          const len = masterLen;
           const mask  = Math.round(p[`t${tn}`]     ?? 0) & 0xFFFF;
           const acc   = Math.round(p[`t${tn}_acc`] ?? 0) & 0xFFFF;
           const prob  = Math.min(1, Math.max(0, p[`t${tn}_prob`] ?? 1));
