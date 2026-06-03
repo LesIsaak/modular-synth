@@ -1225,6 +1225,124 @@ export const CABLE_COLORS = [
   '#a9e34b', '#ffec99', '#e599f7', '#66d9e8', '#ffa94d',
 ];
 
+export const MODULE_DESCRIPTIONS: Record<string, string> = {
+  // ── Oscillators ────────────────────────────────────────────────────
+  analog_vco:    'Sawtooth-core oscillator with 4 simultaneous waveform outputs and V/OCT pitch tracking. SYNC input hard-resets the phase for punchy, distorted attacks.',
+  digital_osc:   'Precise digital oscillator with octave shift. Cleaner than analog — great for sharp leads or as a sync slave to another oscillator.',
+  wavetable_osc: 'Scans through a table of waveforms. POS sets the start position, MORPH crossfades to adjacent waves — patch both to an LFO for evolving, animated tones.',
+  fm_osc:        'Two-operator FM synthesis. RATIO tunes the modulator relative to the carrier; INDEX sets modulation depth — low = subtle harmonics, high = metallic or glassy.',
+  harmonic_osc:  'Additive synthesis — mix up to 4 harmonics (H1–H4) of a root frequency. Each harmonic has its own CV input for dynamic timbral morphing.',
+  chord_osc:     'Plays a full chord from a single V/OCT input. Choose MAJ / MIN / SUS4 / DIM / AUG / 7TH; SPREAD widens or tightens the voicing.',
+  noise:         'Generates random noise for percussion, wind effects, or FM fodder. WHITE has equal energy per Hz; PINK rolls off the highs for a warmer, more natural texture.',
+
+  // ── Filters ────────────────────────────────────────────────────────
+  vcf:            'General-purpose VCF with LP / HP / BP / NOTCH modes. FM input allows audio-rate frequency modulation for harsh, metallic tones.',
+  filter_lp6:    'Gentle 6 dB/oct low-pass — one pole, no resonance. Warm, subtle filtering like a vintage console EQ.',
+  filter_lp18:   '3-pole 18 dB/oct low-pass. Sits between a 12 and 24 dB slope — classic Korg-style character.',
+  filter_lp24:   'Steep 4-pole 24 dB/oct low-pass. High resonance self-oscillates into a sine wave — the definitive synth filter sound.',
+  filter_ladder: 'Moog-style transistor ladder filter. Feedback path gives a characteristic non-linear warmth as resonance increases.',
+  filter_ota:    'OTA-based filter (Roland / Oberheim style) with a DRIVE knob for pre-saturation. Adds grit before the filter stage.',
+  filter_svf:    'State variable filter — outputs all 4 modes simultaneously on separate ports. Feed one signal into LP and HP for parallel processing tricks.',
+  filter_hp:     'High-pass filter that removes low frequencies. Great for thinning out basses, sidechain processing, or creating telephone / radio effects.',
+  filter_bp:     'Band-pass — only frequencies near the cutoff come through. High Q narrows the band into a peaky, vocal-like resonance.',
+  filter_br:     'Band-reject filter — cuts a frequency band while passing everything else. The inverse of a band-pass.',
+  filter_notch:  'Narrow notch filter for surgically removing a specific frequency, like mains hum or a harsh resonance.',
+  filter_comb:   'Delay-based comb filter with feedback. FEEDBACK controls resonance; high values produce metallic ringing and flanging-like effects.',
+  filter_formant:'Shapes audio to mimic vowel sounds (A / E / I / O / U). Patch an LFO to VOWEL CV for a talking filter effect.',
+  filter_morph:  'Continuously morphs LP → BP → HP → NOTCH as MORPH sweeps 0 → 1. Patch an LFO for automated filter mode transitions.',
+  filter_multi:  'Classic multi-mode filter with a switchable LP / HP / BP / NOTCH selector. One filter, all modes — flip between them during a performance.',
+
+  // ── Amplifiers ─────────────────────────────────────────────────────
+  vca:       'Linear VCA — gain scales directly with CV. Use for ADSR-shaped envelopes where precise level control matters.',
+  vca_expo:  'Exponential VCA — gain responds logarithmically to CV, matching how we perceive volume. More musical and natural-sounding than linear for playing.',
+  vca_dual:  'Two independent VCAs in one module. Route two signals through separate CV-controlled channels — useful for stereo or two-voice patches.',
+
+  // ── Dynamics ───────────────────────────────────────────────────────
+  compressor: 'Reduces dynamic range when signal exceeds THRESH. RATIO sets how hard it clamps. SC input allows sidechain compression — duck a pad under a kick.',
+  limiter:    'Hard ceiling on output level — nothing passes above CEILING. Protects against clipping while preserving transients.',
+  expander:   'Attenuates signal when it falls below THRESH — the opposite of compression. Increases dynamic range; useful for gating subtle background noise.',
+  noise_gate: 'Completely silences signal below THRESH. Cleans up noise between notes. OPEN output sends a gate signal while the gate is open.',
+  sidechain:  'Compressor that ducks one signal based on another (the SC input). Classic pumping EDM effect: kick → SC input, pad → main input.',
+
+  // ── Envelopes ──────────────────────────────────────────────────────
+  adsr:  'Standard Attack-Decay-Sustain-Release envelope. Gate input triggers it; ENV output shapes a VCA or filter. EOC fires a pulse at the end of release.',
+  ahdsr: 'ADSR plus a HOLD stage — signal stays at peak for the HOLD duration before decaying. Ideal for plucked or struck sounds that need a held transient.',
+
+  // ── LFOs ───────────────────────────────────────────────────────────
+  lfo:         'General-purpose LFO with 4 wave shapes and simultaneous individual outputs. RST input syncs to a clock. DEPTH sets the output amplitude in CV units.',
+  lfo_analog:  'LFO with a DRIFT knob that adds subtle rate wobble — makes the cycle slightly irregular, like a vintage hardware LFO that never repeats exactly.',
+  lfo_digital: 'Widest rate range (0.001–50 Hz) plus a PHASE offset knob. Includes S&H mode for random stepped CV — patch to pitch for random melodies.',
+  lfo_multi:   'Outputs all 4 shapes simultaneously on separate ports, all phase-locked. Use when you want to modulate multiple targets at the same LFO rate.',
+
+  // ── Sequencers ─────────────────────────────────────────────────────
+  seq_step:    '8-step pitch sequencer. Each knob sets a MIDI note value. Clock advances the steps; V/OCT output drives an oscillator.',
+  seq_trigger: 'Trigger pattern sequencer — each step is on or off. Outputs a gate pulse for every active step to trigger drums, envelopes, etc.',
+  seq_cv:      '8-step sequencer with freely tunable CV values (not quantized). Use for any modulation target — filter cutoff, LFO rate, reverb mix.',
+  seq_gate:    'Gate pattern sequencer — outputs a sustained gate per step. Use to rhythmically open a VCA or trigger an ADSR in a pattern.',
+  arpeggiator: 'Plays keyboard notes in arpeggiation patterns. SWING delays odd beats; CHANCE randomly skips steps; ACCENT emphasizes every Nth trigger.',
+  poly_step:   'Polyphonic step sequencer with per-step note, gate, velocity, and CV lanes. Large module — the full studio sequencer.',
+  drum_machine:'Pattern-based drum machine with multiple independent voice trigger outputs. Program beats per voice and patch each output to its own drum module.',
+
+  // ── Clock ──────────────────────────────────────────────────────────
+  clock_gen:     'Master clock oscillator — BPM sets the tempo and outputs gate pulses. The heart of any rhythmic patch. SWING adds groove to the timing.',
+  clock_div:     'Divides an incoming clock by integer ratios (÷2, ÷4…) for slower subdivisions. Stack with Clock Gen to get half-time or quarter-time patterns.',
+  clock_mul:     'Multiplies an incoming clock for faster subdivisions. Get 16th notes from a quarter-note clock; useful for hi-hat or arp patterns.',
+  clock_dly:     'Delays each gate pulse by a fixed amount — for off-beat patterns and syncopation without repatching.',
+  clock_shuffle: 'Adds shuffle / swing to an incoming clock. Adjustable amount for anything from subtle groove to hard swing.',
+  swing_gen:     'Standalone swing generator. Outputs a modified clock with beat offset for a classic drum machine swing feel.',
+  euclidean_trig:'Generates Euclidean rhythmic patterns — mathematically distributes FILL triggers across STEPS evenly. SHIFT rotates the pattern. Inspired by the Shakmat Knight\'s Gallop.',
+
+  // ── Delay ──────────────────────────────────────────────────────────
+  delay_mod:     'Stereo delay with modulation on the delay time. TIME sets delay length; FEEDBACK controls repeats; modulation adds gentle chorus-like movement.',
+  delay_analog:  'Bucket-brigade analog delay — less precise than digital. Adds warmth and subtle pitch drift to the repeats, like a vintage BBD unit.',
+  delay_digital: 'Clean, precise digital delay with pristine repeats. Use for rhythmic echoes where you need exact timing.',
+  delay_tape:    'Tape delay emulation — slow SPEED warps and darkens repeats like a real tape machine slowing down. FLUTTER adds wow and flutter.',
+  delay_ping:    'Ping-pong stereo delay bouncing between left and right channels. Instantly creates wide, spatial movement from a mono source.',
+  delay_multi:   'Up to 4 independent delay taps with individual level controls. Create complex polyrhythmic echo patterns from a single signal.',
+
+  // ── Reverb ─────────────────────────────────────────────────────────
+  reverb:          'General algorithmic reverb. SIZE sets room size; DECAY controls tail length; MIX blends wet and dry signal.',
+  reverb_spring:   'Spring reverb simulation — the classic boing and twang of a mechanical spring tank. Adds vintage character to guitars, drums, or synths.',
+  reverb_plate:    'Plate reverb — dense, lush, with a fast build-up. The classic studio reverb sound heard on vocals and snares.',
+  reverb_hall:     'Large hall simulation with a long, spacious tail. Good for pads, strings, and ambient textures where you need a big room.',
+  reverb_shimmer:  'Reverb with pitch-shifted feedback — the tail is transposed up an octave and fed back in. Creates ethereal, rising washes of sound.',
+
+  // ── Modulation ─────────────────────────────────────────────────────
+  chorus:  'Duplicates the signal with slight pitch and timing variation — thickens and widens mono sources into a rich stereo texture.',
+  flanger: 'Short delay with feedback swept by an internal LFO — creates the metallic jet-plane sweep of a classic flanger.',
+  phaser:  'All-pass filter network swept by an LFO. Notch-based sweeping effect — smoother and more musical than flanging.',
+  vibrato: 'Pure pitch modulation — like patching an LFO to V/OCT but internally. RATE and DEPTH control the speed and depth of the wobble.',
+  tremolo: 'Volume modulation at LFO rate. Classic guitar amp tremolo effect — also useful as a rhythmic gating tool.',
+  rotary:  'Leslie rotating speaker cabinet simulation. Emulates the Doppler effect of a spinning horn — iconic for organs and pads.',
+
+  // ── Distortion ─────────────────────────────────────────────────────
+  overdrive:  'Soft-clip saturation in the style of a tube amp or TS pedal. Adds harmonics and warmth without completely destroying the signal.',
+  fuzz:       'Hard-clip fuzz — from mild hair to full square-wave destruction. BIAS shifts the clipping asymmetry for asymmetric harmonics.',
+  wavefolder: 'Folds the waveform back on itself when it exceeds a threshold — creates complex harmonic stacking unique to synthesis.',
+  bitcrusher: 'Reduces bit depth from 16-bit hiss to 1-bit digital crunch. Extreme lo-fi digital destruction.',
+  samplerate: 'Reduces sample rate to introduce aliasing artifacts and digital roughness. Works well layered with Bit Crusher.',
+  saturator:  'Gentle tape-style saturation — adds warmth and subtle harmonic compression without obvious distortion. Good as a final bus insert.',
+
+  // ── Spectral ───────────────────────────────────────────────────────
+  ring_mod:    'Multiplies two signals — outputs only sum and difference frequencies. No original signal. Creates inharmonic, metallic, bell-like tones.',
+  pitch_shift: 'Transposes pitch without changing playback speed. SEMI sets the shift in semitones; use for harmonization or detuning effects.',
+  freq_shift:  'Shifts all frequencies by a fixed Hz amount (not a ratio). Creates inharmonic, detuned textures — very different from pitch shifting.',
+  resonator:   'Bank of tuned bandpass filters modeling a physical resonant body — like a plate, string, or tube. Pitch-tracks V/OCT input.',
+  vocoder:     'Analyzes the spectral envelope of one signal and applies it to another. Classic robot-voice effect — patch speech to carrier and synth to modulator.',
+  fft_proc:    'FFT-based spectral processor with frequency-domain freeze, blur, and pitch shifting. Creates smeared, spectral textures.',
+
+  // ── Granular ───────────────────────────────────────────────────────
+  granular:     'Slices audio into tiny grains and scatters / overlaps them. POSITION scans the grain buffer; SIZE sets grain length; SPREAD randomizes position for clouds and textures.',
+  time_stretch: 'Changes playback speed without pitch shift — or vice versa — using granular grain manipulation.',
+  freeze_proc:  'Captures a snapshot of the audio and loops it as a sustained drone. FADE controls how quickly the frozen image builds up.',
+
+  // ── Utility ────────────────────────────────────────────────────────
+  mixer:        '4-channel audio mixer with individual gain knobs. Basic signal summing — use to combine multiple oscillators or effects before the output.',
+  keyboard:     'Exposes the on-screen keyboard as V/OCT and gate outputs so you can patch it to oscillators and envelopes like any other module.',
+  midi_monitor: 'Displays incoming MIDI data — note, velocity, CC, pitch bend, and more. Useful for debugging MIDI patches and monitoring live input.',
+  output:       'Final stereo output module with VU meter. All audio paths must end here. Adjust the master level with the GAIN knob.',
+};
+
 export function getDefaultParams(typeDef: ModuleTypeDef): Record<string, number> {
   const params: Record<string, number> = {};
   for (const k of typeDef.knobs) params[k.id] = k.default;

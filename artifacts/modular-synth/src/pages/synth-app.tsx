@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { ModuleInstance, Cable, PendingCable, PortType, MidiMonitorData } from '../types';
 import {
   MODULE_TYPE_MAP, CATEGORY_ORDER, CATEGORY_LABELS, CATEGORY_COLORS,
-  CABLE_COLORS, getDefaultParams, MODULE_TYPES,
+  CABLE_COLORS, getDefaultParams, MODULE_TYPES, MODULE_DESCRIPTIONS,
 } from '../moduleDefinitions';
 import { createAudioModule, connectAudioPorts, disconnectAudioPorts, getCurrentTickAudioTime } from '../audioEngine';
 import ModulePanel from '../components/ModulePanel';
@@ -95,44 +95,96 @@ function ModuleBrowser({ onAdd }: { onAdd: (typeId: string) => void }) {
     types: MODULE_TYPES.filter(m => m.category === cat && m.id !== 'keyboard'),
   })).filter(g => g.types.length > 0);
 
+  const [tooltip, setTooltip] = useState<{ id: string; name: string; desc: string; color: string; y: number } | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleEnter = (t: (typeof MODULE_TYPES)[0], cat: string, e: React.MouseEvent<HTMLButtonElement>) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    const desc = MODULE_DESCRIPTIONS[t.id];
+    if (!desc) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    timerRef.current = setTimeout(() => {
+      setTooltip({ id: t.id, name: t.name, desc, color: CATEGORY_COLORS[cat] ?? '#555', y: rect.top });
+    }, 3000);
+  };
+
+  const handleLeave = () => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    setTooltip(null);
+  };
+
   return (
-    <div
-      className="flex-shrink-0 flex flex-col border-r border-[#2a2a2a] bg-[#0f0f0f] z-10 overflow-y-auto"
-      style={{ width: SIDEBAR_W }}
-      data-testid="module-browser"
-    >
-      <div className="px-4 py-3 border-b border-[#222]">
-        <div className="text-xs font-bold tracking-[0.2em] uppercase" style={{ color: '#e87d27' }}>MODULAR</div>
-        <div className="text-[9px] text-gray-600 mt-0.5 tracking-widest">SYNTHESIZER</div>
+    <>
+      <div
+        className="flex-shrink-0 flex flex-col border-r border-[#2a2a2a] bg-[#0f0f0f] z-10 overflow-y-auto"
+        style={{ width: SIDEBAR_W }}
+        data-testid="module-browser"
+      >
+        <div className="px-4 py-3 border-b border-[#222]">
+          <div className="text-xs font-bold tracking-[0.2em] uppercase" style={{ color: '#e87d27' }}>MODULAR</div>
+          <div className="text-[9px] text-gray-600 mt-0.5 tracking-widest">SYNTHESIZER</div>
+        </div>
+        <div className="flex-1 overflow-y-auto py-2">
+          {byCategory.map(({ cat, label, types }) => (
+            <div key={cat} className="mb-3">
+              <div className="px-3 py-1 text-[8px] uppercase tracking-[0.15em] text-gray-600 border-b border-[#1e1e1e]">
+                {label}
+              </div>
+              <div className="space-y-0.5 pt-1 px-2">
+                {types.map(t => (
+                  <button
+                    key={t.id}
+                    className="w-full text-left px-2 py-1.5 text-[10px] rounded transition-all border border-transparent hover:border-[#333] hover:bg-[#1a1a1a]"
+                    style={{ borderLeft: `3px solid ${CATEGORY_COLORS[cat] ?? '#555'}`, color: '#bbb' }}
+                    onClick={() => { handleLeave(); onAdd(t.id); }}
+                    onMouseEnter={e => handleEnter(t, cat, e)}
+                    onMouseLeave={handleLeave}
+                    data-testid={`add-module-${t.id}`}
+                  >
+                    {t.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="px-3 py-2 border-t border-[#222] text-[8px] text-gray-700 space-y-0.5">
+          <div>Click port → port to patch cable</div>
+          <div>Right-click cable to remove</div>
+          <div>Drag header — snaps to rack slots</div>
+        </div>
       </div>
-      <div className="flex-1 overflow-y-auto py-2">
-        {byCategory.map(({ cat, label, types }) => (
-          <div key={cat} className="mb-3">
-            <div className="px-3 py-1 text-[8px] uppercase tracking-[0.15em] text-gray-600 border-b border-[#1e1e1e]">
-              {label}
-            </div>
-            <div className="space-y-0.5 pt-1 px-2">
-              {types.map(t => (
-                <button
-                  key={t.id}
-                  className="w-full text-left px-2 py-1.5 text-[10px] rounded transition-all border border-transparent hover:border-[#333] hover:bg-[#1a1a1a]"
-                  style={{ borderLeft: `3px solid ${CATEGORY_COLORS[cat] ?? '#555'}`, color: '#bbb' }}
-                  onClick={() => onAdd(t.id)}
-                  data-testid={`add-module-${t.id}`}
-                >
-                  {t.name}
-                </button>
-              ))}
-            </div>
+
+      {/* ── Hover tooltip — appears after 3 s, floats to the right of sidebar ── */}
+      {tooltip && (
+        <div
+          style={{
+            position: 'fixed',
+            left: SIDEBAR_W + 10,
+            top: Math.min(tooltip.y, window.innerHeight - 140),
+            width: 260,
+            zIndex: 200,
+            background: '#111',
+            border: `1px solid ${tooltip.color}44`,
+            borderLeft: `3px solid ${tooltip.color}`,
+            borderRadius: 5,
+            padding: '10px 12px',
+            pointerEvents: 'none',
+            boxShadow: `0 4px 24px rgba(0,0,0,0.7), 0 0 12px ${tooltip.color}22`,
+          }}
+        >
+          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.18em', color: tooltip.color, textTransform: 'uppercase', marginBottom: 6 }}>
+            {tooltip.name}
           </div>
-        ))}
-      </div>
-      <div className="px-3 py-2 border-t border-[#222] text-[8px] text-gray-700 space-y-0.5">
-        <div>Click port → port to patch cable</div>
-        <div>Right-click cable to remove</div>
-        <div>Drag header — snaps to rack slots</div>
-      </div>
-    </div>
+          <div style={{ fontSize: 10, color: '#aaa', lineHeight: 1.55 }}>
+            {tooltip.desc}
+          </div>
+          <div style={{ fontSize: 8, color: '#444', marginTop: 8, fontStyle: 'italic' }}>
+            hold to read · click to add
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
