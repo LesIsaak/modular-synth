@@ -366,16 +366,20 @@ function FixedKeyboardPanel({
   undoAvail,
   cableOpacity,
   onCableOpacity,
+  midiStatus,
+  midiDeviceCount,
 }: {
   started: boolean;
-  onNote:        (freq: number, on: boolean) => void;
-  onBend:        (freq: number) => void;
-  onPitch:       (val: number) => void;
-  onMod:         (val: number) => void;
-  onUndo:        () => void;
-  undoAvail:     boolean;
-  cableOpacity:  number;
-  onCableOpacity:(val: number) => void;
+  onNote:          (freq: number, on: boolean) => void;
+  onBend:          (freq: number) => void;
+  onPitch:         (val: number) => void;
+  onMod:           (val: number) => void;
+  onUndo:          () => void;
+  undoAvail:       boolean;
+  cableOpacity:    number;
+  onCableOpacity:  (val: number) => void;
+  midiStatus:      MidiStatus;
+  midiDeviceCount: number;
 }) {
   const [octave,     setOctave]     = useState(4);
   const [activeNote, setActiveNote] = useState<number | null>(null);
@@ -511,6 +515,25 @@ function FixedKeyboardPanel({
         <span style={{ fontSize: 7, letterSpacing: '0.22em', color: '#3a3a3a', textTransform: 'uppercase' }}>
           KEYBOARD CONTROLLER
         </span>
+        {/* MIDI status pill */}
+        {(() => {
+          const cfg: Record<MidiStatus, { dot: string; label: string; title: string }> = {
+            pending:     { dot: '#444',    label: 'MIDI …',    title: 'Waiting for MIDI access' },
+            unsupported: { dot: '#ef4444', label: 'NO MIDI',   title: 'Web MIDI API not supported (try Chrome/Edge)' },
+            denied:      { dot: '#ef4444', label: 'MIDI ✗',    title: 'MIDI access denied — or blocked by iframe. Open the app in its own tab.' },
+            'no-devices':{ dot: '#f59e0b', label: 'MIDI —',    title: 'Access granted but no MIDI inputs detected' },
+            ready:       { dot: '#22c55e', label: `MIDI ✓ ×${midiDeviceCount}`, title: `${midiDeviceCount} MIDI device(s) connected` },
+          };
+          const { dot, label, title } = cfg[midiStatus];
+          return (
+            <div title={title} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'default' }}>
+              <div style={{ width: 5, height: 5, borderRadius: '50%', background: dot, boxShadow: midiStatus === 'ready' ? `0 0 4px ${dot}` : 'none' }} />
+              <span style={{ fontSize: 6, color: dot === '#22c55e' ? '#4ade80' : dot === '#444' ? '#444' : '#9ca3af', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+                {label}
+              </span>
+            </div>
+          );
+        })()}
         {/* Controls right side */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {/* Cable opacity slider */}
@@ -614,12 +637,14 @@ type MidiMonEvent =
   | { type: 'bend';    channel: number; bend: number }
   | { type: 'cc';      channel: number; num: number; val: number };
 
+type MidiStatus = 'unsupported' | 'pending' | 'denied' | 'no-devices' | 'ready';
+
 function useMIDI(
   onNote: (freq: number, on: boolean) => void,
   onBend: (freq: number) => void,
   onMod:  (val: number) => void,
   onMon:  (ev: MidiMonEvent) => void,
-) {
+): { status: MidiStatus; deviceCount: number } {
   const onNoteRef  = useRef(onNote);
   const onBendRef  = useRef(onBend);
   const onModRef   = useRef(onMod);
@@ -629,8 +654,11 @@ function useMIDI(
   onModRef.current  = onMod;
   onMonRef.current  = onMon;
 
+  const [status,      setStatus]      = useState<MidiStatus>('pending');
+  const [deviceCount, setDeviceCount] = useState(0);
+
   useEffect(() => {
-    if (!navigator.requestMIDIAccess) return;
+    if (!navigator.requestMIDIAccess) { setStatus('unsupported'); return; }
 
     const baseFreqRef = { current: 0 };
 
@@ -674,21 +702,25 @@ function useMIDI(
 
     let access: MIDIAccess | null = null;
 
+    const refreshDevices = (a: MIDIAccess) => {
+      let n = 0;
+      for (const input of a.inputs.values()) { input.onmidimessage = handleMsg; n++; }
+      setDeviceCount(n);
+      setStatus(n > 0 ? 'ready' : 'no-devices');
+    };
+
     navigator.requestMIDIAccess({ sysex: false }).then(a => {
       access = a;
-      for (const input of a.inputs.values()) input.onmidimessage = handleMsg;
-      a.onstatechange = ev => {
-        const port = (ev as MIDIConnectionEvent).port;
-        if (port && port.type === 'input' && port.state === 'connected') {
-          (port as MIDIInput).onmidimessage = handleMsg;
-        }
-      };
-    }).catch(() => { /* MIDI not available or denied */ });
+      refreshDevices(a);
+      a.onstatechange = () => refreshDevices(a);
+    }).catch(() => { setStatus('denied'); });
 
     return () => {
       access?.inputs.forEach(i => { i.onmidimessage = null; });
     };
   }, []);
+
+  return { status, deviceCount };
 }
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
@@ -878,7 +910,7 @@ export default function SynthApp() {
   }, []);
 
   // MIDI input — routes USB keyboard events through the same handlers as the on-screen keys
-  useMIDI(handleKeyNote, handleKeyBend, handleKeyMod, handleMidiMon);
+  const { status: midiStatus, deviceCount: midiDeviceCount } = useMIDI(handleKeyNote, handleKeyBend, handleKeyMod, handleMidiMon);
 
   // ─── Add module ─────────────────────────────────────────────────────────────
   const handleAddModule = useCallback((typeId: string) => {
@@ -1287,6 +1319,8 @@ export default function SynthApp() {
         undoAvail={undoAvail}
         cableOpacity={cableOpacity}
         onCableOpacity={setCableOpacity}
+        midiStatus={midiStatus}
+        midiDeviceCount={midiDeviceCount}
       />
     </div>
   );
