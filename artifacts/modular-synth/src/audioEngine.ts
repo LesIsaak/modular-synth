@@ -890,6 +890,8 @@ export function createAudioModule(
       const cv = ctx.createConstantSource();
       cv.offset.value = 0; cv.start();
       const eoc = ctx.createConstantSource(); eoc.offset.value = 0; eoc.start();
+      let gateOpen = false;
+      let noteOnTime = 0;
       return {
         outputs: new Map([['env_out', cv], ['eoc_out', eoc]]),
         inputs: new Map([
@@ -897,6 +899,7 @@ export function createAudioModule(
           ['retrig_in', { node: cv }],
         ]),
         noteOn: (time, _freq) => {
+          gateOpen = true; noteOnTime = time;
           const a = p.attack ?? 0.01, d = p.decay ?? 0.1, s = p.sustain ?? 0.7;
           cv.offset.cancelScheduledValues(time);
           cv.offset.setValueAtTime(0, time);
@@ -905,12 +908,33 @@ export function createAudioModule(
           eoc.offset.setValueAtTime(1, time + a + d); eoc.offset.setValueAtTime(0, time + a + d + 0.01);
         },
         noteOff: (time) => {
+          gateOpen = false;
           const r = p.release ?? 0.3;
           cv.offset.cancelScheduledValues(time);
           cv.offset.setValueAtTime(cv.offset.value, time);
           cv.offset.linearRampToValueAtTime(0, time + r);
         },
-        setParam: (id, val) => { p[id] = val; },
+        setParam: (id, val) => {
+          p[id] = val;
+          if (!gateOpen) return;
+          const now = ctx.currentTime;
+          const a = p.attack ?? 0.01, d = p.decay ?? 0.1;
+          const inSustain = now >= noteOnTime + a + d;
+          if (id === 'sustain' && inSustain) {
+            cv.offset.cancelScheduledValues(now);
+            cv.offset.linearRampToValueAtTime(val, now + 0.015);
+          } else if ((id === 'attack' || id === 'decay') && !inSustain) {
+            // Re-schedule A+D from current value toward sustain with remaining time
+            const elapsed = now - noteOnTime;
+            const s = p.sustain ?? 0.7;
+            const fullEnd = noteOnTime + (p.attack ?? 0.01) + (p.decay ?? 0.1);
+            if (fullEnd > now) {
+              cv.offset.cancelScheduledValues(now);
+              cv.offset.setValueAtTime(cv.offset.value, now);
+              cv.offset.linearRampToValueAtTime(s, fullEnd);
+            }
+          }
+        },
         destroy: () => { cv.stop(); cv.disconnect(); eoc.stop(); eoc.disconnect(); },
       };
     }
@@ -919,6 +943,8 @@ export function createAudioModule(
       const cv = ctx.createConstantSource();
       cv.offset.value = 0; cv.start();
       const eoc = ctx.createConstantSource(); eoc.offset.value = 0; eoc.start();
+      let gateOpen = false;
+      let noteOnTime = 0;
       return {
         outputs: new Map([['env_out', cv], ['eoc_out', eoc]]),
         inputs: new Map([
@@ -926,6 +952,7 @@ export function createAudioModule(
           ['retrig_in', { node: cv }],
         ]),
         noteOn: (time, _freq) => {
+          gateOpen = true; noteOnTime = time;
           const a = p.attack ?? 0.01, h = p.hold ?? 0.05, d = p.decay ?? 0.15, s = p.sustain ?? 0.6;
           cv.offset.cancelScheduledValues(time);
           cv.offset.setValueAtTime(0, time);
@@ -935,12 +962,23 @@ export function createAudioModule(
           eoc.offset.setValueAtTime(1, time + a + h + d); eoc.offset.setValueAtTime(0, time + a + h + d + 0.01);
         },
         noteOff: (time) => {
+          gateOpen = false;
           const r = p.release ?? 0.4;
           cv.offset.cancelScheduledValues(time);
           cv.offset.setValueAtTime(cv.offset.value, time);
           cv.offset.linearRampToValueAtTime(0, time + r);
         },
-        setParam: (id, val) => { p[id] = val; },
+        setParam: (id, val) => {
+          p[id] = val;
+          if (!gateOpen) return;
+          const now = ctx.currentTime;
+          const a = p.attack ?? 0.01, h = p.hold ?? 0.05, d = p.decay ?? 0.15;
+          const inSustain = now >= noteOnTime + a + h + d;
+          if (id === 'sustain' && inSustain) {
+            cv.offset.cancelScheduledValues(now);
+            cv.offset.linearRampToValueAtTime(val, now + 0.015);
+          }
+        },
         destroy: () => { cv.stop(); cv.disconnect(); eoc.stop(); eoc.disconnect(); },
       };
     }
