@@ -127,6 +127,7 @@ export default function Knob({ def, value, onChange, size = 'md' }: KnobProps) {
             top: 4, left: 4,
           }}
           onMouseDown={handleMouseDown}
+          onDoubleClick={e => { e.stopPropagation(); onChange(def.default); }}
         >
           {/* Indicator line */}
           <div
