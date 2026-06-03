@@ -476,7 +476,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
   {
     id: 'seq_step', name: 'Step Seq', category: 'sequencer', accentColor: SEQ, width: 340,
     knobs: [
-      { id: 'bpm', name: 'BPM', min: 20, max: 300, default: 120 },
+      { id: 'bpm', name: 'BPM', min: 20, max: 300, default: 120, step: 1 },
       { id: 's1',  name: 'S1',  min: 0, max: 127, default: 60,  step: 1 },
       { id: 's2',  name: 'S2',  min: 0, max: 127, default: 62,  step: 1 },
       { id: 's3',  name: 'S3',  min: 0, max: 127, default: 64,  step: 1 },
@@ -495,7 +495,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
   {
     id: 'seq_trigger', name: 'Trigger Seq', category: 'sequencer', accentColor: SEQ, width: 320,
     knobs: [
-      { id: 'bpm', name: 'BPM', min: 20, max: 300, default: 120 },
+      { id: 'bpm', name: 'BPM', min: 20, max: 300, default: 120, step: 1 },
       { id: 't1',  name: 'T1',  min: 0, max: 1, default: 1, step: 1 },
       { id: 't2',  name: 'T2',  min: 0, max: 1, default: 0, step: 1 },
       { id: 't3',  name: 'T3',  min: 0, max: 1, default: 1, step: 1 },
@@ -513,7 +513,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
   {
     id: 'seq_cv', name: 'CV Seq', category: 'sequencer', accentColor: SEQ, width: 320,
     knobs: [
-      { id: 'bpm', name: 'BPM', min: 20, max: 300, default: 120 },
+      { id: 'bpm', name: 'BPM', min: 20, max: 300, default: 120, step: 1 },
       { id: 'v1',  name: 'V1',  min: 0, max: 1, default: 0.0  },
       { id: 'v2',  name: 'V2',  min: 0, max: 1, default: 0.25 },
       { id: 'v3',  name: 'V3',  min: 0, max: 1, default: 0.5  },
@@ -531,7 +531,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
   {
     id: 'seq_gate', name: 'Gate Seq', category: 'sequencer', accentColor: SEQ, width: 320,
     knobs: [
-      { id: 'bpm',      name: 'BPM',    min: 20, max: 300, default: 120 },
+      { id: 'bpm',      name: 'BPM',    min: 20, max: 300, default: 120, step: 1 },
       { id: 'gate_len', name: 'LENGTH', min: 0.1, max: 0.9, default: 0.5 },
       { id: 'g1',       name: 'G1',     min: 0, max: 1, default: 1, step: 1 },
       { id: 'g2',       name: 'G2',     min: 0, max: 1, default: 1, step: 1 },
@@ -552,7 +552,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
   {
     id: 'arpeggiator', name: 'ARPEGGIATOR', category: 'sequencer', accentColor: SEQ, width: 220,
     knobs: [
-      { id: 'bpm',      name: 'BPM',  min: 40,   max: 300,  default: 120 },
+      { id: 'bpm',      name: 'BPM',  min: 40,   max: 300,  default: 120, step: 1 },
       { id: 'gate_len', name: 'GATE', min: 0.05, max: 0.95, default: 0.5 },
       { id: 'octaves',  name: 'OCT',  min: 1,    max: 4,    default: 1, step: 1 },
     ],
@@ -571,7 +571,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
   {
     id: 'clock_gen', name: 'Clock Gen', category: 'clock', accentColor: CLK, width: 210,
     knobs: [
-      { id: 'bpm',   name: 'BPM',   min: 20, max: 300, default: 120 },
+      { id: 'bpm',   name: 'BPM',   min: 20, max: 300, default: 120, step: 1 },
       { id: 'swing', name: 'SWING', min: 0,  max: 0.5, default: 0   },
     ],
     ports: [
@@ -586,7 +586,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
   {
     id: 'clock_div', name: 'Divider', category: 'clock', accentColor: CLK, width: 190,
     knobs: [
-      { id: 'bpm', name: 'BPM',    min: 20, max: 300, default: 120 },
+      { id: 'bpm', name: 'BPM',    min: 20, max: 300, default: 120, step: 1 },
       { id: 'div', name: 'DIVIDE', min: 1,  max: 16,  default: 2, step: 1 },
     ],
     ports: [
@@ -597,7 +597,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
   {
     id: 'clock_mul', name: 'Multiplier', category: 'clock', accentColor: CLK, width: 190,
     knobs: [
-      { id: 'bpm', name: 'BPM',      min: 20, max: 300, default: 120 },
+      { id: 'bpm', name: 'BPM',      min: 20, max: 300, default: 120, step: 1 },
       { id: 'mul', name: 'MULTIPLY', min: 1,  max: 8,   default: 2, step: 1 },
     ],
     ports: [
@@ -608,7 +608,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
   {
     id: 'clock_dly', name: 'Clock Delay', category: 'clock', accentColor: CLK, width: 190,
     knobs: [
-      { id: 'bpm',   name: 'BPM',   min: 20, max: 300,  default: 120 },
+      { id: 'bpm',   name: 'BPM',   min: 20, max: 300,  default: 120, step: 1 },
       { id: 'delay', name: 'DELAY', min: 0,  max: 0.99, default: 0.25 },
     ],
     ports: [
@@ -619,7 +619,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
   {
     id: 'clock_shuffle', name: 'Shuffler', category: 'clock', accentColor: CLK, width: 190,
     knobs: [
-      { id: 'bpm',     name: 'BPM',     min: 20, max: 300, default: 120 },
+      { id: 'bpm',     name: 'BPM',     min: 20, max: 300, default: 120, step: 1 },
       { id: 'shuffle', name: 'SHUFFLE', min: 0,  max: 0.5, default: 0.2 },
     ],
     ports: [
@@ -630,7 +630,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
   {
     id: 'swing_gen', name: 'Swing Gen', category: 'clock', accentColor: CLK, width: 190,
     knobs: [
-      { id: 'bpm',   name: 'BPM',   min: 20, max: 300,  default: 120 },
+      { id: 'bpm',   name: 'BPM',   min: 20, max: 300,  default: 120, step: 1 },
       { id: 'swing', name: 'SWING', min: 0,  max: 0.67, default: 0.33 },
     ],
     ports: [
@@ -1056,7 +1056,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
   {
     id: 'euclidean_trig', name: 'KNIGHT GATE', category: 'clock', accentColor: EUC, width: 220, height: 360,
     knobs: [
-      { id: 'bpm',   name: 'BPM',   min: 20,  max: 300, default: 120 },
+      { id: 'bpm',   name: 'BPM',   min: 20,  max: 300, default: 120, step: 1 },
       { id: 'steps', name: 'STEPS', min: 2,   max: 16,  default: 8,  step: 1 },
       { id: 'fill',  name: 'FILL',  min: 1,   max: 16,  default: 4,  step: 1 },
       { id: 'shift', name: 'SHIFT', min: 0,   max: 15,  default: 0,  step: 1 },
