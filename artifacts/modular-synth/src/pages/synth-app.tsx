@@ -1215,11 +1215,18 @@ export default function SynthApp() {
   useEffect(() => {
     const EDGE = 60;      // px from edge to start scrolling
     const MAX_SPD = 14;   // max scroll px per frame
-    let rafId = 0;
-    let lastMouse = { x: 0, y: 0 };
+
+    // Three independent RAF slots:
+    //  edgeRafId – continuous edge-scroll loop (drag or cable near rack border)
+    //  dragRafId  – throttled module-position update during normal drag
+    //  cableRafId – throttled cable-tail mouse-pos update during patching
+    let edgeRafId  = 0;
+    let dragRafId  = 0;
+    let cableRafId = 0;
+    let lastMouse  = { x: 0, y: 0 };
 
     const edgeScroll = () => {
-      rafId = 0;
+      edgeRafId = 0;
       const hasDrag  = !!dragRef.current;
       const hasCable = !!pendingCableRef.current;
       if ((!hasDrag && !hasCable) || !rackRef.current) return;
@@ -1235,7 +1242,6 @@ export default function SynthApp() {
         rackRef.current.scrollLeft += dx;
         rackRef.current.scrollTop  += dy;
         if (hasDrag) {
-          // Snapshot ref fields into locals before the async setState
           const { moduleId, startX, startY, origX, origY, origScrollLeft, origScrollTop } = dragRef.current!;
           const sl = rackRef.current.scrollLeft;
           const st = rackRef.current.scrollTop;
@@ -1248,44 +1254,60 @@ export default function SynthApp() {
           ));
         }
         if (hasCable) {
-          // Keep the cable tail anchored to the mouse while the rack scrolls
           setMousePos({
             x: mx - r.left + rackRef.current.scrollLeft,
             y: my - r.top  + rackRef.current.scrollTop,
           });
         }
-        rafId = requestAnimationFrame(edgeScroll);
+        edgeRafId = requestAnimationFrame(edgeScroll);
       }
     };
 
     const onMouseMove = (e: MouseEvent) => {
       lastMouse = { x: e.clientX, y: e.clientY };
-      if (rackRef.current) {
-        const r = rackRef.current.getBoundingClientRect();
-        setMousePos({
-          x: e.clientX - r.left + rackRef.current.scrollLeft,
-          y: e.clientY - r.top  + rackRef.current.scrollTop,
+
+      // Cable-tail position: only update when actively patching, throttled to RAF rate.
+      // Avoids full SynthApp re-renders from every mousemove when no cable is pending.
+      if (pendingCableRef.current && !cableRafId) {
+        cableRafId = requestAnimationFrame(() => {
+          cableRafId = 0;
+          if (!rackRef.current) return;
+          const r = rackRef.current.getBoundingClientRect();
+          setMousePos({
+            x: lastMouse.x - r.left + rackRef.current.scrollLeft,
+            y: lastMouse.y - r.top  + rackRef.current.scrollTop,
+          });
         });
       }
-      if (dragRef.current) {
-        const { moduleId, startX, startY, origX, origY, origScrollLeft, origScrollTop } = dragRef.current;
-        const sl = rackRef.current?.scrollLeft ?? 0;
-        const st = rackRef.current?.scrollTop  ?? 0;
-        setModules(prev => prev.map(m =>
-          m.id === moduleId
-            ? { ...m,
-                x: Math.max(0, origX + e.clientX - startX + sl - origScrollLeft),
-                y: Math.max(0, origY + e.clientY - startY + st - origScrollTop) }
-            : m
-        ));
+
+      // Module drag: RAF-throttled position update (same fix as knobs).
+      if (dragRef.current && !dragRafId) {
+        dragRafId = requestAnimationFrame(() => {
+          dragRafId = 0;
+          if (!dragRef.current || !rackRef.current) return;
+          const { moduleId, startX, startY, origX, origY, origScrollLeft, origScrollTop } = dragRef.current;
+          const sl = rackRef.current.scrollLeft;
+          const st = rackRef.current.scrollTop;
+          setModules(prev => prev.map(m =>
+            m.id === moduleId
+              ? { ...m,
+                  x: Math.max(0, origX + lastMouse.x - startX + sl - origScrollLeft),
+                  y: Math.max(0, origY + lastMouse.y - startY + st - origScrollTop) }
+              : m
+          ));
+        });
       }
-      if (dragRef.current || pendingCableRef.current) {
-        if (!rafId) rafId = requestAnimationFrame(edgeScroll);
+
+      // Edge-scroll loop
+      if ((dragRef.current || pendingCableRef.current) && !edgeRafId) {
+        edgeRafId = requestAnimationFrame(edgeScroll);
       }
     };
 
     const onMouseUp = () => {
-      if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+      if (edgeRafId)  { cancelAnimationFrame(edgeRafId);  edgeRafId  = 0; }
+      if (dragRafId)  { cancelAnimationFrame(dragRafId);  dragRafId  = 0; }
+      if (cableRafId) { cancelAnimationFrame(cableRafId); cableRafId = 0; }
       if (dragRef.current) {
         const { moduleId } = dragRef.current;
         setModules(prev => prev.map(m => {
@@ -1302,7 +1324,9 @@ export default function SynthApp() {
     return () => {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup',   onMouseUp);
-      if (rafId) cancelAnimationFrame(rafId);
+      if (edgeRafId)  cancelAnimationFrame(edgeRafId);
+      if (dragRafId)  cancelAnimationFrame(dragRafId);
+      if (cableRafId) cancelAnimationFrame(cableRafId);
     };
   }, []);
 

@@ -18,7 +18,11 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
 
   useEffect(() => {
     if (!stepRef) return;
-    const id = setInterval(() => setLiveStep((stepRef.value) & 0xF), 33);
+    let last = -1;
+    const id = setInterval(() => {
+      const next = (stepRef.value) & 0xF;
+      if (next !== last) { last = next; setLiveStep(next); }
+    }, 33);
     return () => clearInterval(id);
   }, [stepRef]);
 
