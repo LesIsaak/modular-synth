@@ -1075,7 +1075,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
   // ─── Drum Machine (Erica Synths Techno System inspired) ──────────────────────
   {
     id: 'drum_machine', name: 'TECHNO DRUM', category: 'sequencer', accentColor: DRM,
-    width: 720, height: 520,
+    width: 960,
     knobs: [
       // ── BASS DRUM ──
       { id: 'kick_tune',  name: 'TUNE',  min: 0,    max: 1,     default: 0.5           },
@@ -1087,14 +1087,17 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
       { id: 'snr_tune',   name: 'TUNE',  min: 80,   max: 400,   default: 190           },
       { id: 'snr_snap',   name: 'SNAP',  min: 0,    max: 1,     default: 0.7           },
       { id: 'snr_decay',  name: 'DECAY', min: 0.05, max: 0.6,   default: 0.18          },
+      { id: 'snr_tone',   name: 'TONE',  min: 300,  max: 3000,  default: 900,  log: true },
       { id: 'snr_vol',    name: 'VOL',   min: 0,    max: 1,     default: 0.70          },
       // ── HH · CLOSED ──
       { id: 'hhc_tone',   name: 'TONE',  min: 3000, max: 14000, default: 7500, log: true },
       { id: 'hhc_decay',  name: 'DECAY', min: 0.01, max: 0.22,  default: 0.04          },
+      { id: 'hhc_body',   name: 'BODY',  min: 0,    max: 1,     default: 0.15          },
       { id: 'hhc_vol',    name: 'VOL',   min: 0,    max: 1,     default: 0.55          },
       // ── HH · OPEN ──
       { id: 'hho_tone',   name: 'TONE',  min: 2000, max: 10000, default: 6000, log: true },
       { id: 'hho_decay',  name: 'DECAY', min: 0.05, max: 1.5,   default: 0.35          },
+      { id: 'hho_body',   name: 'BODY',  min: 0,    max: 1,     default: 0.15          },
       { id: 'hho_vol',    name: 'VOL',   min: 0,    max: 1,     default: 0.50          },
       // ── CLAP ──
       { id: 'clp_tune',   name: 'TONE',  min: 400,  max: 4000,  default: 1400, log: true },
@@ -1109,12 +1112,20 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
     ],
     selectors: [],
     ports: [
-      { id: 'kick_trig', name: 'K-TRG', type: 'gate_in' },
-      { id: 'snr_trig',  name: 'S-TRG', type: 'gate_in' },
-      { id: 'hhc_trig',  name: 'HC-T',  type: 'gate_in' },
-      { id: 'hho_trig',  name: 'HO-T',  type: 'gate_in' },
-      { id: 'clp_trig',  name: 'CL-T',  type: 'gate_in' },
-      { id: 'per_trig',  name: 'PR-T',  type: 'gate_in' },
+      // Trigger inputs (one per voice)
+      { id: 'kick_trig', name: 'K-TRG', type: 'gate_in'  },
+      { id: 'snr_trig',  name: 'S-TRG', type: 'gate_in'  },
+      { id: 'hhc_trig',  name: 'HC-T',  type: 'gate_in'  },
+      { id: 'hho_trig',  name: 'HO-T',  type: 'gate_in'  },
+      { id: 'clp_trig',  name: 'CL-T',  type: 'gate_in'  },
+      { id: 'per_trig',  name: 'PR-T',  type: 'gate_in'  },
+      // Individual voice outputs + mix bus
+      { id: 'kick_out',  name: 'K-OUT', type: 'audio_out' },
+      { id: 'snr_out',   name: 'S-OUT', type: 'audio_out' },
+      { id: 'hhc_out',   name: 'HC-O',  type: 'audio_out' },
+      { id: 'hho_out',   name: 'HO-O',  type: 'audio_out' },
+      { id: 'clp_out',   name: 'CL-O',  type: 'audio_out' },
+      { id: 'per_out',   name: 'PR-O',  type: 'audio_out' },
       { id: 'out',       name: 'MIX',   type: 'audio_out' },
     ],
   },

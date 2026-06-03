@@ -226,9 +226,9 @@ function EuclideanLedRing({ steps, fill, shift, currentStep }: {
 // ─── Drum voice synthesis panel ────────────────────────────────────────────────
 const DRM_VOICES = [
   { id: 'kick', label: 'BASS DRUM', color: '#ef4444', params: ['kick_tune','kick_decay','kick_punch','kick_drive'], vol: 'kick_vol' },
-  { id: 'snr',  label: 'SNARE',    color: '#f97316', params: ['snr_tune','snr_snap','snr_decay'],                  vol: 'snr_vol'  },
-  { id: 'hhc',  label: 'HH · CLS', color: '#eab308', params: ['hhc_tone','hhc_decay'],                             vol: 'hhc_vol'  },
-  { id: 'hho',  label: 'HH · OPN', color: '#22c55e', params: ['hho_tone','hho_decay'],                             vol: 'hho_vol'  },
+  { id: 'snr',  label: 'SNARE',    color: '#f97316', params: ['snr_tune','snr_snap','snr_decay','snr_tone'],       vol: 'snr_vol'  },
+  { id: 'hhc',  label: 'HH · CLS', color: '#eab308', params: ['hhc_tone','hhc_decay','hhc_body'],                  vol: 'hhc_vol'  },
+  { id: 'hho',  label: 'HH · OPN', color: '#22c55e', params: ['hho_tone','hho_decay','hho_body'],                  vol: 'hho_vol'  },
   { id: 'clp',  label: 'CLAP',     color: '#60a5fa', params: ['clp_tune','clp_snap','clp_decay'],                  vol: 'clp_vol'  },
   { id: 'per',  label: 'PERC',     color: '#a78bfa', params: ['per_tune','per_decay','per_sweep'],                 vol: 'per_vol'  },
 ] as const;
@@ -242,30 +242,30 @@ function DrumVoicePanel({ module, knobDefs, onParamChange }: {
 
   return (
     <div style={{
-      display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
-      gridTemplateRows: '1fr 1fr', height: '100%', overflow: 'hidden',
+      display: 'grid',
+      gridTemplateColumns: 'repeat(6, 1fr)',
+      height: '100%',
+      overflow: 'hidden',
     }}>
       {DRM_VOICES.map((voice, i) => (
         <div key={voice.id} style={{
           display: 'flex', flexDirection: 'column',
-          borderRight:  (i % 3) < 2 ? '1px solid #1e1e1e' : 'none',
-          borderBottom: i < 3       ? '1px solid #1e1e1e' : 'none',
-          background: i % 2 === 0 ? '#0a0a0a' : '#0c0c0c',
+          borderRight: i < 5 ? '1px solid #222' : 'none',
           overflow: 'hidden',
         }}>
           {/* ─ Voice header ─ */}
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 6, padding: '5px 9px 4px',
-            borderBottom: `1px solid ${voice.color}20`, flexShrink: 0,
-            background: `${voice.color}08`,
+            display: 'flex', alignItems: 'center', gap: 5, padding: '4px 7px 3px',
+            borderBottom: `1px solid ${voice.color}28`, flexShrink: 0,
+            background: `${voice.color}0a`,
           }}>
             <div style={{
-              width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-              background: voice.color, boxShadow: `0 0 5px ${voice.color}88`,
+              width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+              background: voice.color, boxShadow: `0 0 4px ${voice.color}99`,
             }} />
             <span style={{
-              fontSize: 7.5, color: voice.color, textTransform: 'uppercase',
-              letterSpacing: '0.1em', fontWeight: 700,
+              fontSize: 6.5, color: voice.color, textTransform: 'uppercase',
+              letterSpacing: '0.08em', fontWeight: 700, whiteSpace: 'nowrap',
             }}>{voice.label}</span>
           </div>
 
@@ -273,7 +273,7 @@ function DrumVoicePanel({ module, knobDefs, onParamChange }: {
           <div style={{
             flex: 1, display: 'flex', flexWrap: 'wrap',
             alignItems: 'center', justifyContent: 'center',
-            gap: 2, padding: '4px 4px 2px',
+            gap: 1, padding: '3px 3px 2px', overflow: 'hidden',
           }}>
             {voice.params.map(pid => {
               const def = knobMap.get(pid);
@@ -290,13 +290,16 @@ function DrumVoicePanel({ module, knobDefs, onParamChange }: {
             })}
           </div>
 
-          {/* ─ Volume ─ */}
+          {/* ─ Volume slider ─ */}
           <div style={{
-            flexShrink: 0, padding: '2px 10px 6px',
-            borderTop: '1px solid #161616',
+            flexShrink: 0, padding: '2px 8px 5px',
+            borderTop: '1px solid #1c1c1c',
             display: 'flex', flexDirection: 'column', gap: 1,
           }}>
-            <span style={{ fontSize: 5.5, color: '#444', textTransform: 'uppercase', letterSpacing: '0.1em' }}>VOL</span>
+            <span style={{
+              fontSize: 5.5, color: '#484848', textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+            }}>VOL</span>
             <input
               type="range" min={0} max={1} step={0.01}
               value={module.params[voice.vol] ?? 0.7}
@@ -541,35 +544,42 @@ export default function ModulePanel({
       {/* Panel body */}
       <div style={{
         height: bodyH, flexShrink: 0, display: 'flex', flexDirection: 'column',
-        background: isDrum
-          ? 'linear-gradient(180deg, #0a0a0a 0%, #0d0d0d 100%)'
-          : 'linear-gradient(180deg, #171717 0%, #1a1a1a 100%)',
-        borderLeft: `1px solid ${isDrum ? '#1e1e1e' : '#242424'}`,
-        borderRight: `1px solid ${isDrum ? '#1e1e1e' : '#242424'}`,
+        background: 'linear-gradient(180deg, #171717 0%, #1a1a1a 100%)',
+        borderLeft: '1px solid #242424',
+        borderRight: '1px solid #242424',
         overflow: 'hidden',
       }}>
-        {/* ── Drum machine: patchable trigger ports strip + step grid ── */}
+        {/* ── Drum machine: trigger input strip → voice panels → output strip ── */}
         {isDrum ? (
           <>
-            {/* Port patch points — trigger inputs per voice + MIX output */}
-            <div style={{
-              flexShrink: 0, padding: '5px 8px 4px',
-              borderBottom: '1px solid #1c1c1c', background: '#0c0c0c',
-              display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap',
-            }}>
-              {inPorts.map(port => (
-                <PortWithLabel key={port.id} {...portProps(port)} />
-              ))}
-              <div style={{ flex: 1 }} />
-              {outPorts.map(port => (
-                <PortWithLabel key={port.id} {...portProps(port)} />
-              ))}
+            {/* Trigger inputs (top) */}
+            <div style={{ flexShrink: 0, padding: '5px 6px 4px' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 3px' }}>
+                {inPorts.map(port => (
+                  <PortWithLabel key={port.id} {...portProps(port)} />
+                ))}
+              </div>
+              <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #2a2a2a, transparent)', margin: '4px 0 0' }} />
             </div>
-            <DrumVoicePanel
-              module={module}
-              knobDefs={typeDef.knobs}
-              onParamChange={onParamChange}
-            />
+
+            {/* Voice synthesis panels */}
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              <DrumVoicePanel
+                module={module}
+                knobDefs={typeDef.knobs}
+                onParamChange={onParamChange}
+              />
+            </div>
+
+            {/* Individual + mix outputs (bottom) */}
+            <div style={{ flexShrink: 0, padding: '3px 6px 6px' }}>
+              <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #2a2a2a, transparent)', margin: '0 0 4px' }} />
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 3px' }}>
+                {outPorts.map(port => (
+                  <PortWithLabel key={port.id} {...portProps(port)} />
+                ))}
+              </div>
+            </div>
           </>
         ) : (
           <>

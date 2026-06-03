@@ -2404,6 +2404,7 @@ export function createAudioModule(
         const tune  = p.snr_tune  ?? 190;    // body Hz
         const snap  = p.snr_snap  ?? 0.7;    // noise level
         const decay = p.snr_decay ?? 0.18;   // s
+        const tone  = p.snr_tone  ?? 900;    // noise HP filter Hz
         const sr = ctx.sampleRate;
 
         // noise component
@@ -2412,7 +2413,7 @@ export function createAudioModule(
         const nd = nb.getChannelData(0);
         for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
         const ns = ctx.createBufferSource(); ns.buffer = nb;
-        const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 900;
+        const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = tone;
         const ng = ctx.createGain();
         ng.gain.setValueAtTime(snap * 0.9, t); ng.gain.exponentialRampToValueAtTime(0.001, t + decay);
         ns.connect(hp); hp.connect(ng); ng.connect(volGains.snr);
@@ -2426,10 +2427,23 @@ export function createAudioModule(
         osc.start(t); osc.stop(t + decay * 0.5);
       };
 
+      // Helper: metallic body component (pitched sub-oscillator added to HH voices)
+      const makeHHBody = (freq: number, bodyAmt: number, dur: number, dest: GainNode) => {
+        if (bodyAmt < 0.01) return;
+        const t = ctx.currentTime;
+        const osc = ctx.createOscillator(); osc.type = 'square';
+        osc.frequency.value = freq;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(bodyAmt * 0.5, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.7);
+        osc.connect(g); g.connect(dest);
+        osc.start(t); osc.stop(t + dur + 0.01);
+      };
+
       const fireHHC = () => {
         const t     = ctx.currentTime;
         const tone  = p.hhc_tone  ?? 7500;   // HP Hz
         const decay = p.hhc_decay ?? 0.04;   // s
+        const body  = p.hhc_body  ?? 0.15;   // metallic body amount
         const sr = ctx.sampleRate;
         const dur = Math.max(decay + 0.008, 0.02);
         const nb = ctx.createBuffer(1, (sr * dur) | 0, sr);
@@ -2441,12 +2455,14 @@ export function createAudioModule(
         g.gain.setValueAtTime(0.7, t); g.gain.exponentialRampToValueAtTime(0.001, t + decay);
         ns.connect(hp); hp.connect(g); g.connect(volGains.hhc);
         ns.start(t); ns.stop(t + dur);
+        makeHHBody(tone * 0.13, body, dur, volGains.hhc);
       };
 
       const fireHHO = () => {
         const t     = ctx.currentTime;
         const tone  = p.hho_tone  ?? 6000;   // HP Hz
         const decay = p.hho_decay ?? 0.35;   // s
+        const body  = p.hho_body  ?? 0.15;   // metallic body amount
         const sr = ctx.sampleRate;
         const dur = decay + 0.04;
         const nb = ctx.createBuffer(1, (sr * dur) | 0, sr);
@@ -2458,6 +2474,7 @@ export function createAudioModule(
         g.gain.setValueAtTime(0.6, t); g.gain.exponentialRampToValueAtTime(0.001, t + decay);
         ns.connect(hp); hp.connect(g); g.connect(volGains.hho);
         ns.start(t); ns.stop(t + dur);
+        makeHHBody(tone * 0.13, body, dur, volGains.hho);
       };
 
       const fireClap = () => {
@@ -2507,7 +2524,15 @@ export function createAudioModule(
       ]);
 
       return {
-        outputs: new Map([['out', master as AudioNode]]),
+        outputs: new Map<string, AudioNode>([
+          ['out',      master],
+          ['kick_out', volGains.kick],
+          ['snr_out',  volGains.snr],
+          ['hhc_out',  volGains.hhc],
+          ['hho_out',  volGains.hho],
+          ['clp_out',  volGains.clp],
+          ['per_out',  volGains.per],
+        ]),
         inputs:  new Map(),
         portNoteOn,
         setParam: (id, val) => {
