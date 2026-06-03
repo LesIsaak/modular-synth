@@ -1077,22 +1077,37 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
     id: 'drum_machine', name: 'TECHNO DRUM', category: 'sequencer', accentColor: DRM,
     width: 720, height: 520,
     knobs: [
-      { id: 'bpm',      name: 'BPM',   min: 60, max: 200, default: 128 },
-      // bit-packed 16-step patterns (bit N = step N active)
-      { id: 'kick_pat', name: 'KICK',  min: 0, max: 65535, default: 4369,  step: 1 },
-      { id: 'snr_pat',  name: 'SNARE', min: 0, max: 65535, default: 4112,  step: 1 },
-      { id: 'hhc_pat',  name: 'HH-C',  min: 0, max: 65535, default: 21845, step: 1 },
-      { id: 'hho_pat',  name: 'HH-O',  min: 0, max: 65535, default: 0,     step: 1 },
-      { id: 'clp_pat',  name: 'CLAP',  min: 0, max: 65535, default: 0,     step: 1 },
-      { id: 'per_pat',  name: 'PERC',  min: 0, max: 65535, default: 0,     step: 1 },
-      { id: 'kick_vol', name: 'K.VOL', min: 0, max: 1, default: 0.85 },
-      { id: 'snr_vol',  name: 'S.VOL', min: 0, max: 1, default: 0.70 },
-      { id: 'hhc_vol',  name: 'C.VOL', min: 0, max: 1, default: 0.55 },
-      { id: 'hho_vol',  name: 'O.VOL', min: 0, max: 1, default: 0.50 },
-      { id: 'clp_vol',  name: 'P.VOL', min: 0, max: 1, default: 0.60 },
-      { id: 'per_vol',  name: 'R.VOL', min: 0, max: 1, default: 0.55 },
+      // ── BASS DRUM ──
+      { id: 'kick_tune',  name: 'TUNE',  min: 0,    max: 1,     default: 0.5           },
+      { id: 'kick_decay', name: 'DECAY', min: 0.05, max: 2.0,   default: 0.5,  log: true },
+      { id: 'kick_punch', name: 'PUNCH', min: 0,    max: 1,     default: 0.65          },
+      { id: 'kick_drive', name: 'DRIVE', min: 0,    max: 1,     default: 0             },
+      { id: 'kick_vol',   name: 'VOL',   min: 0,    max: 1,     default: 0.85          },
+      // ── SNARE ──
+      { id: 'snr_tune',   name: 'TUNE',  min: 80,   max: 400,   default: 190           },
+      { id: 'snr_snap',   name: 'SNAP',  min: 0,    max: 1,     default: 0.7           },
+      { id: 'snr_decay',  name: 'DECAY', min: 0.05, max: 0.6,   default: 0.18          },
+      { id: 'snr_vol',    name: 'VOL',   min: 0,    max: 1,     default: 0.70          },
+      // ── HH · CLOSED ──
+      { id: 'hhc_tone',   name: 'TONE',  min: 3000, max: 14000, default: 7500, log: true },
+      { id: 'hhc_decay',  name: 'DECAY', min: 0.01, max: 0.22,  default: 0.04          },
+      { id: 'hhc_vol',    name: 'VOL',   min: 0,    max: 1,     default: 0.55          },
+      // ── HH · OPEN ──
+      { id: 'hho_tone',   name: 'TONE',  min: 2000, max: 10000, default: 6000, log: true },
+      { id: 'hho_decay',  name: 'DECAY', min: 0.05, max: 1.5,   default: 0.35          },
+      { id: 'hho_vol',    name: 'VOL',   min: 0,    max: 1,     default: 0.50          },
+      // ── CLAP ──
+      { id: 'clp_tune',   name: 'TONE',  min: 400,  max: 4000,  default: 1400, log: true },
+      { id: 'clp_snap',   name: 'SNAP',  min: 0,    max: 1,     default: 0.8           },
+      { id: 'clp_decay',  name: 'DECAY', min: 0.05, max: 0.6,   default: 0.2           },
+      { id: 'clp_vol',    name: 'VOL',   min: 0,    max: 1,     default: 0.60          },
+      // ── PERC ──
+      { id: 'per_tune',   name: 'TUNE',  min: 60,   max: 1200,  default: 300,  log: true },
+      { id: 'per_decay',  name: 'DECAY', min: 0.03, max: 0.6,   default: 0.15          },
+      { id: 'per_sweep',  name: 'SWEEP', min: 0,    max: 1,     default: 0.5           },
+      { id: 'per_vol',    name: 'VOL',   min: 0,    max: 1,     default: 0.55          },
     ],
-    selectors: [{ id: 'play', name: 'PLAY', options: ['STOP','PLAY'], default: 0 }],
+    selectors: [],
     ports: [
       { id: 'kick_trig', name: 'K-TRG', type: 'gate_in' },
       { id: 'snr_trig',  name: 'S-TRG', type: 'gate_in' },

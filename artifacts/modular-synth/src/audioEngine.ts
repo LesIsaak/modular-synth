@@ -2355,136 +2355,148 @@ export function createAudioModule(
         volGains[ch].connect(master);
       }
 
-      // ── Synthesis helpers ───────────────────────────────────────────
+      // ── Parametric synthesis voices ─────────────────────────────────
       const fireKick = () => {
-        const t = ctx.currentTime;
+        const t     = ctx.currentTime;
+        const tune  = p.kick_tune  ?? 0.5;   // 0-1
+        const decay = p.kick_decay ?? 0.5;   // s
+        const punch = p.kick_punch ?? 0.65;  // 0-1 pitch sweep depth
+        const drive = p.kick_drive ?? 0;     // 0-1 waveshaper
+
+        const startHz = 60 + tune * 140;                      // 60-200 Hz
+        const endHz   = Math.max(20, startHz * (1 - punch * 0.88));
         const osc = ctx.createOscillator();
-        const g   = ctx.createGain();
-        osc.frequency.setValueAtTime(180, t);
-        osc.frequency.exponentialRampToValueAtTime(40, t + 0.28);
-        g.gain.setValueAtTime(1, t);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
-        osc.connect(g); g.connect(volGains.kick);
-        osc.start(t); osc.stop(t + 0.55);
+        const env = ctx.createGain();
+        osc.frequency.setValueAtTime(startHz, t);
+        osc.frequency.exponentialRampToValueAtTime(endHz, t + decay * 0.55);
+        env.gain.setValueAtTime(1, t);
+        env.gain.exponentialRampToValueAtTime(0.001, t + decay);
+        osc.connect(env);
+
+        if (drive > 0.02) {
+          const ws = ctx.createWaveShaper();
+          const n = 256; const k = 1 + drive * 9; const curve = new Float32Array(n);
+          for (let i = 0; i < n; i++) {
+            const x = (i * 2) / n - 1;
+            curve[i] = Math.tanh(x * k) / Math.tanh(k);
+          }
+          ws.curve = curve;
+          env.connect(ws); ws.connect(volGains.kick);
+        } else {
+          env.connect(volGains.kick);
+        }
+        osc.start(t); osc.stop(t + decay + 0.05);
+
         // click transient
         const sr = ctx.sampleRate;
-        const nb = ctx.createBuffer(1, (sr * 0.018) | 0, sr);
+        const nb = ctx.createBuffer(1, (sr * 0.014) | 0, sr);
         const nd = nb.getChannelData(0);
         for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
         const ns = ctx.createBufferSource(); ns.buffer = nb;
         const ng = ctx.createGain();
-        ng.gain.setValueAtTime(0.5, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.018);
+        ng.gain.setValueAtTime(0.55, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.014);
         ns.connect(ng); ng.connect(volGains.kick);
-        ns.start(t); ns.stop(t + 0.02);
+        ns.start(t); ns.stop(t + 0.018);
       };
 
       const fireSnare = () => {
-        const t = ctx.currentTime; const sr = ctx.sampleRate;
-        // noise
-        const nb = ctx.createBuffer(1, (sr * 0.22) | 0, sr);
+        const t     = ctx.currentTime;
+        const tune  = p.snr_tune  ?? 190;    // body Hz
+        const snap  = p.snr_snap  ?? 0.7;    // noise level
+        const decay = p.snr_decay ?? 0.18;   // s
+        const sr = ctx.sampleRate;
+
+        // noise component
+        const nDur = Math.max(decay + 0.04, 0.12);
+        const nb = ctx.createBuffer(1, (sr * nDur) | 0, sr);
         const nd = nb.getChannelData(0);
         for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
         const ns = ctx.createBufferSource(); ns.buffer = nb;
         const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 900;
         const ng = ctx.createGain();
-        ng.gain.setValueAtTime(0.9, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+        ng.gain.setValueAtTime(snap * 0.9, t); ng.gain.exponentialRampToValueAtTime(0.001, t + decay);
         ns.connect(hp); hp.connect(ng); ng.connect(volGains.snr);
-        ns.start(t); ns.stop(t + 0.22);
+        ns.start(t); ns.stop(t + nDur);
+
         // body tone
-        const osc = ctx.createOscillator(); osc.frequency.value = 190;
+        const osc = ctx.createOscillator(); osc.frequency.value = tune;
         const og = ctx.createGain();
-        og.gain.setValueAtTime(0.55, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+        og.gain.setValueAtTime(0.6, t); og.gain.exponentialRampToValueAtTime(0.001, t + decay * 0.45);
         osc.connect(og); og.connect(volGains.snr);
-        osc.start(t); osc.stop(t + 0.09);
+        osc.start(t); osc.stop(t + decay * 0.5);
       };
 
       const fireHHC = () => {
-        const t = ctx.currentTime; const sr = ctx.sampleRate;
-        const nb = ctx.createBuffer(1, (sr * 0.055) | 0, sr);
-        const nd = nb.getChannelData(0);
-        for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
-        const ns = ctx.createBufferSource(); ns.buffer = nb;
-        const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 7500;
-        const g = ctx.createGain();
-        g.gain.setValueAtTime(0.7, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
-        ns.connect(hp); hp.connect(g); g.connect(volGains.hhc);
-        ns.start(t); ns.stop(t + 0.06);
-      };
-
-      const fireHHO = () => {
-        const t = ctx.currentTime; const sr = ctx.sampleRate; const dur = 0.38;
+        const t     = ctx.currentTime;
+        const tone  = p.hhc_tone  ?? 7500;   // HP Hz
+        const decay = p.hhc_decay ?? 0.04;   // s
+        const sr = ctx.sampleRate;
+        const dur = Math.max(decay + 0.008, 0.02);
         const nb = ctx.createBuffer(1, (sr * dur) | 0, sr);
         const nd = nb.getChannelData(0);
         for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
         const ns = ctx.createBufferSource(); ns.buffer = nb;
-        const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 6500;
+        const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = tone;
         const g = ctx.createGain();
-        g.gain.setValueAtTime(0.6, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        g.gain.setValueAtTime(0.7, t); g.gain.exponentialRampToValueAtTime(0.001, t + decay);
+        ns.connect(hp); hp.connect(g); g.connect(volGains.hhc);
+        ns.start(t); ns.stop(t + dur);
+      };
+
+      const fireHHO = () => {
+        const t     = ctx.currentTime;
+        const tone  = p.hho_tone  ?? 6000;   // HP Hz
+        const decay = p.hho_decay ?? 0.35;   // s
+        const sr = ctx.sampleRate;
+        const dur = decay + 0.04;
+        const nb = ctx.createBuffer(1, (sr * dur) | 0, sr);
+        const nd = nb.getChannelData(0);
+        for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+        const ns = ctx.createBufferSource(); ns.buffer = nb;
+        const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = tone;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.6, t); g.gain.exponentialRampToValueAtTime(0.001, t + decay);
         ns.connect(hp); hp.connect(g); g.connect(volGains.hho);
-        ns.start(t); ns.stop(t + dur + 0.01);
+        ns.start(t); ns.stop(t + dur);
       };
 
       const fireClap = () => {
-        const t = ctx.currentTime; const sr = ctx.sampleRate;
+        const t     = ctx.currentTime;
+        const tune  = p.clp_tune  ?? 1400;   // BP Hz
+        const snap  = p.clp_snap  ?? 0.8;    // layer spread (0-1)
+        const decay = p.clp_decay ?? 0.2;    // s
+        const sr = ctx.sampleRate;
         for (let layer = 0; layer < 3; layer++) {
-          const lt = t + layer * 0.009;
-          const nb = ctx.createBuffer(1, (sr * 0.11) | 0, sr);
+          const lt  = t + layer * snap * 0.013;
+          const dur = layer < 2 ? 0.05 : decay;
+          const nb = ctx.createBuffer(1, (sr * (dur + 0.01)) | 0, sr);
           const nd = nb.getChannelData(0);
           for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
           const ns = ctx.createBufferSource(); ns.buffer = nb;
-          const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1400; bp.Q.value = 0.8;
+          const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = tune; bp.Q.value = 0.75;
           const g = ctx.createGain();
-          g.gain.setValueAtTime(0.6, lt); g.gain.exponentialRampToValueAtTime(0.001, lt + 0.1);
+          g.gain.setValueAtTime(0.65, lt); g.gain.exponentialRampToValueAtTime(0.001, lt + dur);
           ns.connect(bp); bp.connect(g); g.connect(volGains.clp);
-          ns.start(lt); ns.stop(lt + 0.12);
+          ns.start(lt); ns.stop(lt + dur + 0.02);
         }
       };
 
       const firePerc = () => {
-        const t = ctx.currentTime;
-        const osc = ctx.createOscillator(); osc.frequency.value = 430;
-        osc.frequency.exponentialRampToValueAtTime(90, t + 0.13);
+        const t     = ctx.currentTime;
+        const tune  = p.per_tune  ?? 300;    // start Hz
+        const decay = p.per_decay ?? 0.15;   // s
+        const sweep = p.per_sweep ?? 0.5;    // pitch env depth
+        const endHz = Math.max(40, tune * (1 - sweep * 0.92));
+        const osc = ctx.createOscillator();
+        osc.frequency.setValueAtTime(tune, t);
+        osc.frequency.exponentialRampToValueAtTime(endHz, t + decay * 0.65);
         const g = ctx.createGain();
-        g.gain.setValueAtTime(0.85, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+        g.gain.setValueAtTime(0.85, t); g.gain.exponentialRampToValueAtTime(0.001, t + decay);
         osc.connect(g); g.connect(volGains.per);
-        osc.start(t); osc.stop(t + 0.17);
+        osc.start(t); osc.stop(t + decay + 0.05);
       };
 
-      const fireFns: Record<string, () => void> = {
-        kick: fireKick, snr: fireSnare, hhc: fireHHC,
-        hho: fireHHO, clp: fireClap, per: firePerc,
-      };
-      const patKeys: Record<string, string> = {
-        kick: 'kick_pat', snr: 'snr_pat', hhc: 'hhc_pat',
-        hho: 'hho_pat', clp: 'clp_pat', per: 'per_pat',
-      };
-
-      // ── Sequencer ───────────────────────────────────────────────────
-      const stepRef = { value: -1 };
-      let playing    = false;
-      let seqStep    = 0;
-
-      const getMs16 = () => 60000 / (p.bpm ?? 128) / 4; // 16th note ms
-
-      const onTick = (_beat: number) => {
-        if (!playing) return;
-        const step = seqStep % 16;
-        stepRef.value = step;
-        seqStep++;
-        for (const ch of CHANS) {
-          if (Math.round(p[patKeys[ch]] ?? 0) & (1 << step)) fireFns[ch]();
-        }
-      };
-
-      let timer: ReturnType<typeof makeClockTimer> | null = null;
-
-      const startSeq = () => {
-        if (timer) timer.destroy();
-        seqStep = 0;
-        timer = makeClockTimer(getMs16, onTick);
-      };
-
-      // Per-port trigger handlers — each voice can be fired by an external gate
+      // Per-port trigger handlers — voices fired entirely by external gates
       const portNoteOn = new Map<string, (time: number, freq?: number) => void>([
         ['kick_trig', () => fireKick()],
         ['snr_trig',  () => fireSnare()],
@@ -2497,7 +2509,6 @@ export function createAudioModule(
       return {
         outputs: new Map([['out', master as AudioNode]]),
         inputs:  new Map(),
-        stepRef,
         portNoteOn,
         setParam: (id, val) => {
           p[id] = val;
@@ -2505,17 +2516,9 @@ export function createAudioModule(
             const ch = id.replace('_vol', '');
             if (volGains[ch]) volGains[ch].gain.value = val;
           }
-          if (id === 'bpm' && playing) startSeq();
         },
-        setSelector: (id, val) => {
-          p[id] = val;
-          if (id === 'play') {
-            if (val > 0.5) { playing = true;  startSeq(); }
-            else           { playing = false; stepRef.value = -1; }
-          }
-        },
+        setSelector: () => {},
         destroy: () => {
-          if (timer) timer.destroy();
           master.disconnect();
           for (const ch of CHANS) volGains[ch].disconnect();
         },

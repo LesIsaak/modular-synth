@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ModuleInstance, PortType, PendingCable, MidiMonitorData } from '../types';
+import { ModuleInstance, KnobDef, PortType, PendingCable, MidiMonitorData } from '../types';
 import { MODULE_TYPE_MAP } from '../moduleDefinitions';
 import Knob from './Knob';
 import PortJack from './PortJack';
@@ -223,166 +223,90 @@ function EuclideanLedRing({ steps, fill, shift, currentStep }: {
   );
 }
 
-// ─── Drum Machine step grid ────────────────────────────────────────────────────
-const DRM_CHANS = [
-  { id: 'kick', label: 'KICK', patKey: 'kick_pat', volKey: 'kick_vol', color: '#ef4444' },
-  { id: 'snr',  label: 'SNRE', patKey: 'snr_pat',  volKey: 'snr_vol',  color: '#f97316' },
-  { id: 'hhc',  label: 'HH·C', patKey: 'hhc_pat',  volKey: 'hhc_vol',  color: '#eab308' },
-  { id: 'hho',  label: 'HH·O', patKey: 'hho_pat',  volKey: 'hho_vol',  color: '#22c55e' },
-  { id: 'clp',  label: 'CLAP', patKey: 'clp_pat',  volKey: 'clp_vol',  color: '#60a5fa' },
-  { id: 'per',  label: 'PERC', patKey: 'per_pat',  volKey: 'per_vol',  color: '#a78bfa' },
+// ─── Drum voice synthesis panel ────────────────────────────────────────────────
+const DRM_VOICES = [
+  { id: 'kick', label: 'BASS DRUM', color: '#ef4444', params: ['kick_tune','kick_decay','kick_punch','kick_drive'], vol: 'kick_vol' },
+  { id: 'snr',  label: 'SNARE',    color: '#f97316', params: ['snr_tune','snr_snap','snr_decay'],                  vol: 'snr_vol'  },
+  { id: 'hhc',  label: 'HH · CLS', color: '#eab308', params: ['hhc_tone','hhc_decay'],                             vol: 'hhc_vol'  },
+  { id: 'hho',  label: 'HH · OPN', color: '#22c55e', params: ['hho_tone','hho_decay'],                             vol: 'hho_vol'  },
+  { id: 'clp',  label: 'CLAP',     color: '#60a5fa', params: ['clp_tune','clp_snap','clp_decay'],                  vol: 'clp_vol'  },
+  { id: 'per',  label: 'PERC',     color: '#a78bfa', params: ['per_tune','per_decay','per_sweep'],                 vol: 'per_vol'  },
 ] as const;
 
-function DrumMachineGrid({
-  module, onParamChange, onSelectorChange, stepRef,
-}: {
+function DrumVoicePanel({ module, knobDefs, onParamChange }: {
   module: ModuleInstance;
+  knobDefs: KnobDef[];
   onParamChange: (moduleId: string, paramId: string, value: number) => void;
-  onSelectorChange: (moduleId: string, selectorId: string, value: number) => void;
-  stepRef?: { value: number };
 }) {
-  const [displayStep, setDisplayStep] = useState(-1);
-  useEffect(() => {
-    if (!stepRef) return;
-    const id = setInterval(() => setDisplayStep(stepRef.value), 33);
-    return () => clearInterval(id);
-  }, [stepRef]);
-
-  const playing = Math.round(module.params.play ?? 0) > 0;
-  const bpm = Math.round(module.params.bpm ?? 128);
-
-  const toggleStep = (patKey: string, step: number) => {
-    const pat = Math.round(module.params[patKey] ?? 0);
-    onParamChange(module.id, patKey, pat ^ (1 << step));
-  };
-
-  const clearPat = (patKey: string) => onParamChange(module.id, patKey, 0);
-  const fillPat  = (patKey: string) => onParamChange(module.id, patKey, 65535);
+  const knobMap = new Map(knobDefs.map(k => [k.id, k]));
 
   return (
     <div style={{
-      display: 'flex', flexDirection: 'column', height: '100%',
-      background: '#090909', overflow: 'hidden',
+      display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
+      gridTemplateRows: '1fr 1fr', height: '100%', overflow: 'hidden',
     }}>
-      {/* ─ Header ─ */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px',
-        borderBottom: '1px solid #1c1c1c', background: '#111', flexShrink: 0,
-      }}>
-        <span style={{ fontSize: 6.5, color: '#444', textTransform: 'uppercase', letterSpacing: '0.12em' }}>BPM</span>
-        <input
-          type="range" min={60} max={200} value={bpm} step={1}
-          style={{ width: 64, accentColor: '#dc2626', cursor: 'pointer' }}
-          onChange={e => onParamChange(module.id, 'bpm', Number(e.target.value))}
-          onMouseDown={e => e.stopPropagation()}
-        />
-        <span style={{
-          fontSize: 11, color: '#dc2626', fontVariantNumeric: 'tabular-nums',
-          minWidth: 28, fontWeight: 700, letterSpacing: '0.05em',
-        }}>{bpm}</span>
-        <div style={{ flex: 1 }} />
-        {/* step indicators legend */}
-        <div style={{ display: 'flex', gap: 1 }}>
-          {Array.from({ length: 16 }, (_, s) => (
-            <div key={s} style={{
-              width: 5, height: 5, borderRadius: 1,
-              background: (playing && displayStep === s) ? '#dc2626' : Math.floor(s / 4) % 2 === 0 ? '#1c1c1c' : '#141414',
-              transition: 'background 0.04s',
+      {DRM_VOICES.map((voice, i) => (
+        <div key={voice.id} style={{
+          display: 'flex', flexDirection: 'column',
+          borderRight:  (i % 3) < 2 ? '1px solid #1e1e1e' : 'none',
+          borderBottom: i < 3       ? '1px solid #1e1e1e' : 'none',
+          background: i % 2 === 0 ? '#0a0a0a' : '#0c0c0c',
+          overflow: 'hidden',
+        }}>
+          {/* ─ Voice header ─ */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '5px 9px 4px',
+            borderBottom: `1px solid ${voice.color}20`, flexShrink: 0,
+            background: `${voice.color}08`,
+          }}>
+            <div style={{
+              width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+              background: voice.color, boxShadow: `0 0 5px ${voice.color}88`,
             }} />
-          ))}
-        </div>
-        <div style={{ flex: 1 }} />
-        <button
-          style={{
-            padding: '3px 10px', fontSize: 8, borderRadius: 2, cursor: 'pointer', fontWeight: 700,
-            letterSpacing: '0.12em', border: `1px solid ${playing ? '#ef4444' : '#333'}`,
-            background: playing ? '#dc2626' : '#1a1a1a', color: playing ? '#fff' : '#555',
-            transition: 'all 0.1s',
-          }}
-          onMouseDown={e => e.stopPropagation()}
-          onClick={() => onSelectorChange(module.id, 'play', playing ? 0 : 1)}
-        >{playing ? '■ STOP' : '▶ PLAY'}</button>
-      </div>
+            <span style={{
+              fontSize: 7.5, color: voice.color, textTransform: 'uppercase',
+              letterSpacing: '0.1em', fontWeight: 700,
+            }}>{voice.label}</span>
+          </div>
 
-      {/* ─ Step grid ─ */}
-      <div style={{ flex: 1, padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: 4, justifyContent: 'space-evenly' }}>
-        {DRM_CHANS.map(({ label, patKey, volKey, color }) => {
-          const pat = Math.round(module.params[patKey] ?? 0);
-          const vol = module.params[volKey] ?? 0.7;
-          return (
-            <div key={patKey} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              {/* label */}
-              <span style={{
-                fontSize: 6.5, color, letterSpacing: '0.06em', fontWeight: 700,
-                textTransform: 'uppercase', minWidth: 26, textAlign: 'right', flexShrink: 0,
-              }}>{label}</span>
+          {/* ─ Synthesis knobs ─ */}
+          <div style={{
+            flex: 1, display: 'flex', flexWrap: 'wrap',
+            alignItems: 'center', justifyContent: 'center',
+            gap: 2, padding: '4px 4px 2px',
+          }}>
+            {voice.params.map(pid => {
+              const def = knobMap.get(pid);
+              if (!def) return null;
+              return (
+                <Knob
+                  key={pid}
+                  def={def}
+                  value={module.params[pid] ?? def.default}
+                  onChange={val => onParamChange(module.id, pid, val)}
+                  size="sm"
+                />
+              );
+            })}
+          </div>
 
-              {/* 16 step buttons */}
-              <div style={{ display: 'flex', gap: 2, flex: 1 }}>
-                {Array.from({ length: 16 }, (_, s) => {
-                  const active  = !!(pat & (1 << s));
-                  const isCur   = playing && displayStep === s;
-                  const grpAlt  = Math.floor(s / 4) % 2 === 1;
-                  return (
-                    <div
-                      key={s}
-                      title={`Step ${s + 1}`}
-                      style={{
-                        flex: 1, height: 20, borderRadius: 2, cursor: 'pointer',
-                        background: isCur && active ? '#fff'
-                          : isCur             ? '#2c2c2c'
-                          : active            ? color
-                          : grpAlt            ? '#191919' : '#131313',
-                        border: `1px solid ${active ? color + 'aa' : '#222'}`,
-                        boxShadow: isCur ? `0 0 5px ${color}` : active ? `0 0 2px ${color}66` : 'none',
-                        transition: 'background 0.03s',
-                      }}
-                      onMouseDown={e => e.stopPropagation()}
-                      onClick={() => toggleStep(patKey, s)}
-                    />
-                  );
-                })}
-              </div>
-
-              {/* vol bar + controls */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 }}>
-                <div style={{ width: 40, height: 4, background: '#111', borderRadius: 2, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${vol * 100}%`, background: color, borderRadius: 2, transition: 'width 0.05s' }} />
-                </div>
-                <div style={{ display: 'flex', gap: 2 }}>
-                  <button
-                    title="Clear pattern"
-                    style={{ fontSize: 6, padding: '0 3px', cursor: 'pointer', border: '1px solid #222', borderRadius: 1, background: '#0e0e0e', color: '#444', lineHeight: '10px' }}
-                    onMouseDown={e => e.stopPropagation()} onClick={() => clearPat(patKey)}
-                  >×</button>
-                  <button
-                    title="Fill pattern"
-                    style={{ fontSize: 6, padding: '0 3px', cursor: 'pointer', border: '1px solid #222', borderRadius: 1, background: '#0e0e0e', color: '#444', lineHeight: '10px' }}
-                    onMouseDown={e => e.stopPropagation()} onClick={() => fillPat(patKey)}
-                  >■</button>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* ─ Volume sliders row ─ */}
-      <div style={{ flexShrink: 0, padding: '4px 8px 6px', borderTop: '1px solid #1a1a1a', display: 'flex', gap: 6, alignItems: 'center' }}>
-        <span style={{ fontSize: 6, color: '#333', textTransform: 'uppercase', letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>VOL</span>
-        {DRM_CHANS.map(({ label, volKey, color }) => (
-          <div key={volKey} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, flex: 1 }}>
+          {/* ─ Volume ─ */}
+          <div style={{
+            flexShrink: 0, padding: '2px 10px 6px',
+            borderTop: '1px solid #161616',
+            display: 'flex', flexDirection: 'column', gap: 1,
+          }}>
+            <span style={{ fontSize: 5.5, color: '#444', textTransform: 'uppercase', letterSpacing: '0.1em' }}>VOL</span>
             <input
               type="range" min={0} max={1} step={0.01}
-              value={module.params[volKey] ?? 0.7}
-              style={{ width: '100%', accentColor: color, cursor: 'pointer' }}
+              value={module.params[voice.vol] ?? 0.7}
+              style={{ width: '100%', accentColor: voice.color, cursor: 'pointer' }}
               onMouseDown={e => e.stopPropagation()}
-              onChange={e => onParamChange(module.id, volKey, Number(e.target.value))}
+              onChange={e => onParamChange(module.id, voice.vol, Number(e.target.value))}
             />
-            <span style={{ fontSize: 5.5, color: '#333', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
           </div>
-        ))}
-      </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -641,11 +565,10 @@ export default function ModulePanel({
                 <PortWithLabel key={port.id} {...portProps(port)} />
               ))}
             </div>
-            <DrumMachineGrid
+            <DrumVoicePanel
               module={module}
+              knobDefs={typeDef.knobs}
               onParamChange={onParamChange}
-              onSelectorChange={onSelectorChange}
-              stepRef={moduleStepRef}
             />
           </>
         ) : (
