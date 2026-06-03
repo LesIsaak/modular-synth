@@ -516,13 +516,15 @@ export default function ModulePanel({
         {/* Info button — always visible */}
         <button
           style={{
-            width: 13, height: 13, fontSize: 8, lineHeight: 1,
-            cursor: 'pointer', border: '1px solid #2e2e2e', borderRadius: 2,
-            background: showInfo ? `${accent}22` : '#1a1a1a',
-            color: showInfo ? accent : '#555',
+            width: 14, height: 14, fontSize: 9, lineHeight: 1,
+            cursor: 'pointer', borderRadius: 2, padding: 0,
+            border: `1px solid ${showInfo ? accent : '#484848'}`,
+            background: showInfo ? `${accent}30` : '#252525',
+            color: showInfo ? accent : '#909090',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexShrink: 0, marginRight: 2, padding: 0,
-            transition: 'color 0.1s, background 0.1s',
+            flexShrink: 0, marginRight: 2,
+            transition: 'color 0.1s, background 0.1s, border-color 0.1s',
+            boxShadow: showInfo ? `0 0 6px ${accent}44` : 'none',
           }}
           onMouseDown={e => e.stopPropagation()}
           onClick={e => {
@@ -531,8 +533,22 @@ export default function ModulePanel({
             setInfoAnchor({ x: rect.left, y: rect.bottom });
             setShowInfo(v => !v);
           }}
-          onMouseEnter={e => { if (!showInfo) (e.currentTarget as HTMLElement).style.color = '#aaa'; }}
-          onMouseLeave={e => { if (!showInfo) (e.currentTarget as HTMLElement).style.color = '#555'; }}
+          onMouseEnter={e => {
+            if (!showInfo) {
+              const el = e.currentTarget as HTMLElement;
+              el.style.color = '#ddd';
+              el.style.borderColor = '#707070';
+              el.style.background = '#333';
+            }
+          }}
+          onMouseLeave={e => {
+            if (!showInfo) {
+              const el = e.currentTarget as HTMLElement;
+              el.style.color = '#909090';
+              el.style.borderColor = '#484848';
+              el.style.background = '#252525';
+            }
+          }}
           title="Module info"
           data-testid={`info-module-${module.id}`}
         >ⓘ</button>
