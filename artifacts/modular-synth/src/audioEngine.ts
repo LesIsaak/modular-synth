@@ -133,15 +133,39 @@ function wetDry(ctx: AudioContext, input: AudioNode, wet: AudioNode, mix: number
 }
 
 // ─── Clock/sequencer helpers ───────────────────────────────────────────────────
+// Uses a self-correcting recursive setTimeout instead of setInterval.
+// After each tick we compare actual vs expected fire time and shrink/grow the
+// next delay to compensate, keeping long-term drift near zero.
 function makeClockTimer(getInterval: () => number, onTick: (beatIndex: number) => void) {
-  let timerId: ReturnType<typeof setInterval> | null = null;
   let beat = 0;
-  const restart = () => {
-    if (timerId) clearInterval(timerId);
-    timerId = setInterval(() => { onTick(beat); beat++; }, getInterval());
+  let timerId: ReturnType<typeof setTimeout> | null = null;
+  let expectedAt = 0;
+
+  const tick = () => {
+    onTick(beat++);
+    const interval = getInterval();
+    expectedAt += interval;
+    const now = performance.now();
+    // If we've fallen more than one interval behind (e.g. tab was backgrounded)
+    // resync instead of scheduling a cascade of immediate ticks.
+    if (now - expectedAt > interval) expectedAt = now;
+    timerId = setTimeout(tick, Math.max(0, expectedAt - now));
   };
-  restart();
-  return { restart, destroy: () => { if (timerId) clearInterval(timerId); } };
+
+  const start = () => {
+    if (timerId !== null) clearTimeout(timerId);
+    beat = 0;
+    const interval = getInterval();
+    expectedAt = performance.now() + interval;
+    timerId = setTimeout(tick, interval);
+  };
+
+  start();
+
+  return {
+    restart: start,
+    destroy: () => { if (timerId !== null) { clearTimeout(timerId); timerId = null; } },
+  };
 }
 
 // ─── Main factory ─────────────────────────────────────────────────────────────
