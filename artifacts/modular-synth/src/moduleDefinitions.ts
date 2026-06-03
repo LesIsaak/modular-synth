@@ -15,6 +15,8 @@ const DST = '#ef4444';
 const SPC = '#8b5cf6';
 const GRN = '#d97706';
 const UTL = '#94a3b8';
+const EUC = '#f59e0b';  // Shakmat amber
+const DRM = '#dc2626';  // Erica Synths red
 
 const audioIn   = { id: 'audio_in',      name: 'IN',     type: 'audio_in'  } as const;
 const audioOut  = { id: 'out',            name: 'OUT',    type: 'audio_out' } as const;
@@ -1047,6 +1049,48 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
       { id: 'in_l',   name: 'IN L', type: 'audio_in' },
       { id: 'in_r',   name: 'IN R', type: 'audio_in' },
       { id: 'vol_cv', name: 'VOL',  type: 'cv_in'    },
+    ],
+  },
+
+  // ─── Euclidean Trigger Generator (Shakmat Knight's Gallop inspired) ──────────
+  {
+    id: 'euclidean_trig', name: 'KNIGHT GATE', category: 'clock', accentColor: EUC, width: 220,
+    knobs: [
+      { id: 'bpm',   name: 'BPM',   min: 20,  max: 300, default: 120 },
+      { id: 'steps', name: 'STEPS', min: 2,   max: 16,  default: 8,  step: 1 },
+      { id: 'fill',  name: 'FILL',  min: 1,   max: 16,  default: 4,  step: 1 },
+      { id: 'shift', name: 'SHIFT', min: 0,   max: 15,  default: 0,  step: 1 },
+    ],
+    selectors: [{ id: 'div', name: 'CLK DIV', options: ['×4','×2','×1','/2','/4'], default: 2 }],
+    ports: [
+      { id: 'gate_out', name: 'GATE', type: 'gate_out' },
+      { id: 'inv_out',  name: 'INV',  type: 'gate_out' },
+    ],
+  },
+
+  // ─── Drum Machine (Erica Synths Techno System inspired) ──────────────────────
+  {
+    id: 'drum_machine', name: 'TECHNO DRUM', category: 'sequencer', accentColor: DRM,
+    width: 720, height: 520,
+    knobs: [
+      { id: 'bpm',      name: 'BPM',   min: 60, max: 200, default: 128 },
+      // bit-packed 16-step patterns (bit N = step N active)
+      { id: 'kick_pat', name: 'KICK',  min: 0, max: 65535, default: 4369,  step: 1 },
+      { id: 'snr_pat',  name: 'SNARE', min: 0, max: 65535, default: 4112,  step: 1 },
+      { id: 'hhc_pat',  name: 'HH-C',  min: 0, max: 65535, default: 21845, step: 1 },
+      { id: 'hho_pat',  name: 'HH-O',  min: 0, max: 65535, default: 0,     step: 1 },
+      { id: 'clp_pat',  name: 'CLAP',  min: 0, max: 65535, default: 0,     step: 1 },
+      { id: 'per_pat',  name: 'PERC',  min: 0, max: 65535, default: 0,     step: 1 },
+      { id: 'kick_vol', name: 'K.VOL', min: 0, max: 1, default: 0.85 },
+      { id: 'snr_vol',  name: 'S.VOL', min: 0, max: 1, default: 0.70 },
+      { id: 'hhc_vol',  name: 'C.VOL', min: 0, max: 1, default: 0.55 },
+      { id: 'hho_vol',  name: 'O.VOL', min: 0, max: 1, default: 0.50 },
+      { id: 'clp_vol',  name: 'P.VOL', min: 0, max: 1, default: 0.60 },
+      { id: 'per_vol',  name: 'R.VOL', min: 0, max: 1, default: 0.55 },
+    ],
+    selectors: [{ id: 'play', name: 'PLAY', options: ['STOP','PLAY'], default: 0 }],
+    ports: [
+      { id: 'out', name: 'MIX', type: 'audio_out' },
     ],
   },
 ];

@@ -11,6 +11,8 @@ export interface AudioModuleNodes {
   destroy: () => void;
   /** Only present on the 'output' module — used for the VU meter */
   analyser?: AnalyserNode;
+  /** Current sequencer step — polled by the UI at ~30 fps */
+  stepRef?: { value: number };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -2239,6 +2241,247 @@ export function createAudioModule(
           freqSource.stop();  freqSource.disconnect();
           pitchSource.stop(); pitchSource.disconnect();
           modSource.stop();   modSource.disconnect();
+        },
+      };
+    }
+
+    // ── Euclidean Trigger Generator (Shakmat Knight's Gallop inspired) ─────────
+    case 'euclidean_trig': {
+      // Bjorklund/Bresenham euclidean pattern
+      const eucPat = (n: number, f: number, sh: number): boolean[] => {
+        const steps = Math.max(2, Math.min(16, n));
+        const fill  = Math.max(0, Math.min(steps, f));
+        const pattern: boolean[] = [];
+        let bucket = 0;
+        for (let i = 0; i < steps; i++) {
+          bucket += fill;
+          if (bucket >= steps) { bucket -= steps; pattern.push(true); }
+          else pattern.push(false);
+        }
+        const shift = ((Math.round(sh) % steps) + steps) % steps;
+        return [...pattern.slice(shift), ...pattern.slice(0, shift)];
+      };
+
+      let gateCb:    ((on: boolean, freq: number) => void) | null = null;
+      let invGateCb: ((on: boolean, freq: number) => void) | null = null;
+      const stepRef = { value: 0 };
+      let clockStep = 0;
+
+      // div selector: ×4=0.25, ×2=0.5, ×1=1, /2=2, /4=4 multiplier on base interval
+      const divMults = [0.25, 0.5, 1, 2, 4];
+      const getMs = () => 60000 / (p.bpm ?? 120) * (divMults[Math.round(p.div ?? 2)] ?? 1);
+
+      const tick = (_beat: number) => {
+        const steps = Math.max(2, Math.min(16, Math.round(p.steps ?? 8)));
+        const fill  = Math.max(0, Math.min(steps, Math.round(p.fill ?? 4)));
+        const shift = Math.round(p.shift ?? 0);
+        const pattern = eucPat(steps, fill, shift);
+        const step = clockStep % steps;
+        stepRef.value = step;
+        clockStep++;
+        const dur = getMs() * 0.4;
+        if (pattern[step]) {
+          gateCb?.(true, 440);
+          setTimeout(() => gateCb?.(false, 440), dur);
+        } else {
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+          const cb = invGateCb as ((on: boolean, freq: number) => void) | null;
+          if (cb) { cb(true, 440); setTimeout(() => cb(false, 440), dur); }
+        }
+      };
+
+      const restartTimer = () => { timer.destroy(); clockStep = 0; timer = makeClockTimer(getMs, tick); };
+      let timer = makeClockTimer(getMs, tick);
+
+      // inv_out: separate gate callback for inverted pattern
+      const gateCallbacks = new Map<string, ((on: boolean, freq: number) => void) | null>([
+        ['gate_out', null], ['inv_out', null],
+      ]);
+
+      return {
+        outputs: new Map(),
+        inputs:  new Map(),
+        stepRef,
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'bpm') restartTimer();
+        },
+        setSelector: (id, val) => {
+          p[id] = val;
+          if (id === 'div') restartTimer();
+        },
+        setGateTrigger: fn => {
+          gateCb = fn;
+          gateCallbacks.set('gate_out', fn);
+        },
+        destroy: () => { timer.destroy(); },
+      };
+    }
+
+    // ── Drum Machine (Erica Synths Techno System inspired) ──────────────────────
+    case 'drum_machine': {
+      const master = ctx.createGain(); master.gain.value = 0.8;
+
+      const CHANS = ['kick', 'snr', 'hhc', 'hho', 'clp', 'per'];
+      const volGains: Record<string, GainNode> = {};
+      for (const ch of CHANS) {
+        volGains[ch] = ctx.createGain();
+        volGains[ch].gain.value = p[`${ch}_vol`] ?? 0.7;
+        volGains[ch].connect(master);
+      }
+
+      // ── Synthesis helpers ───────────────────────────────────────────
+      const fireKick = () => {
+        const t = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const g   = ctx.createGain();
+        osc.frequency.setValueAtTime(180, t);
+        osc.frequency.exponentialRampToValueAtTime(40, t + 0.28);
+        g.gain.setValueAtTime(1, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+        osc.connect(g); g.connect(volGains.kick);
+        osc.start(t); osc.stop(t + 0.55);
+        // click transient
+        const sr = ctx.sampleRate;
+        const nb = ctx.createBuffer(1, (sr * 0.018) | 0, sr);
+        const nd = nb.getChannelData(0);
+        for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+        const ns = ctx.createBufferSource(); ns.buffer = nb;
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.5, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.018);
+        ns.connect(ng); ng.connect(volGains.kick);
+        ns.start(t); ns.stop(t + 0.02);
+      };
+
+      const fireSnare = () => {
+        const t = ctx.currentTime; const sr = ctx.sampleRate;
+        // noise
+        const nb = ctx.createBuffer(1, (sr * 0.22) | 0, sr);
+        const nd = nb.getChannelData(0);
+        for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+        const ns = ctx.createBufferSource(); ns.buffer = nb;
+        const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 900;
+        const ng = ctx.createGain();
+        ng.gain.setValueAtTime(0.9, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+        ns.connect(hp); hp.connect(ng); ng.connect(volGains.snr);
+        ns.start(t); ns.stop(t + 0.22);
+        // body tone
+        const osc = ctx.createOscillator(); osc.frequency.value = 190;
+        const og = ctx.createGain();
+        og.gain.setValueAtTime(0.55, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+        osc.connect(og); og.connect(volGains.snr);
+        osc.start(t); osc.stop(t + 0.09);
+      };
+
+      const fireHHC = () => {
+        const t = ctx.currentTime; const sr = ctx.sampleRate;
+        const nb = ctx.createBuffer(1, (sr * 0.055) | 0, sr);
+        const nd = nb.getChannelData(0);
+        for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+        const ns = ctx.createBufferSource(); ns.buffer = nb;
+        const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 7500;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.7, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+        ns.connect(hp); hp.connect(g); g.connect(volGains.hhc);
+        ns.start(t); ns.stop(t + 0.06);
+      };
+
+      const fireHHO = () => {
+        const t = ctx.currentTime; const sr = ctx.sampleRate; const dur = 0.38;
+        const nb = ctx.createBuffer(1, (sr * dur) | 0, sr);
+        const nd = nb.getChannelData(0);
+        for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+        const ns = ctx.createBufferSource(); ns.buffer = nb;
+        const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 6500;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.6, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        ns.connect(hp); hp.connect(g); g.connect(volGains.hho);
+        ns.start(t); ns.stop(t + dur + 0.01);
+      };
+
+      const fireClap = () => {
+        const t = ctx.currentTime; const sr = ctx.sampleRate;
+        for (let layer = 0; layer < 3; layer++) {
+          const lt = t + layer * 0.009;
+          const nb = ctx.createBuffer(1, (sr * 0.11) | 0, sr);
+          const nd = nb.getChannelData(0);
+          for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+          const ns = ctx.createBufferSource(); ns.buffer = nb;
+          const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1400; bp.Q.value = 0.8;
+          const g = ctx.createGain();
+          g.gain.setValueAtTime(0.6, lt); g.gain.exponentialRampToValueAtTime(0.001, lt + 0.1);
+          ns.connect(bp); bp.connect(g); g.connect(volGains.clp);
+          ns.start(lt); ns.stop(lt + 0.12);
+        }
+      };
+
+      const firePerc = () => {
+        const t = ctx.currentTime;
+        const osc = ctx.createOscillator(); osc.frequency.value = 430;
+        osc.frequency.exponentialRampToValueAtTime(90, t + 0.13);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.85, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+        osc.connect(g); g.connect(volGains.per);
+        osc.start(t); osc.stop(t + 0.17);
+      };
+
+      const fireFns: Record<string, () => void> = {
+        kick: fireKick, snr: fireSnare, hhc: fireHHC,
+        hho: fireHHO, clp: fireClap, per: firePerc,
+      };
+      const patKeys: Record<string, string> = {
+        kick: 'kick_pat', snr: 'snr_pat', hhc: 'hhc_pat',
+        hho: 'hho_pat', clp: 'clp_pat', per: 'per_pat',
+      };
+
+      // ── Sequencer ───────────────────────────────────────────────────
+      const stepRef = { value: -1 };
+      let playing    = false;
+      let seqStep    = 0;
+
+      const getMs16 = () => 60000 / (p.bpm ?? 128) / 4; // 16th note ms
+
+      const onTick = (_beat: number) => {
+        if (!playing) return;
+        const step = seqStep % 16;
+        stepRef.value = step;
+        seqStep++;
+        for (const ch of CHANS) {
+          if (Math.round(p[patKeys[ch]] ?? 0) & (1 << step)) fireFns[ch]();
+        }
+      };
+
+      let timer: ReturnType<typeof makeClockTimer> | null = null;
+
+      const startSeq = () => {
+        if (timer) timer.destroy();
+        seqStep = 0;
+        timer = makeClockTimer(getMs16, onTick);
+      };
+
+      return {
+        outputs: new Map([['out', master as AudioNode]]),
+        inputs:  new Map(),
+        stepRef,
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id.endsWith('_vol')) {
+            const ch = id.replace('_vol', '');
+            if (volGains[ch]) volGains[ch].gain.value = val;
+          }
+          if (id === 'bpm' && playing) startSeq();
+        },
+        setSelector: (id, val) => {
+          p[id] = val;
+          if (id === 'play') {
+            if (val > 0.5) { playing = true;  startSeq(); }
+            else           { playing = false; stepRef.value = -1; }
+          }
+        },
+        destroy: () => {
+          if (timer) timer.destroy();
+          master.disconnect();
+          for (const ch of CHANS) volGains[ch].disconnect();
         },
       };
     }

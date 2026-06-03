@@ -1342,6 +1342,9 @@ export default function SynthApp() {
                 onRegisterPortRef={registerPortRef}
                 onKeyPress={handleModuleKeyPress}
                 analyser={mod.typeId === 'output' ? audioModulesRef.current.get(mod.id)?.analyser : undefined}
+                moduleStepRef={(mod.typeId === 'drum_machine' || mod.typeId === 'euclidean_trig')
+                  ? audioModulesRef.current.get(mod.id)?.stepRef
+                  : undefined}
               />
             </div>
           ))}

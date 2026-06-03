@@ -19,6 +19,8 @@ interface ModulePanelProps {
   analyser?: AnalyserNode;
   midiMonitorData?: MidiMonitorData;
   isMidiTarget?: boolean;
+  /** Polled at ~30 fps by custom displays (drum machine step, euclidean LED ring) */
+  moduleStepRef?: { value: number };
 }
 
 // ─── MIDI Monitor display ─────────────────────────────────────────────────────
@@ -173,6 +175,218 @@ function OutputMeter({ analyser }: { analyser?: AnalyserNode }) {
   );
 }
 
+// ─── Euclidean LED ring display ───────────────────────────────────────────────
+function EuclideanLedRing({ steps, fill, shift, currentStep }: {
+  steps: number; fill: number; shift: number; currentStep: number;
+}) {
+  const n  = Math.max(2, Math.min(16, Math.round(steps)));
+  const f  = Math.max(0, Math.min(n, Math.round(fill)));
+  const sh = ((Math.round(shift) % n) + n) % n;
+
+  // Bresenham euclidean distribution
+  const pattern: boolean[] = [];
+  let bucket = 0;
+  for (let i = 0; i < n; i++) {
+    bucket += f;
+    if (bucket >= n) { bucket -= n; pattern.push(true); }
+    else pattern.push(false);
+  }
+  const shifted = [...pattern.slice(sh), ...pattern.slice(0, sh)];
+
+  const cx = 54, cy = 54, r = 42, dotR = 4.5;
+  const accent = '#f59e0b';
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+      <svg width={108} height={108} viewBox="0 0 108 108" style={{ display: 'block' }}>
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="#1c1c1c" strokeWidth={2} />
+        {shifted.map((hit, i) => {
+          const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+          const x = cx + r * Math.cos(angle);
+          const y = cy + r * Math.sin(angle);
+          const isCur = i === ((currentStep % n + n) % n);
+          return (
+            <circle key={i} cx={x} cy={y} r={dotR}
+              fill={isCur ? '#fff' : hit ? accent : '#1e1e1e'}
+              stroke={hit ? accent : '#2a2a2a'}
+              strokeWidth={1}
+              style={{ filter: (isCur || hit) ? `drop-shadow(0 0 3px ${accent})` : 'none' }}
+            />
+          );
+        })}
+        <text x={cx} y={cy - 5} textAnchor="middle" fontSize={11} fill={accent}
+          fontFamily="monospace" fontWeight="bold">{f}/{n}</text>
+        <text x={cx} y={cy + 8} textAnchor="middle" fontSize={6.5} fill="#444"
+          fontFamily="monospace" letterSpacing="0.15em">EUCLID</text>
+      </svg>
+    </div>
+  );
+}
+
+// ─── Drum Machine step grid ────────────────────────────────────────────────────
+const DRM_CHANS = [
+  { id: 'kick', label: 'KICK', patKey: 'kick_pat', volKey: 'kick_vol', color: '#ef4444' },
+  { id: 'snr',  label: 'SNRE', patKey: 'snr_pat',  volKey: 'snr_vol',  color: '#f97316' },
+  { id: 'hhc',  label: 'HH·C', patKey: 'hhc_pat',  volKey: 'hhc_vol',  color: '#eab308' },
+  { id: 'hho',  label: 'HH·O', patKey: 'hho_pat',  volKey: 'hho_vol',  color: '#22c55e' },
+  { id: 'clp',  label: 'CLAP', patKey: 'clp_pat',  volKey: 'clp_vol',  color: '#60a5fa' },
+  { id: 'per',  label: 'PERC', patKey: 'per_pat',  volKey: 'per_vol',  color: '#a78bfa' },
+] as const;
+
+function DrumMachineGrid({
+  module, onParamChange, onSelectorChange, stepRef,
+}: {
+  module: ModuleInstance;
+  onParamChange: (moduleId: string, paramId: string, value: number) => void;
+  onSelectorChange: (moduleId: string, selectorId: string, value: number) => void;
+  stepRef?: { value: number };
+}) {
+  const [displayStep, setDisplayStep] = useState(-1);
+  useEffect(() => {
+    if (!stepRef) return;
+    const id = setInterval(() => setDisplayStep(stepRef.value), 33);
+    return () => clearInterval(id);
+  }, [stepRef]);
+
+  const playing = Math.round(module.params.play ?? 0) > 0;
+  const bpm = Math.round(module.params.bpm ?? 128);
+
+  const toggleStep = (patKey: string, step: number) => {
+    const pat = Math.round(module.params[patKey] ?? 0);
+    onParamChange(module.id, patKey, pat ^ (1 << step));
+  };
+
+  const clearPat = (patKey: string) => onParamChange(module.id, patKey, 0);
+  const fillPat  = (patKey: string) => onParamChange(module.id, patKey, 65535);
+
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', height: '100%',
+      background: '#090909', overflow: 'hidden',
+    }}>
+      {/* ─ Header ─ */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px',
+        borderBottom: '1px solid #1c1c1c', background: '#111', flexShrink: 0,
+      }}>
+        <span style={{ fontSize: 6.5, color: '#444', textTransform: 'uppercase', letterSpacing: '0.12em' }}>BPM</span>
+        <input
+          type="range" min={60} max={200} value={bpm} step={1}
+          style={{ width: 64, accentColor: '#dc2626', cursor: 'pointer' }}
+          onChange={e => onParamChange(module.id, 'bpm', Number(e.target.value))}
+          onMouseDown={e => e.stopPropagation()}
+        />
+        <span style={{
+          fontSize: 11, color: '#dc2626', fontVariantNumeric: 'tabular-nums',
+          minWidth: 28, fontWeight: 700, letterSpacing: '0.05em',
+        }}>{bpm}</span>
+        <div style={{ flex: 1 }} />
+        {/* step indicators legend */}
+        <div style={{ display: 'flex', gap: 1 }}>
+          {Array.from({ length: 16 }, (_, s) => (
+            <div key={s} style={{
+              width: 5, height: 5, borderRadius: 1,
+              background: (playing && displayStep === s) ? '#dc2626' : Math.floor(s / 4) % 2 === 0 ? '#1c1c1c' : '#141414',
+              transition: 'background 0.04s',
+            }} />
+          ))}
+        </div>
+        <div style={{ flex: 1 }} />
+        <button
+          style={{
+            padding: '3px 10px', fontSize: 8, borderRadius: 2, cursor: 'pointer', fontWeight: 700,
+            letterSpacing: '0.12em', border: `1px solid ${playing ? '#ef4444' : '#333'}`,
+            background: playing ? '#dc2626' : '#1a1a1a', color: playing ? '#fff' : '#555',
+            transition: 'all 0.1s',
+          }}
+          onMouseDown={e => e.stopPropagation()}
+          onClick={() => onSelectorChange(module.id, 'play', playing ? 0 : 1)}
+        >{playing ? '■ STOP' : '▶ PLAY'}</button>
+      </div>
+
+      {/* ─ Step grid ─ */}
+      <div style={{ flex: 1, padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: 4, justifyContent: 'space-evenly' }}>
+        {DRM_CHANS.map(({ label, patKey, volKey, color }) => {
+          const pat = Math.round(module.params[patKey] ?? 0);
+          const vol = module.params[volKey] ?? 0.7;
+          return (
+            <div key={patKey} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {/* label */}
+              <span style={{
+                fontSize: 6.5, color, letterSpacing: '0.06em', fontWeight: 700,
+                textTransform: 'uppercase', minWidth: 26, textAlign: 'right', flexShrink: 0,
+              }}>{label}</span>
+
+              {/* 16 step buttons */}
+              <div style={{ display: 'flex', gap: 2, flex: 1 }}>
+                {Array.from({ length: 16 }, (_, s) => {
+                  const active  = !!(pat & (1 << s));
+                  const isCur   = playing && displayStep === s;
+                  const grpAlt  = Math.floor(s / 4) % 2 === 1;
+                  return (
+                    <div
+                      key={s}
+                      title={`Step ${s + 1}`}
+                      style={{
+                        flex: 1, height: 20, borderRadius: 2, cursor: 'pointer',
+                        background: isCur && active ? '#fff'
+                          : isCur             ? '#2c2c2c'
+                          : active            ? color
+                          : grpAlt            ? '#191919' : '#131313',
+                        border: `1px solid ${active ? color + 'aa' : '#222'}`,
+                        boxShadow: isCur ? `0 0 5px ${color}` : active ? `0 0 2px ${color}66` : 'none',
+                        transition: 'background 0.03s',
+                      }}
+                      onMouseDown={e => e.stopPropagation()}
+                      onClick={() => toggleStep(patKey, s)}
+                    />
+                  );
+                })}
+              </div>
+
+              {/* vol bar + controls */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 }}>
+                <div style={{ width: 40, height: 4, background: '#111', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${vol * 100}%`, background: color, borderRadius: 2, transition: 'width 0.05s' }} />
+                </div>
+                <div style={{ display: 'flex', gap: 2 }}>
+                  <button
+                    title="Clear pattern"
+                    style={{ fontSize: 6, padding: '0 3px', cursor: 'pointer', border: '1px solid #222', borderRadius: 1, background: '#0e0e0e', color: '#444', lineHeight: '10px' }}
+                    onMouseDown={e => e.stopPropagation()} onClick={() => clearPat(patKey)}
+                  >×</button>
+                  <button
+                    title="Fill pattern"
+                    style={{ fontSize: 6, padding: '0 3px', cursor: 'pointer', border: '1px solid #222', borderRadius: 1, background: '#0e0e0e', color: '#444', lineHeight: '10px' }}
+                    onMouseDown={e => e.stopPropagation()} onClick={() => fillPat(patKey)}
+                  >■</button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ─ Volume sliders row ─ */}
+      <div style={{ flexShrink: 0, padding: '4px 8px 6px', borderTop: '1px solid #1a1a1a', display: 'flex', gap: 6, alignItems: 'center' }}>
+        <span style={{ fontSize: 6, color: '#333', textTransform: 'uppercase', letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>VOL</span>
+        {DRM_CHANS.map(({ label, volKey, color }) => (
+          <div key={volKey} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, flex: 1 }}>
+            <input
+              type="range" min={0} max={1} step={0.01}
+              value={module.params[volKey] ?? 0.7}
+              style={{ width: '100%', accentColor: color, cursor: 'pointer' }}
+              onMouseDown={e => e.stopPropagation()}
+              onChange={e => onParamChange(module.id, volKey, Number(e.target.value))}
+            />
+            <span style={{ fontSize: 5.5, color: '#333', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const PANEL_H = 300;
 const KEYBOARD_H = 540;
 const RAIL_H = 28;
@@ -289,15 +503,26 @@ function PianoKeyboard({ octave, onKeyPress }: {
 
 export default function ModulePanel({
   module, connectedPorts, pendingCable, onPortClick, onPortDoubleClick, onParamChange,
-  onSelectorChange, onDragStart, onDelete, onRegisterPortRef, onKeyPress, analyser, midiMonitorData, isMidiTarget,
+  onSelectorChange, onDragStart, onDelete, onRegisterPortRef, onKeyPress,
+  analyser, midiMonitorData, isMidiTarget, moduleStepRef,
 }: ModulePanelProps) {
   const typeDef = MODULE_TYPE_MAP.get(module.typeId);
   const [showDelete, setShowDelete] = useState(false);
+  const [eucStep, setEucStep] = useState(0);
+
+  useEffect(() => {
+    if (module.typeId !== 'euclidean_trig' || !moduleStepRef) return;
+    const id = setInterval(() => setEucStep(moduleStepRef.value), 33);
+    return () => clearInterval(id);
+  }, [module.typeId, moduleStepRef]);
+
   if (!typeDef) return null;
 
   const isOutput = module.typeId === 'output';
-  const panelH = PANEL_H;
-  const bodyH = panelH - RAIL_H * 2;
+  const isDrum   = module.typeId === 'drum_machine';
+  const isEuc    = module.typeId === 'euclidean_trig';
+  const panelH   = typeDef.height ?? PANEL_H;
+  const bodyH    = panelH - RAIL_H * 2;
 
   const canConnectPort = (portId: string, portType: PortType): boolean => {
     if (!pendingCable) return false;
@@ -392,79 +617,103 @@ export default function ModulePanel({
       {/* Panel body */}
       <div style={{
         height: bodyH, flexShrink: 0, display: 'flex', flexDirection: 'column',
-        background: 'linear-gradient(180deg, #171717 0%, #1a1a1a 100%)',
-        borderLeft: '1px solid #242424',
-        borderRight: '1px solid #242424',
+        background: isDrum
+          ? 'linear-gradient(180deg, #0a0a0a 0%, #0d0d0d 100%)'
+          : 'linear-gradient(180deg, #171717 0%, #1a1a1a 100%)',
+        borderLeft: `1px solid ${isDrum ? '#1e1e1e' : '#242424'}`,
+        borderRight: `1px solid ${isDrum ? '#1e1e1e' : '#242424'}`,
         overflow: 'hidden',
       }}>
-        {/* Input ports */}
-        {inPorts.length > 0 && (
-          <div style={{ flexShrink: 0, padding: '7px 5px 4px' }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 3px' }}>
-              {inPorts.map(port => (
-                <PortWithLabel key={port.id} {...portProps(port)} />
-              ))}
-            </div>
-            <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #2a2a2a, transparent)', margin: '5px 0 0' }} />
-          </div>
-        )}
+        {/* ── Drum machine: fully custom body ── */}
+        {isDrum ? (
+          <DrumMachineGrid
+            module={module}
+            onParamChange={onParamChange}
+            onSelectorChange={onSelectorChange}
+            stepRef={moduleStepRef}
+          />
+        ) : (
+          <>
+            {/* Input ports */}
+            {inPorts.length > 0 && (
+              <div style={{ flexShrink: 0, padding: '7px 5px 4px' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 3px' }}>
+                  {inPorts.map(port => (
+                    <PortWithLabel key={port.id} {...portProps(port)} />
+                  ))}
+                </div>
+                <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #2a2a2a, transparent)', margin: '5px 0 0' }} />
+              </div>
+            )}
 
-        {/* Controls */}
-        <div style={{ flex: 1, padding: '6px 5px', display: 'flex', flexDirection: 'column', gap: 6, overflow: 'hidden' }}>
-          {typeDef.knobs.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 4px', justifyContent: 'center' }}>
-              {typeDef.knobs.map(knob => (
-                <Knob
-                  key={knob.id}
-                  def={knob}
-                  value={module.params[knob.id] ?? knob.default}
-                  onChange={(val) => onParamChange(module.id, knob.id, val)}
-                  size="sm"
+            {/* Controls */}
+            <div style={{ flex: 1, padding: '6px 5px', display: 'flex', flexDirection: 'column', gap: 6, overflow: 'hidden' }}>
+              {typeDef.knobs.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 4px', justifyContent: 'center' }}>
+                  {typeDef.knobs.map(knob => (
+                    <Knob
+                      key={knob.id}
+                      def={knob}
+                      value={module.params[knob.id] ?? knob.default}
+                      onChange={(val) => onParamChange(module.id, knob.id, val)}
+                      size="sm"
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Euclidean LED ring */}
+              {isEuc && (
+                <EuclideanLedRing
+                  steps={module.params.steps ?? 8}
+                  fill={module.params.fill ?? 4}
+                  shift={module.params.shift ?? 0}
+                  currentStep={eucStep}
                 />
-              ))}
-            </div>
-          )}
+              )}
 
-          {(typeDef.selectors ?? []).map(sel => {
-            const curVal = module.params[sel.id] ?? sel.default;
-            return (
-              <div key={sel.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-                <span style={{ fontSize: 7, color: '#484848', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{sel.name}</span>
-                <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
-                  {sel.options.map((opt, i) => (
-                    <button
-                      key={opt}
-                      style={{
-                        padding: '2px 5px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
-                        background: Math.round(curVal) === i ? accent : '#1c1c1c',
-                        color: Math.round(curVal) === i ? '#000' : '#4a4a4a',
-                        border: `1px solid ${Math.round(curVal) === i ? accent : '#282828'}`,
-                      }}
-                      onClick={() => onSelectorChange(module.id, sel.id, i)}
-                      data-testid={`selector-${module.id}-${sel.id}-${opt}`}
-                    >{opt}</button>
+              {(typeDef.selectors ?? []).map(sel => {
+                const curVal = module.params[sel.id] ?? sel.default;
+                return (
+                  <div key={sel.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                    <span style={{ fontSize: 7, color: '#484848', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{sel.name}</span>
+                    <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
+                      {sel.options.map((opt, i) => (
+                        <button
+                          key={opt}
+                          style={{
+                            padding: '2px 5px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
+                            background: Math.round(curVal) === i ? accent : '#1c1c1c',
+                            color: Math.round(curVal) === i ? '#000' : '#4a4a4a',
+                            border: `1px solid ${Math.round(curVal) === i ? accent : '#282828'}`,
+                          }}
+                          onClick={() => onSelectorChange(module.id, sel.id, i)}
+                          data-testid={`selector-${module.id}-${sel.id}-${opt}`}
+                        >{opt}</button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {isOutput && <OutputMeter analyser={analyser} />}
+              {module.typeId === 'midi_monitor' && midiMonitorData && (
+                <MidiMonitorDisplay d={midiMonitorData} />
+              )}
+            </div>
+
+            {/* Output ports */}
+            {outPorts.length > 0 && (
+              <div style={{ flexShrink: 0, padding: '4px 5px 7px' }}>
+                <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #2a2a2a, transparent)', margin: '0 0 5px' }} />
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 3px' }}>
+                  {outPorts.map(port => (
+                    <PortWithLabel key={port.id} {...portProps(port)} />
                   ))}
                 </div>
               </div>
-            );
-          })}
-
-          {isOutput && <OutputMeter analyser={analyser} />}
-          {module.typeId === 'midi_monitor' && midiMonitorData && (
-            <MidiMonitorDisplay d={midiMonitorData} />
-          )}
-        </div>
-
-        {/* Output ports */}
-        {outPorts.length > 0 && (
-          <div style={{ flexShrink: 0, padding: '4px 5px 7px' }}>
-            <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #2a2a2a, transparent)', margin: '0 0 5px' }} />
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 3px' }}>
-              {outPorts.map(port => (
-                <PortWithLabel key={port.id} {...portProps(port)} />
-              ))}
-            </div>
-          </div>
+            )}
+          </>
         )}
       </div>
 

@@ -35,6 +35,7 @@ export interface ModuleTypeDef {
   category: ModuleCategory;
   accentColor: string;
   width: number;
+  height?: number;   // overrides default PANEL_H when set
   knobs: KnobDef[];
   selectors?: SelectorDef[];
   ports: PortDef[];
