@@ -198,7 +198,7 @@ function EuclideanLedRing({ steps, fill, shift, currentStep }: {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-      <svg width={108} height={108} viewBox="0 0 108 108" style={{ display: 'block' }}>
+      <svg width={80} height={80} viewBox="0 0 108 108" style={{ display: 'block' }}>
         <circle cx={cx} cy={cy} r={r} fill="none" stroke="#1c1c1c" strokeWidth={2} />
         {shifted.map((hit, i) => {
           const angle = (i / n) * 2 * Math.PI - Math.PI / 2;

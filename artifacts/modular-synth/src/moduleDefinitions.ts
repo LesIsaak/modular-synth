@@ -1054,7 +1054,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
 
   // ─── Euclidean Trigger Generator (Shakmat Knight's Gallop inspired) ──────────
   {
-    id: 'euclidean_trig', name: 'KNIGHT GATE', category: 'clock', accentColor: EUC, width: 220,
+    id: 'euclidean_trig', name: 'KNIGHT GATE', category: 'clock', accentColor: EUC, width: 440,
     knobs: [
       { id: 'bpm',   name: 'BPM',   min: 20,  max: 300, default: 120, step: 1 },
       { id: 'steps', name: 'STEPS', min: 2,   max: 16,  default: 8,  step: 1 },
