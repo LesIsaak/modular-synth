@@ -16,35 +16,67 @@ const KB_H    = 152;   // fixed keyboard panel height
 const SIDEBAR_W = 208; // w-52 = 13rem = 208px
 
 // ─── Rack slot helpers ────────────────────────────────────────────────────────
-function snapToSlot(x: number, y: number) {
-  return {
-    x: Math.max(0, Math.round(x / SLOT_W) * SLOT_W),
-    y: Math.max(0, Math.round(y / SLOT_H) * SLOT_H),
-  };
+/** Snap y to row grid; snap x to the nearest module-edge in that row (no gaps). */
+function snapToSlot(
+  x: number, y: number,
+  modules: ModuleInstance[], draggingId: string,
+) {
+  const snappedY = Math.max(0, Math.round(y / SLOT_H) * SLOT_H);
+  const targetRow = Math.round(snappedY / SLOT_H);
+
+  // Collect right-edges of every other module in the same row, plus origin 0
+  const snapPoints: number[] = [0];
+  for (const m of modules) {
+    if (m.id === draggingId) continue;
+    if (Math.round(m.y / SLOT_H) !== targetRow) continue;
+    const w = MODULE_TYPE_MAP.get(m.typeId)?.width ?? SLOT_W;
+    snapPoints.push(m.x + w);   // right edge → left edge of next module
+  }
+
+  // Pick the snap point closest to where the user dropped
+  const snappedX = snapPoints.reduce((best, pt) =>
+    Math.abs(pt - x) < Math.abs(best - x) ? pt : best,
+  snapPoints[0]);
+
+  return { x: Math.max(0, snappedX), y: snappedY };
 }
 
-function findNextSlot(modules: ModuleInstance[]): { x: number; y: number } {
-  const occupied = new Set(
-    modules.map(m => `${Math.round(m.x / SLOT_W)},${Math.round(m.y / SLOT_H)}`)
-  );
-  const maxCols = Math.floor(CONTENT_W / SLOT_W);
+/** Find the next available tightly-packed position for a new module of the given type. */
+function findNextSlot(modules: ModuleInstance[], newTypeId: string): { x: number; y: number } {
+  const newW = MODULE_TYPE_MAP.get(newTypeId)?.width ?? SLOT_W;
   for (let row = 0; row < 20; row++) {
-    for (let col = 0; col < maxCols; col++) {
-      if (!occupied.has(`${col},${row}`)) return { x: col * SLOT_W, y: row * SLOT_H };
+    const rowY = row * SLOT_H;
+    const rowMods = modules
+      .filter(m => Math.round(m.y / SLOT_H) === row)
+      .sort((a, b) => a.x - b.x);
+    // Walk along the row and find the first x where the new module fits
+    let cursor = 0;
+    for (const m of rowMods) {
+      if (m.x >= cursor + newW) break;        // gap before this module — use cursor
+      cursor = Math.max(cursor, m.x + (MODULE_TYPE_MAP.get(m.typeId)?.width ?? SLOT_W));
     }
+    if (cursor + newW <= CONTENT_W) return { x: cursor, y: rowY };
   }
   return { x: 0, y: 0 };
 }
 
-// ─── Default patch ─────────────────────────────────────────────────────────────
-const DEFAULT_MODULES: ModuleInstance[] = [
-  { id: 'kb1',   typeId: 'keyboard',   x: 0 * SLOT_W, y: 0, params: {} },
-  { id: 'vco1',  typeId: 'analog_vco', x: 1 * SLOT_W, y: 0, params: { freq: 0, fine: 0, wave: 0 } },
-  { id: 'vcf1',  typeId: 'vcf',        x: 2 * SLOT_W, y: 0, params: { cutoff: 900, res: 2, type: 0 } },
-  { id: 'adsr1', typeId: 'adsr',       x: 3 * SLOT_W, y: 0, params: { attack: 0.01, decay: 0.12, sustain: 0.65, release: 0.4 } },
-  { id: 'vca1',  typeId: 'vca',        x: 4 * SLOT_W, y: 0, params: { gain: 0 } },
-  { id: 'out1',  typeId: 'output',     x: 5 * SLOT_W, y: 0, params: { volume: 0.7 } },
-];
+// ─── Default patch (tightly packed — no gaps) ──────────────────────────────────
+const DEFAULT_MODULES: ModuleInstance[] = (() => {
+  const defs: Array<{ id: string; typeId: string; params: Record<string, number> }> = [
+    { id: 'kb1',   typeId: 'keyboard',   params: {} },
+    { id: 'vco1',  typeId: 'analog_vco', params: { freq: 0, fine: 0, wave: 0 } },
+    { id: 'vcf1',  typeId: 'vcf',        params: { cutoff: 900, res: 2, type: 0 } },
+    { id: 'adsr1', typeId: 'adsr',       params: { attack: 0.01, decay: 0.12, sustain: 0.65, release: 0.4 } },
+    { id: 'vca1',  typeId: 'vca',        params: { gain: 0 } },
+    { id: 'out1',  typeId: 'output',     params: { volume: 0.7 } },
+  ];
+  let x = 0;
+  return defs.map(d => {
+    const m = { ...d, x, y: 0 };
+    x += MODULE_TYPE_MAP.get(d.typeId)?.width ?? SLOT_W;
+    return m;
+  });
+})();
 
 const DEFAULT_CABLES: Cable[] = [
   { id: 'c0', fromModuleId: 'kb1',   fromPortId: 'voct_out', toModuleId: 'vco1',  toPortId: 'voct',     color: '#60a5fa' },
@@ -931,7 +963,7 @@ export default function SynthApp() {
 
     pushUndo(cables, modules);
     setModules(prev => {
-      const { x, y } = findNextSlot(prev);
+      const { x, y } = findNextSlot(prev, typeId);
       return [...prev, { id, typeId, x, y, params }];
     });
 
@@ -1243,7 +1275,7 @@ export default function SynthApp() {
         const { moduleId } = dragRef.current;
         setModules(prev => prev.map(m => {
           if (m.id !== moduleId) return m;
-          const snapped = snapToSlot(m.x, m.y);
+          const snapped = snapToSlot(m.x, m.y, prev, moduleId);
           return { ...m, ...snapped };
         }));
         dragRef.current = null;
