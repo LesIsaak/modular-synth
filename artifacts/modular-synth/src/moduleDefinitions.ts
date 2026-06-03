@@ -559,7 +559,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
       { id: 'octaves',  name: 'OCT',  min: 1,    max: 4,    default: 1, step: 1 },
     ],
     selectors: [
-      { id: 'mode', name: 'MODE', options: ['UP','DOWN','U/D','D/U','RAND','PLAY','OUT→IN','IN→OUT','UP×2','R.WLK'], default: 0 },
+      { id: 'mode', name: 'MODE', options: ['UP','DOWN','U/D','D/U','RAND','PLAY','OUT→IN','IN→OUT','UP×2','R.WLK','DWN×2','SKIP','×3','PEDAL','ZIGZAG','SHUF'], default: 0 },
       { id: 'div',  name: 'DIV',  options: ['1/16','1/8','1/4','1/2','1/1'], default: 1 },
     ],
     ports: [

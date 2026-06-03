@@ -1214,6 +1214,10 @@ export function createAudioModule(
       let lastNoteFreq = 0;
       let stepIdx = 0;
       let gateCb: ((on: boolean, freq: number) => void) | null = null;
+      // Extra state for new modes
+      let zigzagPos = 0;
+      let zigzagUp  = true;
+      let shuffledSeq: number[] = [];
 
       // div selector: 1/16 1/8 1/4 1/2 1/1  → beat fractions
       const DIV_MULTS = [0.25, 0.5, 1, 2, 4];
@@ -1227,6 +1231,10 @@ export function createAudioModule(
         return result;
       };
 
+      const resetModeState = () => {
+        stepIdx = 0; zigzagPos = 0; zigzagUp = true; shuffledSeq = [];
+      };
+
       const getNextFreq = (): number | null => {
         const seq = buildSeq();
         const n = seq.length;
@@ -1238,13 +1246,13 @@ export function createAudioModule(
             freq = seq[stepIdx % n]; stepIdx = (stepIdx + 1) % n; break;
           case 1: // DOWN
             freq = seq[(n - 1 - stepIdx % n)]; stepIdx = (stepIdx + 1) % n; break;
-          case 2: { // UP/DOWN ping-pong
+          case 2: { // U/D ping-pong
             const total = n <= 1 ? 1 : (n - 1) * 2;
             const pos = stepIdx % total;
             freq = pos < n ? seq[pos] : seq[total - pos];
             stepIdx = (stepIdx + 1) % total; break;
           }
-          case 3: { // DOWN/UP ping-pong
+          case 3: { // D/U ping-pong
             const total = n <= 1 ? 1 : (n - 1) * 2;
             const pos = stepIdx % total;
             freq = pos < n ? seq[n - 1 - pos] : seq[pos - n + 1];
@@ -1255,12 +1263,12 @@ export function createAudioModule(
           case 5: // AS PLAYED (insertion order)
             freq = heldNotes[stepIdx % Math.max(1, heldNotes.length)] ?? seq[0];
             stepIdx = (stepIdx + 1) % Math.max(1, heldNotes.length); break;
-          case 6: { // OUTSIDE IN
+          case 6: { // OUTSIDE→IN
             const oi = stepIdx % n;
             freq = oi % 2 === 0 ? seq[n - 1 - Math.floor(oi / 2)] : seq[Math.floor(oi / 2)];
             stepIdx = (stepIdx + 1) % n; break;
           }
-          case 7: { // INSIDE OUT
+          case 7: { // INSIDE→OUT
             const mid = Math.floor(n / 2);
             const io = stepIdx % n;
             const f = io % 2 === 0
@@ -1273,6 +1281,44 @@ export function createAudioModule(
           case 9: // RANDOM WALK — drift ±1 step
             stepIdx = Math.max(0, Math.min(n - 1, stepIdx + (Math.random() > 0.5 ? 1 : -1)));
             freq = seq[stepIdx]; break;
+          case 10: // DOWN×2 — each note twice, descending
+            freq = seq[n - 1 - Math.floor(stepIdx / 2) % n];
+            stepIdx++; if (stepIdx >= n * 2) stepIdx = 0; break;
+          case 11: // SKIP — advance by 2 (interleaves odd/even notes)
+            freq = seq[stepIdx % n];
+            stepIdx = (stepIdx + 2) % n; break;
+          case 12: // ×3 — each note three times before advancing
+            freq = seq[Math.floor(stepIdx / 3) % n];
+            stepIdx++; if (stepIdx >= n * 3) stepIdx = 0; break;
+          case 13: { // PEDAL — alternates root with ascending melody notes
+            if (n <= 1) { freq = seq[0]; stepIdx = (stepIdx + 1) % n; break; }
+            if (stepIdx % 2 === 0) {
+              freq = seq[0];
+            } else {
+              const ni = (Math.floor(stepIdx / 2) % (n - 1)) + 1;
+              freq = seq[ni];
+            }
+            stepIdx++;
+            break;
+          }
+          case 14: { // ZIGZAG — up 2, back 1 (net ascending)
+            freq = seq[((zigzagPos % n) + n) % n];
+            if (zigzagUp) { zigzagPos = ((zigzagPos + 2) % n + n) % n; zigzagUp = false; }
+            else          { zigzagPos = ((zigzagPos - 1) % n + n) % n; zigzagUp = true;  }
+            stepIdx++;
+            break;
+          }
+          case 15: { // SHUF — reshuffle order at the start of each cycle
+            if (stepIdx === 0 || shuffledSeq.length !== n) {
+              shuffledSeq = [...seq];
+              for (let i = shuffledSeq.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffledSeq[i], shuffledSeq[j]] = [shuffledSeq[j], shuffledSeq[i]];
+              }
+            }
+            freq = shuffledSeq[stepIdx % n];
+            stepIdx = (stepIdx + 1) % n; break;
+          }
           default:
             freq = seq[stepIdx % n]; stepIdx = (stepIdx + 1) % n;
         }
@@ -1301,9 +1347,9 @@ export function createAudioModule(
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'bpm') { timer.updateInterval(); }
-          if (id === 'div') { stepIdx = 0; timer.updateInterval(); }
+          if (id === 'div') { resetModeState(); timer.updateInterval(); }
         },
-        setSelector: (id, val) => { p[id] = val; stepIdx = 0; },
+        setSelector: (id, val) => { p[id] = val; resetModeState(); },
         setGateTrigger: fn => { gateCb = fn; },
         destroy: () => { timer.destroy(); voct.stop(); voct.disconnect(); },
       };
