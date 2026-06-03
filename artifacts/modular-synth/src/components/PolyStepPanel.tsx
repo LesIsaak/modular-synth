@@ -28,13 +28,13 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
   const lenIdx = Math.max(0, Math.min(3, Math.round(p.global_len ?? 3)));
   const len    = LEN_OPTS[lenIdx];
 
-  const toggle = (t: number, s: number) =>
+  const toggle    = (t: number, s: number) =>
     set(`t${t+1}`, (Math.round(p[`t${t+1}`] ?? 0) ^ (1 << s)) & 0xFFFF);
   const toggleAcc = (t: number, s: number) =>
     set(`t${t+1}_acc`, (Math.round(p[`t${t+1}_acc`] ?? 0) ^ (1 << s)) & 0xFFFF);
   const toggleMute = (t: number) =>
     set(`t${t+1}_mute`, (p[`t${t+1}_mute`] ?? 0) > 0.5 ? 0 : 1);
-  const randomize = (t: number) => {
+  const randomize  = (t: number) => {
     let mask = 0;
     for (let s = 0; s < len; s++) if (Math.random() > 0.5) mask |= (1 << s);
     set(`t${t+1}`, mask);
@@ -46,11 +46,11 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-      {/* ── Transport ──────────────────────────────────────────────────── */}
+      {/* ── Transport (36px, overflow hidden to clip knob label) ──────── */}
       <div style={{
-        flexShrink: 0, height: 44,
-        display: 'flex', alignItems: 'center', gap: 10,
-        padding: '0 10px', borderBottom: '1px solid #1e1e1e',
+        flexShrink: 0, height: 36, overflow: 'hidden',
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '0 8px', borderBottom: '1px solid #1e1e1e',
         background: '#131313',
       }}>
         {/* Play / Pause / Stop */}
@@ -69,8 +69,8 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
               onMouseDown={e => e.stopPropagation()}
               onClick={() => set('transport', btn.val)}
               style={{
-                width: 28, height: 22, fontSize: 11,
-                padding: 0, borderRadius: 4, cursor: 'pointer',
+                width: 24, height: 16, fontSize: 9,
+                padding: 0, borderRadius: 3, cursor: 'pointer',
                 background: isActive ? btn.active : '#1a1a1a',
                 color:      isActive ? btn.activeText : '#333',
                 border: `1px solid ${isActive ? btn.active : '#252525'}`,
@@ -80,16 +80,16 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
           );
         })}
 
-        <div style={{ width: 1, height: 24, background: '#252525', flexShrink: 0 }} />
+        <div style={{ width: 1, height: 20, background: '#252525', flexShrink: 0 }} />
 
         {bpmDef && (
           <Knob def={bpmDef} value={p.bpm ?? 120} onChange={v => set('bpm', v)} size="sm" />
         )}
 
-        <div style={{ width: 1, height: 24, background: '#252525', flexShrink: 0 }} />
+        <div style={{ width: 1, height: 20, background: '#252525', flexShrink: 0 }} />
 
         {/* Global step-length */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
           <span style={{ fontSize: 7, color: '#383838', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Steps</span>
           <div style={{ display: 'flex', gap: 2 }}>
             {LEN_OPTS.map((l, i) => (
@@ -98,7 +98,7 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
                 onMouseDown={e => e.stopPropagation()}
                 onClick={() => set('global_len', i)}
                 style={{
-                  width: 26, height: 18, fontSize: 7.5, borderRadius: 3, cursor: 'pointer',
+                  width: 24, height: 16, fontSize: 7, borderRadius: 3, cursor: 'pointer',
                   background: lenIdx === i ? '#c084fc' : '#1a1a1a',
                   color:      lenIdx === i ? '#000'    : '#3a3a3a',
                   border: `1px solid ${lenIdx === i ? '#c084fc' : '#222'}`,
@@ -109,12 +109,12 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
           </div>
         </div>
 
-        <div style={{ width: 1, height: 24, background: '#252525', flexShrink: 0 }} />
+        <div style={{ width: 1, height: 20, background: '#252525', flexShrink: 0 }} />
 
         {/* Progress bar */}
-        <div style={{ flex: 1, height: 5, background: '#1c1c1c', borderRadius: 3, overflow: 'hidden' }}>
+        <div style={{ flex: 1, height: 4, background: '#1c1c1c', borderRadius: 2, overflow: 'hidden' }}>
           <div style={{
-            height: '100%', borderRadius: 3,
+            height: '100%', borderRadius: 2,
             background: 'linear-gradient(90deg, #9333ea88, #c084fc)',
             width: liveStep >= 0 && len > 1
               ? `${((liveStep / (len - 1)) * 100).toFixed(1)}%`
@@ -125,35 +125,35 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
 
         <span style={{
           fontSize: 7, color: '#363636', fontVariantNumeric: 'tabular-nums',
-          width: 32, textAlign: 'right', flexShrink: 0,
+          width: 28, textAlign: 'right', flexShrink: 0,
         }}>
-          {liveStep >= 0 ? `${liveStep + 1} / ${len}` : '– / –'}
+          {liveStep >= 0 ? `${liveStep + 1}/${len}` : '–/–'}
         </span>
       </div>
 
-      {/* ── Column numbers ──────────────────────────────────────────────── */}
+      {/* ── Column numbers (10px) ────────────────────────────────────────── */}
       <div style={{
-        flexShrink: 0, height: 14,
+        flexShrink: 0, height: 10,
         display: 'flex', alignItems: 'center',
-        padding: '0 8px', gap: 0,
+        padding: '0 6px', gap: 0,
         borderBottom: '1px solid #161616', background: '#0f0f0f',
       }}>
-        <div style={{ flexShrink: 0, width: 56 }} />
+        <div style={{ flexShrink: 0, width: 50 }} />
         <div style={{ flex: 1, display: 'flex' }}>
           {Array.from({ length: len }, (_, s) => (
             <div
               key={s}
               style={{
-                flex: 1, textAlign: 'center', fontSize: 5.5, color: '#272727',
-                marginLeft: s > 0 && s % 4 === 0 ? 3 : 0,
+                flex: 1, textAlign: 'center', fontSize: 5, color: '#272727',
+                marginLeft: s > 0 && s % 4 === 0 ? 2 : 0,
               }}
             >{s + 1}</div>
           ))}
         </div>
-        <div style={{ flexShrink: 0, width: 28 }} />
+        <div style={{ flexShrink: 0, width: 24 }} />
       </div>
 
-      {/* ── Track rows ──────────────────────────────────────────────────── */}
+      {/* ── Track rows (fill remaining ≈ 198px / 8 ≈ 24.75px each) ────── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {Array.from({ length: 8 }, (_, t) => {
           const color  = TC[t];
@@ -166,31 +166,32 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
               key={t}
               style={{
                 flex: 1, display: 'flex', alignItems: 'center',
-                padding: '0 8px', gap: 0,
+                padding: '0 6px', gap: 0,
                 borderBottom: t < 7 ? '1px solid #181818' : 'none',
                 background: muted ? '#0c0c0c' : undefined,
               }}
             >
-              {/* Track label — click=randomize, right-click=clear */}
+              {/* Track label */}
               <div
                 title="Click: randomize  ·  Right-click: clear"
                 onClick={() => randomize(t)}
                 onContextMenu={e => { e.preventDefault(); clearTrack(t); }}
+                onMouseDown={e => e.stopPropagation()}
                 style={{
-                  flexShrink: 0, width: 56,
-                  display: 'flex', alignItems: 'center', gap: 4,
+                  flexShrink: 0, width: 50,
+                  display: 'flex', alignItems: 'center', gap: 3,
                   cursor: 'pointer', userSelect: 'none',
                 }}
               >
                 <div style={{
-                  width: 3, height: 28, borderRadius: 1, flexShrink: 0,
+                  width: 2, height: 16, borderRadius: 1, flexShrink: 0,
                   background: muted ? '#222' : color,
-                  boxShadow: muted ? 'none' : `0 0 6px ${color}44`,
+                  boxShadow: muted ? 'none' : `0 0 4px ${color}44`,
                 }} />
                 <span style={{
-                  fontSize: 7, fontWeight: 700,
+                  fontSize: 6.5, fontWeight: 700,
                   color: muted ? '#272727' : color,
-                  textTransform: 'uppercase', letterSpacing: '0.05em',
+                  textTransform: 'uppercase', letterSpacing: '0.04em',
                 }}>{TL[t]}</span>
               </div>
 
@@ -206,9 +207,10 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
                       key={s}
                       onClick={() => toggle(t, s)}
                       onContextMenu={e => { e.preventDefault(); toggleAcc(t, s); }}
+                      onMouseDown={e => e.stopPropagation()}
                       style={{
-                        flex: 1, height: 32, borderRadius: 3, cursor: 'pointer',
-                        marginLeft: s > 0 && s % 4 === 0 ? 3 : s > 0 ? 1 : 0,
+                        flex: 1, height: 16, borderRadius: 2, cursor: 'pointer',
+                        marginLeft: s > 0 && s % 4 === 0 ? 2 : s > 0 ? 1 : 0,
                         opacity: muted ? 0.4 : 1,
                         background: isOn
                           ? isAcc ? color : `${color}55`
@@ -219,9 +221,9 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
                             ? `1px solid ${color}66`
                             : '1px solid #252525',
                         boxShadow: isLive && isOn
-                          ? `0 0 10px ${color}88`
+                          ? `0 0 8px ${color}88`
                           : isLive
-                            ? `0 0 4px ${color}44`
+                            ? `0 0 3px ${color}44`
                             : 'none',
                         transition: 'box-shadow 0.04s',
                       }}
@@ -235,8 +237,8 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
                 onMouseDown={e => e.stopPropagation()}
                 onClick={() => toggleMute(t)}
                 style={{
-                  flexShrink: 0, marginLeft: 6,
-                  width: 22, height: 18, fontSize: 6, borderRadius: 3,
+                  flexShrink: 0, marginLeft: 4,
+                  width: 18, height: 14, fontSize: 6, borderRadius: 2,
                   cursor: 'pointer', fontWeight: 700,
                   background: muted ? color    : '#1a1a1a',
                   color:      muted ? '#000'   : '#303030',
