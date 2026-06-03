@@ -1075,7 +1075,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
 
   // ─── Poly Step Drum Sequencer ─────────────────────────────────────────────────
   {
-    id: 'poly_step', name: 'POLY STEP', category: 'sequencer', accentColor: '#c084fc', width: 960,
+    id: 'poly_step', name: 'POLY STEP', category: 'sequencer', accentColor: '#c084fc', width: 960, height: 600,
     knobs: [
       { id: 'bpm',        name: 'BPM',    min: 20,  max: 300,   default: 120, step: 1 },
       { id: 'swing',      name: 'SWING',  min: 0,   max: 0.5,   default: 0 },
