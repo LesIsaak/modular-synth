@@ -18,6 +18,7 @@ interface ModulePanelProps {
   onKeyPress?: (moduleId: string, freq: number, on: boolean) => void;
   analyser?: AnalyserNode;
   midiMonitorData?: MidiMonitorData;
+  isMidiTarget?: boolean;
 }
 
 // ─── MIDI Monitor display ─────────────────────────────────────────────────────
@@ -288,7 +289,7 @@ function PianoKeyboard({ octave, onKeyPress }: {
 
 export default function ModulePanel({
   module, connectedPorts, pendingCable, onPortClick, onPortDoubleClick, onParamChange,
-  onSelectorChange, onDragStart, onDelete, onRegisterPortRef, onKeyPress, analyser, midiMonitorData,
+  onSelectorChange, onDragStart, onDelete, onRegisterPortRef, onKeyPress, analyser, midiMonitorData, isMidiTarget,
 }: ModulePanelProps) {
   const typeDef = MODULE_TYPE_MAP.get(module.typeId);
   const [showDelete, setShowDelete] = useState(false);
@@ -341,10 +342,11 @@ export default function ModulePanel({
           justifyContent: 'space-between', padding: '0 5px',
           cursor: 'grab', position: 'relative',
           background: 'linear-gradient(180deg, #2c2c2c 0%, #1e1e1e 100%)',
-          borderTop: `2px solid ${accent}`,
+          borderTop: `2px solid ${isMidiTarget ? '#22d3ee' : accent}`,
           borderBottom: '1px solid #0e0e0e',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.7)',
+          boxShadow: isMidiTarget ? '0 0 10px rgba(34,211,238,0.25), 0 2px 4px rgba(0,0,0,0.7)' : '0 2px 4px rgba(0,0,0,0.7)',
           userSelect: 'none',
+          transition: 'border-top-color 0.15s, box-shadow 0.15s',
         }}
         onMouseDown={(e) => onDragStart(module.id, e)}
         onDoubleClick={e => e.preventDefault()}

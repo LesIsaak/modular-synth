@@ -730,7 +730,9 @@ export default function SynthApp() {
   const [cables,       setCables]       = useState<Cable[]>(DEFAULT_CABLES);
   const [pendingCable, setPendingCable] = useState<PendingCable | null>(null);
   const [mousePos,     setMousePos]     = useState({ x: 0, y: 0 });
-  const [cableOpacity, setCableOpacity] = useState(1);
+  const [cableOpacity,    setCableOpacity]    = useState(1);
+  const [focusedModuleId, setFocusedModuleId] = useState<string | null>(null);
+  const ccOrderRef = useRef<number[]>([]); // CC numbers in order of first touch
 
   const NOTE_NAMES_MON = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
   const [midiMonData, setMidiMonData] = useState<MidiMonitorData>({
@@ -895,22 +897,7 @@ export default function SynthApp() {
     if (node?.offset) node.offset.value = val;
   }, []);
 
-  const handleMidiMon = useCallback((ev: MidiMonEvent) => {
-    setMidiMonData(prev => {
-      if (ev.type === 'noteOn') {
-        const name = NOTE_NAMES_MON[ev.note % 12] + (Math.floor(ev.note / 12) - 1);
-        return { ...prev, gate: true, note: ev.note, noteName: name, velocity: ev.velocity, channel: ev.channel, noteCount: prev.noteCount + 1 };
-      }
-      if (ev.type === 'noteOff')  return { ...prev, gate: false };
-      if (ev.type === 'bend')     return { ...prev, pitchBend: ev.bend };
-      if (ev.type === 'cc' && ev.num === 1) return { ...prev, modWheel: ev.val / 127, lastCC: { num: ev.num, val: ev.val } };
-      if (ev.type === 'cc')       return { ...prev, lastCC: { num: ev.num, val: ev.val } };
-      return prev;
-    });
-  }, []);
-
-  // MIDI input — routes USB keyboard events through the same handlers as the on-screen keys
-  const { status: midiStatus, deviceCount: midiDeviceCount } = useMIDI(handleKeyNote, handleKeyBend, handleKeyMod, handleMidiMon);
+  // handleMidiMon declared below after handleParamChange — useMIDI wired after it
 
   // ─── Add module ─────────────────────────────────────────────────────────────
   const handleAddModule = useCallback((typeId: string) => {
@@ -960,6 +947,45 @@ export default function SynthApp() {
     setModules(prev => prev.map(m => m.id === moduleId ? { ...m, params: { ...m.params, [selId]: value } } : m));
     audioModulesRef.current.get(moduleId)?.setSelector?.(selId, value);
   }, []);
+
+  // ─── MIDI monitor + CC→knob auto-mapping ─────────────────────────────────
+  const handleMidiMon = useCallback((ev: MidiMonEvent) => {
+    // ── MIDI monitor display ──
+    setMidiMonData(prev => {
+      if (ev.type === 'noteOn') {
+        const name = NOTE_NAMES_MON[ev.note % 12] + (Math.floor(ev.note / 12) - 1);
+        return { ...prev, gate: true, note: ev.note, noteName: name, velocity: ev.velocity, channel: ev.channel, noteCount: prev.noteCount + 1 };
+      }
+      if (ev.type === 'noteOff')  return { ...prev, gate: false };
+      if (ev.type === 'bend')     return { ...prev, pitchBend: ev.bend };
+      if (ev.type === 'cc' && ev.num === 1) return { ...prev, modWheel: ev.val / 127, lastCC: { num: ev.num, val: ev.val } };
+      if (ev.type === 'cc')       return { ...prev, lastCC: { num: ev.num, val: ev.val } };
+      return prev;
+    });
+
+    // ── CC → knob auto-mapping (skip CC1 = mod wheel) ──
+    if (ev.type === 'cc' && ev.num !== 1 && focusedModuleId) {
+      if (!ccOrderRef.current.includes(ev.num)) {
+        ccOrderRef.current = [...ccOrderRef.current, ev.num];
+      }
+      const pos = ccOrderRef.current.indexOf(ev.num);
+      const focMod = modules.find(m => m.id === focusedModuleId);
+      if (focMod) {
+        const typeDef = MODULE_TYPE_MAP.get(focMod.typeId);
+        if (typeDef && pos < typeDef.knobs.length) {
+          const knob = typeDef.knobs[pos];
+          const t = ev.val / 127;
+          const value = knob.log && knob.min > 0 && knob.max > 0
+            ? knob.min * Math.pow(knob.max / knob.min, t)
+            : knob.min + t * (knob.max - knob.min);
+          handleParamChange(focMod.id, knob.id, value);
+        }
+      }
+    }
+  }, [focusedModuleId, modules, handleParamChange]);
+
+  // MIDI input — routes USB keyboard events + Minilab CC→knob mapping
+  const { status: midiStatus, deviceCount: midiDeviceCount } = useMIDI(handleKeyNote, handleKeyBend, handleKeyMod, handleMidiMon);
 
   // ─── Port click — cable patching ────────────────────────────────────────────
   const handlePortClick = useCallback((moduleId: string, portId: string, portType: PortType) => {
@@ -1278,6 +1304,8 @@ export default function SynthApp() {
               key={mod.id}
               className="absolute"
               style={{ left: mod.x, top: mod.y, zIndex: 10 }}
+              onMouseEnter={() => setFocusedModuleId(mod.id)}
+              onMouseLeave={() => setFocusedModuleId(prev => prev === mod.id ? null : prev)}
             >
               <ModulePanel
                 module={mod}
@@ -1288,6 +1316,7 @@ export default function SynthApp() {
                 onParamChange={handleParamChange}
                 onSelectorChange={handleSelectorChange}
                 midiMonitorData={mod.typeId === 'midi_monitor' ? midiMonData : undefined}
+                isMidiTarget={midiStatus === 'ready' && mod.id === focusedModuleId && (MODULE_TYPE_MAP.get(mod.typeId)?.knobs.length ?? 0) > 0}
                 onDragStart={handleDragStart}
                 onDelete={handleDeleteModule}
                 onRegisterPortRef={registerPortRef}
