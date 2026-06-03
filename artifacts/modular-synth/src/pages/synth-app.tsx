@@ -773,6 +773,8 @@ export default function SynthApp() {
   const [modules,      setModules]      = useState<ModuleInstance[]>(DEFAULT_MODULES);
   const [cables,       setCables]       = useState<Cable[]>(DEFAULT_CABLES);
   const [pendingCable, setPendingCable] = useState<PendingCable | null>(null);
+  const pendingCableRef = useRef<PendingCable | null>(null);
+  pendingCableRef.current = pendingCable;
   const [mousePos,     setMousePos]     = useState({ x: 0, y: 0 });
   const [cableOpacity,     setCableOpacity]     = useState(1);
   const [focusedModuleId,  setFocusedModuleId]  = useState<string | null>(null);
@@ -1218,7 +1220,9 @@ export default function SynthApp() {
 
     const edgeScroll = () => {
       rafId = 0;
-      if (!dragRef.current || !rackRef.current) return;
+      const hasDrag  = !!dragRef.current;
+      const hasCable = !!pendingCableRef.current;
+      if ((!hasDrag && !hasCable) || !rackRef.current) return;
       const r = rackRef.current.getBoundingClientRect();
       const mx = lastMouse.x;
       const my = lastMouse.y;
@@ -1230,17 +1234,26 @@ export default function SynthApp() {
       if (dx || dy) {
         rackRef.current.scrollLeft += dx;
         rackRef.current.scrollTop  += dy;
-        // Snapshot ref fields into locals before the async setState
-        const { moduleId, startX, startY, origX, origY, origScrollLeft, origScrollTop } = dragRef.current;
-        const sl = rackRef.current.scrollLeft;
-        const st = rackRef.current.scrollTop;
-        setModules(prev => prev.map(m =>
-          m.id === moduleId
-            ? { ...m,
-                x: Math.max(0, origX + mx - startX + sl - origScrollLeft),
-                y: Math.max(0, origY + my - startY + st - origScrollTop) }
-            : m
-        ));
+        if (hasDrag) {
+          // Snapshot ref fields into locals before the async setState
+          const { moduleId, startX, startY, origX, origY, origScrollLeft, origScrollTop } = dragRef.current!;
+          const sl = rackRef.current.scrollLeft;
+          const st = rackRef.current.scrollTop;
+          setModules(prev => prev.map(m =>
+            m.id === moduleId
+              ? { ...m,
+                  x: Math.max(0, origX + mx - startX + sl - origScrollLeft),
+                  y: Math.max(0, origY + my - startY + st - origScrollTop) }
+              : m
+          ));
+        }
+        if (hasCable) {
+          // Keep the cable tail anchored to the mouse while the rack scrolls
+          setMousePos({
+            x: mx - r.left + rackRef.current.scrollLeft,
+            y: my - r.top  + rackRef.current.scrollTop,
+          });
+        }
         rafId = requestAnimationFrame(edgeScroll);
       }
     };
@@ -1265,6 +1278,8 @@ export default function SynthApp() {
                 y: Math.max(0, origY + e.clientY - startY + st - origScrollTop) }
             : m
         ));
+      }
+      if (dragRef.current || pendingCableRef.current) {
         if (!rafId) rafId = requestAnimationFrame(edgeScroll);
       }
     };
