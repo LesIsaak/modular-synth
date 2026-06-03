@@ -184,6 +184,9 @@ function makeClockTimer(getInterval: () => number, onTick: (beatIndex: number) =
 
   return {
     restart: () => worker.postMessage({ type: 'restart', id, intervalMs: getInterval() }),
+    // Send new intervalMs without resetting the clock — current beat plays on schedule,
+    // next beat uses the new tempo. Use this for BPM/div knob changes instead of destroy+create.
+    updateInterval: () => worker.postMessage({ type: 'update', id, intervalMs: getInterval() }),
     destroy: () => {
       worker.postMessage({ type: 'destroy', id });
       _clockCallbacks.delete(id);
@@ -1117,7 +1120,7 @@ export function createAudioModule(
       return {
         outputs: new Map([['voct_out', freqNode]]),
         inputs: new Map(),
-        setParam: (id, val) => { p[id] = val; if (id === 'bpm') { timer.destroy(); timer = makeClockTimer(getMs, (i) => { step = i % 8; const midi = Math.round(p[`s${step + 1}`] ?? 60); const freq = midiToHz(midi); freqNode.offset.value = freq; gateCb?.(true, freq); setTimeout(() => gateCb?.(false, freq), getMs() * 0.45); }); } },
+        setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
         destroy: () => { timer.destroy(); freqNode.stop(); freqNode.disconnect(); },
       };
@@ -1138,7 +1141,7 @@ export function createAudioModule(
       return {
         outputs: new Map(),
         inputs: new Map(),
-        setParam: (id, val) => { p[id] = val; if (id === 'bpm') { timer.destroy(); timer = makeClockTimer(getMs, (i) => { const s = i % 8; if ((p[`t${s+1}`] ?? 0) > 0.5) { gateCb?.(true, 440); setTimeout(() => gateCb?.(false, 440), getMs() * 0.4); } }); } },
+        setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
         destroy: () => { timer.destroy(); },
       };
@@ -1155,7 +1158,7 @@ export function createAudioModule(
       return {
         outputs: new Map([['cv_out', cvNode]]),
         inputs: new Map(),
-        setParam: (id, val) => { p[id] = val; if (id === 'bpm') { timer.destroy(); timer = makeClockTimer(getMs, (i) => { cvNode.offset.value = (p[`v${(i%8)+1}`] ?? 0) * 500; }); } },
+        setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         destroy: () => { timer.destroy(); cvNode.stop(); cvNode.disconnect(); },
       };
     }
@@ -1176,7 +1179,7 @@ export function createAudioModule(
       return {
         outputs: new Map(),
         inputs: new Map(),
-        setParam: (id, val) => { p[id] = val; if (id === 'bpm') { timer.destroy(); timer = makeClockTimer(getMs, (i) => { const s = i % 8; if ((p[`g${s+1}`]??0) > 0.5) { gateCb?.(true,440); setTimeout(()=>gateCb?.(false,440), getMs()*(p.gate_len??0.5)); } }); } },
+        setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
         destroy: () => { timer.destroy(); },
       };
@@ -1275,7 +1278,8 @@ export function createAudioModule(
         },
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'bpm' || id === 'div') { timer.destroy(); stepIdx = 0; timer = makeClockTimer(getStepMs, tick); }
+          if (id === 'bpm') { timer.updateInterval(); }
+          if (id === 'div') { stepIdx = 0; timer.updateInterval(); }
         },
         setSelector: (id, val) => { p[id] = val; stepIdx = 0; },
         setGateTrigger: fn => { gateCb = fn; },
@@ -1300,7 +1304,7 @@ export function createAudioModule(
       return {
         outputs: new Map(),
         inputs: new Map(),
-        setParam: (id, val) => { p[id] = val; if (id === 'bpm') { timer.destroy(); beat = 0; timer = makeClockTimer(getMs, (i) => { beat = i; gateCb?.(true, 440); setTimeout(() => gateCb?.(false, 440), getMs() * 0.45); }); } },
+        setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
         destroy: () => { timer.destroy(); },
       };
@@ -1315,7 +1319,7 @@ export function createAudioModule(
       });
       return {
         outputs: new Map(), inputs: new Map(),
-        setParam: (id, val) => { p[id] = val; timer.destroy(); timer = makeClockTimer(getMs, () => { gateCb?.(true, 440); setTimeout(() => gateCb?.(false, 440), getMs() * 0.45); }); },
+        setParam: (id, val) => { p[id] = val; if (id === 'bpm' || id === 'div') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
         destroy: () => { timer.destroy(); },
       };
@@ -1330,7 +1334,7 @@ export function createAudioModule(
       });
       return {
         outputs: new Map(), inputs: new Map(),
-        setParam: (id, val) => { p[id] = val; timer.destroy(); timer = makeClockTimer(getMs, () => { gateCb?.(true, 440); setTimeout(() => gateCb?.(false, 440), getMs() * 0.45); }); },
+        setParam: (id, val) => { p[id] = val; if (id === 'bpm' || id === 'mul') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
         destroy: () => { timer.destroy(); },
       };
@@ -1348,7 +1352,7 @@ export function createAudioModule(
       });
       return {
         outputs: new Map(), inputs: new Map(),
-        setParam: (id, val) => { p[id] = val; timer.destroy(); timer = makeClockTimer(getMs, () => { const d = getMs()*(p.delay??0.25); setTimeout(()=>{ gateCb?.(true,440); setTimeout(()=>gateCb?.(false,440), getMs()*0.45); }, d); }); },
+        setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
         destroy: () => { timer.destroy(); },
       };
@@ -1368,7 +1372,7 @@ export function createAudioModule(
       });
       return {
         outputs: new Map(), inputs: new Map(),
-        setParam: (id, val) => { p[id] = val; timer.destroy(); beat = 0; timer = makeClockTimer(getMs, (i) => { const sh = i%2===1 ? getMs()*(p.shuffle??0.2) : 0; setTimeout(()=>{ gateCb?.(true,440); setTimeout(()=>gateCb?.(false,440), getMs()*0.4); }, sh); }); },
+        setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
         destroy: () => { timer.destroy(); },
       };
@@ -1389,7 +1393,7 @@ export function createAudioModule(
       });
       return {
         outputs: new Map(), inputs: new Map(),
-        setParam: (id, val) => { p[id] = val; timer.destroy(); beat = 0; timer = makeClockTimer(getMs, (i) => { const sw = i%2===1 ? getMs()*(p.swing??0.33) : 0; setTimeout(()=>{ gateCb?.(true,440); setTimeout(()=>gateCb?.(false,440), getMs()*0.4); }, sw); }); },
+        setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
         destroy: () => { timer.destroy(); },
       };
@@ -2363,7 +2367,7 @@ export function createAudioModule(
         }
       };
 
-      const restartTimer = () => { timer.destroy(); clockStep = 0; timer = makeClockTimer(getMs, tick); };
+      const restartTimer = () => { clockStep = 0; timer.updateInterval(); };
       let timer = makeClockTimer(getMs, tick);
 
       return {
@@ -2564,7 +2568,7 @@ export function createAudioModule(
         setPortGateTrigger: (portId, fn) => { gateCbs.set(portId, fn); },
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'bpm') { timer.destroy(); timer = makeClockTimer(getMs, tick); }
+          if (id === 'bpm') timer.updateInterval();
           if (id === 'transport') {
             if (val >= 1 && val < 2) {
               running = true;                                        // play
