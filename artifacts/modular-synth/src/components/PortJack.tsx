@@ -58,7 +58,7 @@ export default function PortJack({
         <div
           style={{ position: 'absolute', inset: -9, cursor: 'pointer', zIndex: 1 }}
           onClick={e => { e.stopPropagation(); onPortClick(moduleId, portDef.id, portDef.type); }}
-          onDoubleClick={e => { e.stopPropagation(); if (isOut) onPortDoubleClick?.(moduleId, portDef.id); }}
+          onDoubleClick={e => { e.stopPropagation(); onPortDoubleClick?.(moduleId, portDef.id); }}
         />
         <svg width={26} height={26} viewBox="0 0 26 26" style={{ display: 'block' }}>
           <defs>

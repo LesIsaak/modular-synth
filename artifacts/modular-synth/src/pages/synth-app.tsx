@@ -1134,11 +1134,14 @@ export default function SynthApp() {
     setPendingCable(null);
   }, [pendingCable, cables, modules]);
 
-  // ─── Double-click output port → cut all its cables ──────────────────────────
+  // ─── Double-click any port → cut all cables touching it ─────────────────────
   const handlePortDoubleClick = useCallback((moduleId: string, portId: string) => {
     pushUndo(cables, modules);
     setCables(prev => {
-      const toRemove = prev.filter(c => c.fromModuleId === moduleId && c.fromPortId === portId);
+      const toRemove = prev.filter(c =>
+        (c.fromModuleId === moduleId && c.fromPortId === portId) ||
+        (c.toModuleId   === moduleId && c.toPortId   === portId)
+      );
       toRemove.forEach(cable => {
         const fromTypeDef = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
         const fromPort    = fromTypeDef?.ports.find(p => p.id === cable.fromPortId);
@@ -1151,7 +1154,10 @@ export default function SynthApp() {
           if (fromAudio && toAudio) disconnectAudioPorts(fromAudio, cable.fromPortId, toAudio, cable.toPortId);
         }
       });
-      return prev.filter(c => !(c.fromModuleId === moduleId && c.fromPortId === portId));
+      return prev.filter(c =>
+        !(c.fromModuleId === moduleId && c.fromPortId === portId) &&
+        !(c.toModuleId   === moduleId && c.toPortId   === portId)
+      );
     });
     setPendingCable(null);
   }, [modules]);
