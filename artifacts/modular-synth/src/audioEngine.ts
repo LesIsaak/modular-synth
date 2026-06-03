@@ -2866,8 +2866,10 @@ export function connectAudioPorts(
   const src = fromNodes.outputs.get(fromPortId);
   const dst = toNodes.inputs.get(toPortId);
   if (!src || !dst) return;
-  if (dst.param) src.connect(dst.param);
-  else src.connect(dst.node as AudioNode);
+  try {
+    if (dst.param) src.connect(dst.param);
+    else src.connect(dst.node as AudioNode);
+  } catch (_) {}
 }
 
 export function disconnectAudioPorts(
