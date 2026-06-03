@@ -595,60 +595,104 @@ export default function ModulePanel({
             )}
 
             {/* Controls */}
-            <div style={{ flex: 1, padding: '6px 5px', display: 'flex', flexDirection: 'column', gap: 6, overflow: 'hidden' }}>
-              {typeDef.knobs.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 4px', justifyContent: 'center' }}>
-                  {typeDef.knobs.map(knob => (
-                    <Knob
-                      key={knob.id}
-                      def={knob}
-                      value={module.params[knob.id] ?? knob.default}
-                      onChange={(val) => onParamChange(module.id, knob.id, val)}
-                      size="sm"
-                    />
-                  ))}
-                </div>
-              )}
-
-              {/* Euclidean LED ring */}
-              {isEuc && (
-                <EuclideanLedRing
-                  steps={module.params.steps ?? 8}
-                  fill={module.params.fill ?? 4}
-                  shift={module.params.shift ?? 0}
-                  currentStep={eucStep}
-                />
-              )}
-
-              {(typeDef.selectors ?? []).map(sel => {
-                const curVal = module.params[sel.id] ?? sel.default;
-                return (
-                  <div key={sel.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-                    <span style={{ fontSize: 7, color: '#484848', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{sel.name}</span>
-                    <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
-                      {sel.options.map((opt, i) => (
-                        <button
-                          key={opt}
-                          style={{
-                            padding: '2px 5px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
-                            background: Math.round(curVal) === i ? accent : '#1c1c1c',
-                            color: Math.round(curVal) === i ? '#000' : '#4a4a4a',
-                            border: `1px solid ${Math.round(curVal) === i ? accent : '#282828'}`,
-                          }}
-                          onClick={() => onSelectorChange(module.id, sel.id, i)}
-                          data-testid={`selector-${module.id}-${sel.id}-${opt}`}
-                        >{opt}</button>
-                      ))}
-                    </div>
+            {isEuc ? (
+              /* ── KNIGHT GATE: knobs+selector left, LED ring right ── */
+              <div style={{ flex: 1, padding: '6px 8px', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 10, overflow: 'hidden' }}>
+                {/* Left column: knobs + CLK DIV */}
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 4px', justifyContent: 'center' }}>
+                    {typeDef.knobs.map(knob => (
+                      <Knob
+                        key={knob.id}
+                        def={knob}
+                        value={module.params[knob.id] ?? knob.default}
+                        onChange={(val) => onParamChange(module.id, knob.id, val)}
+                        size="sm"
+                      />
+                    ))}
                   </div>
-                );
-              })}
+                  {(typeDef.selectors ?? []).map(sel => {
+                    const curVal = module.params[sel.id] ?? sel.default;
+                    return (
+                      <div key={sel.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                        <span style={{ fontSize: 7, color: '#484848', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{sel.name}</span>
+                        <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
+                          {sel.options.map((opt, i) => (
+                            <button
+                              key={opt}
+                              style={{
+                                padding: '2px 5px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
+                                background: Math.round(curVal) === i ? accent : '#1c1c1c',
+                                color: Math.round(curVal) === i ? '#000' : '#4a4a4a',
+                                border: `1px solid ${Math.round(curVal) === i ? accent : '#282828'}`,
+                              }}
+                              onClick={() => onSelectorChange(module.id, sel.id, i)}
+                              data-testid={`selector-${module.id}-${sel.id}-${opt}`}
+                            >{opt}</button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
 
-              {isOutput && <OutputMeter analyser={analyser} />}
-              {module.typeId === 'midi_monitor' && midiMonitorData && (
-                <MidiMonitorDisplay d={midiMonitorData} />
-              )}
-            </div>
+                {/* Right column: LED ring */}
+                <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <EuclideanLedRing
+                    steps={module.params.steps ?? 8}
+                    fill={module.params.fill ?? 4}
+                    shift={module.params.shift ?? 0}
+                    currentStep={eucStep}
+                  />
+                </div>
+              </div>
+            ) : (
+              /* ── Standard controls ── */
+              <div style={{ flex: 1, padding: '6px 5px', display: 'flex', flexDirection: 'column', gap: 6, overflow: 'hidden' }}>
+                {typeDef.knobs.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 4px', justifyContent: 'center' }}>
+                    {typeDef.knobs.map(knob => (
+                      <Knob
+                        key={knob.id}
+                        def={knob}
+                        value={module.params[knob.id] ?? knob.default}
+                        onChange={(val) => onParamChange(module.id, knob.id, val)}
+                        size="sm"
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {(typeDef.selectors ?? []).map(sel => {
+                  const curVal = module.params[sel.id] ?? sel.default;
+                  return (
+                    <div key={sel.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                      <span style={{ fontSize: 7, color: '#484848', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{sel.name}</span>
+                      <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
+                        {sel.options.map((opt, i) => (
+                          <button
+                            key={opt}
+                            style={{
+                              padding: '2px 5px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
+                              background: Math.round(curVal) === i ? accent : '#1c1c1c',
+                              color: Math.round(curVal) === i ? '#000' : '#4a4a4a',
+                              border: `1px solid ${Math.round(curVal) === i ? accent : '#282828'}`,
+                            }}
+                            onClick={() => onSelectorChange(module.id, sel.id, i)}
+                            data-testid={`selector-${module.id}-${sel.id}-${opt}`}
+                          >{opt}</button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {isOutput && <OutputMeter analyser={analyser} />}
+                {module.typeId === 'midi_monitor' && midiMonitorData && (
+                  <MidiMonitorDisplay d={midiMonitorData} />
+                )}
+              </div>
+            )}
 
             {/* Output ports */}
             {outPorts.length > 0 && (
