@@ -133,38 +133,39 @@ function wetDry(ctx: AudioContext, input: AudioNode, wet: AudioNode, mix: number
 }
 
 // ─── Clock/sequencer helpers ───────────────────────────────────────────────────
-// Uses a self-correcting recursive setTimeout instead of setInterval.
-// After each tick we compare actual vs expected fire time and shrink/grow the
-// next delay to compensate, keeping long-term drift near zero.
+// The clock runs inside a dedicated Web Worker so that React renders and other
+// main-thread work can't delay ticks.  Each makeClockTimer call registers a
+// numbered timer in the worker; on every tick the worker posts a message back
+// and we call the onTick callback on the main thread.
+
+let _clockWorker: Worker | null = null;
+let _clockTimerSeq = 0;
+const _clockCallbacks = new Map<number, (beat: number) => void>();
+
+function getClockWorker(): Worker {
+  if (!_clockWorker) {
+    _clockWorker = new Worker(new URL('./clockWorker.ts', import.meta.url), { type: 'module' });
+    _clockWorker.onmessage = (ev: MessageEvent<{ type: string; id: number; beat: number }>) => {
+      if (ev.data.type === 'tick') {
+        _clockCallbacks.get(ev.data.id)?.(ev.data.beat);
+      }
+    };
+  }
+  return _clockWorker;
+}
+
 function makeClockTimer(getInterval: () => number, onTick: (beatIndex: number) => void) {
-  let beat = 0;
-  let timerId: ReturnType<typeof setTimeout> | null = null;
-  let expectedAt = 0;
-
-  const tick = () => {
-    onTick(beat++);
-    const interval = getInterval();
-    expectedAt += interval;
-    const now = performance.now();
-    // If we've fallen more than one interval behind (e.g. tab was backgrounded)
-    // resync instead of scheduling a cascade of immediate ticks.
-    if (now - expectedAt > interval) expectedAt = now;
-    timerId = setTimeout(tick, Math.max(0, expectedAt - now));
-  };
-
-  const start = () => {
-    if (timerId !== null) clearTimeout(timerId);
-    beat = 0;
-    const interval = getInterval();
-    expectedAt = performance.now() + interval;
-    timerId = setTimeout(tick, interval);
-  };
-
-  start();
+  const id = ++_clockTimerSeq;
+  _clockCallbacks.set(id, onTick);
+  const worker = getClockWorker();
+  worker.postMessage({ type: 'create', id, intervalMs: getInterval() });
 
   return {
-    restart: start,
-    destroy: () => { if (timerId !== null) { clearTimeout(timerId); timerId = null; } },
+    restart: () => worker.postMessage({ type: 'restart', id, intervalMs: getInterval() }),
+    destroy: () => {
+      worker.postMessage({ type: 'destroy', id });
+      _clockCallbacks.delete(id);
+    },
   };
 }
 
