@@ -315,7 +315,6 @@ function DrumVoicePanel({ module, knobDefs, onParamChange }: {
 }
 
 const PANEL_H = 300;
-const KEYBOARD_H = 540;
 const RAIL_H = 28;
 
 const NOTE_WHITES = [0, 2, 4, 5, 7, 9, 11];
