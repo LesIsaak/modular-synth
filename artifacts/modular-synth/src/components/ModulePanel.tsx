@@ -496,7 +496,7 @@ export default function ModulePanel({
         style={{
           height: RAIL_H, flexShrink: 0, display: 'flex', alignItems: 'center',
           justifyContent: 'space-between', padding: '0 5px',
-          cursor: 'grab', position: 'relative',
+          cursor: 'grab', position: 'relative', zIndex: 25,
           background: 'linear-gradient(180deg, #2c2c2c 0%, #1e1e1e 100%)',
           borderTop: `2px solid ${isMidiTarget ? '#22d3ee' : accent}`,
           borderBottom: '1px solid #0e0e0e',

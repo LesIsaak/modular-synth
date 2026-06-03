@@ -1421,7 +1421,7 @@ export default function SynthApp() {
             <div
               key={mod.id}
               className="absolute"
-              style={{ left: mod.x, top: mod.y, zIndex: 10 }}
+              style={{ left: mod.x, top: mod.y }}
               onMouseEnter={() => setFocusedModuleId(mod.id)}
               onMouseLeave={() => setFocusedModuleId(prev => prev === mod.id ? null : prev)}
             >
