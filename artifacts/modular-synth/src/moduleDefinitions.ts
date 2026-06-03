@@ -1069,6 +1069,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
       { id: 'sync',     name: 'SYNC', type: 'gate_in' },
       { id: 'gate_out', name: 'GATE', type: 'gate_out' },
       { id: 'inv_out',  name: 'INV',  type: 'gate_out' },
+      { id: 'clk_out',  name: 'CLK',  type: 'gate_out' },
     ],
   },
 

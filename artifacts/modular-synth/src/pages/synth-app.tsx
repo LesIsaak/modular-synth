@@ -774,8 +774,8 @@ export default function SynthApp() {
       const ftd = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
       const fp  = ftd?.ports.find(p => p.id === cable.fromPortId);
       if (fp?.type === 'gate_out') {
-        gateConnRef.current.get(cable.fromModuleId)?.delete(cable.toModuleId);
-        portGateMapRef.current.get(cable.fromModuleId)?.delete(cable.toModuleId);
+        gateConnRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
+        portGateMapRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
       } else {
         const fa = audioModulesRef.current.get(cable.fromModuleId);
         const ta = audioModulesRef.current.get(cable.toModuleId);
@@ -788,10 +788,11 @@ export default function SynthApp() {
       const ftd = MODULE_TYPE_MAP.get(snap.modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
       const fp  = ftd?.ports.find(p => p.id === cable.fromPortId);
       if (fp?.type === 'gate_out') {
-        if (!gateConnRef.current.has(cable.fromModuleId)) gateConnRef.current.set(cable.fromModuleId, new Set());
-        gateConnRef.current.get(cable.fromModuleId)!.add(cable.toModuleId);
-        if (!portGateMapRef.current.has(cable.fromModuleId)) portGateMapRef.current.set(cable.fromModuleId, new Map());
-        portGateMapRef.current.get(cable.fromModuleId)!.set(cable.toModuleId, cable.toPortId);
+        const gkUndo = `${cable.fromModuleId}:${cable.fromPortId}`;
+        if (!gateConnRef.current.has(gkUndo)) gateConnRef.current.set(gkUndo, new Set());
+        gateConnRef.current.get(gkUndo)!.add(cable.toModuleId);
+        if (!portGateMapRef.current.has(gkUndo)) portGateMapRef.current.set(gkUndo, new Map());
+        portGateMapRef.current.get(gkUndo)!.set(cable.toModuleId, cable.toPortId);
       } else {
         const fa = audioModulesRef.current.get(cable.fromModuleId);
         const ta = audioModulesRef.current.get(cable.toModuleId);
@@ -803,9 +804,9 @@ export default function SynthApp() {
     for (const mod of addedMods) {
       audioModulesRef.current.get(mod.id)?.destroy();
       audioModulesRef.current.delete(mod.id);
-      gateConnRef.current.delete(mod.id);
+      for (const k of [...gateConnRef.current.keys()]) if (k.startsWith(`${mod.id}:`)) gateConnRef.current.delete(k);
       for (const s of gateConnRef.current.values()) s.delete(mod.id);
-      portGateMapRef.current.delete(mod.id);
+      for (const k of [...portGateMapRef.current.keys()]) if (k.startsWith(`${mod.id}:`)) portGateMapRef.current.delete(k);
       for (const m of portGateMapRef.current.values()) m.delete(mod.id);
     }
     // Re-create modules that were deleted (in snapshot but not current)
@@ -864,8 +865,9 @@ export default function SynthApp() {
       const fromTypeDef = MODULE_TYPE_MAP.get(DEFAULT_MODULES.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
       const fromPort    = fromTypeDef?.ports.find(p => p.id === cable.fromPortId);
       if (fromPort?.type === 'gate_out') {
-        if (!gateConnRef.current.has(cable.fromModuleId)) gateConnRef.current.set(cable.fromModuleId, new Set());
-        gateConnRef.current.get(cable.fromModuleId)!.add(cable.toModuleId);
+        const gkInit = `${cable.fromModuleId}:${cable.fromPortId}`;
+        if (!gateConnRef.current.has(gkInit)) gateConnRef.current.set(gkInit, new Set());
+        gateConnRef.current.get(gkInit)!.add(cable.toModuleId);
       } else {
         const fromAudio = audioModulesRef.current.get(cable.fromModuleId);
         const toAudio   = audioModulesRef.current.get(cable.toModuleId);
@@ -888,7 +890,7 @@ export default function SynthApp() {
       freqNode.offset.value = on ? freq : 0;
     }
 
-    const connected = gateConnRef.current.get('kb1') ?? new Set<string>();
+    const connected = gateConnRef.current.get('kb1:gate_out') ?? new Set<string>();
     for (const id of connected) {
       const m = audioModulesRef.current.get(id);
       if (on) m?.noteOn?.(ctx.currentTime, freq);
@@ -950,7 +952,7 @@ export default function SynthApp() {
       }
       return prev.filter(c => c.fromModuleId !== moduleId && c.toModuleId !== moduleId);
     });
-    gateConnRef.current.delete(moduleId);
+    for (const k of [...gateConnRef.current.keys()]) if (k.startsWith(`${moduleId}:`)) gateConnRef.current.delete(k);
     for (const set of gateConnRef.current.values()) set.delete(moduleId);
     const audio = audioModulesRef.current.get(moduleId);
     if (audio) { audio.destroy(); audioModulesRef.current.delete(moduleId); }
@@ -1040,8 +1042,8 @@ export default function SynthApp() {
       const fromTypeDef = MODULE_TYPE_MAP.get(modules.find(m => m.id === fromModuleId)?.typeId ?? '');
       const fromPort    = fromTypeDef?.ports.find(p => p.id === fromPortId);
       if (fromPort?.type === 'gate_out') {
-        gateConnRef.current.get(fromModuleId)?.delete(moduleId);
-        portGateMapRef.current.get(fromModuleId)?.delete(moduleId);
+        gateConnRef.current.get(`${fromModuleId}:${fromPortId}`)?.delete(moduleId);
+        portGateMapRef.current.get(`${fromModuleId}:${fromPortId}`)?.delete(moduleId);
       } else {
         const fromAudio = audioModulesRef.current.get(fromModuleId);
         const toAudio   = audioModulesRef.current.get(moduleId);
@@ -1059,30 +1061,34 @@ export default function SynthApp() {
     };
 
     if (fromSig === 'gate') {
-      if (!gateConnRef.current.has(fromModuleId)) gateConnRef.current.set(fromModuleId, new Set());
-      gateConnRef.current.get(fromModuleId)!.add(moduleId);
+      const gk = `${fromModuleId}:${fromPortId}`;
+      if (!gateConnRef.current.has(gk)) gateConnRef.current.set(gk, new Set());
+      gateConnRef.current.get(gk)!.add(moduleId);
       // Track which port on the destination is connected (for per-port drum dispatch)
-      if (!portGateMapRef.current.has(fromModuleId)) portGateMapRef.current.set(fromModuleId, new Map());
-      portGateMapRef.current.get(fromModuleId)!.set(moduleId, portId);
-      // For self-clocking modules (arp, sequencers) register a trigger callback
+      if (!portGateMapRef.current.has(gk)) portGateMapRef.current.set(gk, new Map());
+      portGateMapRef.current.get(gk)!.set(moduleId, portId);
+      // For self-clocking modules register a per-port trigger callback
       const fromAudio = audioModulesRef.current.get(fromModuleId);
-      if (fromAudio?.setGateTrigger) {
-        fromAudio.setGateTrigger((on, freq) => {
-          const ctx = audioCtxRef.current;
-          if (!ctx) return;
-          for (const id of gateConnRef.current.get(fromModuleId) ?? []) {
-            const m = audioModulesRef.current.get(id);
-            const toPortId    = portGateMapRef.current.get(fromModuleId)?.get(id);
-            const portHandler = toPortId ? m?.portNoteOn?.get(toPortId) : undefined;
-            if (portHandler) {
-              if (on) portHandler(ctx.currentTime, freq);
-              // gate_in triggers are one-shot; no noteOff needed for drum voices
-            } else {
-              if (on) m?.noteOn?.(ctx.currentTime, freq);
-              else    m?.noteOff?.(ctx.currentTime);
-            }
+      const makeGateCb = (key: string) => (on: boolean, freq: number) => {
+        const ctx = audioCtxRef.current;
+        if (!ctx) return;
+        for (const id of gateConnRef.current.get(key) ?? []) {
+          const m = audioModulesRef.current.get(id);
+          const toPortId    = portGateMapRef.current.get(key)?.get(id);
+          const portHandler = toPortId ? m?.portNoteOn?.get(toPortId) : undefined;
+          if (portHandler) {
+            if (on) portHandler(ctx.currentTime, freq);
+            // gate_in triggers are one-shot; no noteOff needed for drum voices
+          } else {
+            if (on) m?.noteOn?.(ctx.currentTime, freq);
+            else    m?.noteOff?.(ctx.currentTime);
           }
-        });
+        }
+      };
+      if (fromAudio?.setPortGateTrigger) {
+        fromAudio.setPortGateTrigger(fromPortId, makeGateCb(gk));
+      } else if (fromAudio?.setGateTrigger) {
+        fromAudio.setGateTrigger(makeGateCb(gk));
       }
     } else {
       const fromAudio = audioModulesRef.current.get(fromModuleId);
@@ -1103,8 +1109,8 @@ export default function SynthApp() {
         const fromTypeDef = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
         const fromPort    = fromTypeDef?.ports.find(p => p.id === cable.fromPortId);
         if (fromPort?.type === 'gate_out') {
-          gateConnRef.current.get(cable.fromModuleId)?.delete(cable.toModuleId);
-          portGateMapRef.current.get(cable.fromModuleId)?.delete(cable.toModuleId);
+          gateConnRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
+          portGateMapRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
         } else {
           const fromAudio = audioModulesRef.current.get(cable.fromModuleId);
           const toAudio   = audioModulesRef.current.get(cable.toModuleId);
@@ -1125,7 +1131,8 @@ export default function SynthApp() {
       const fromTypeDef = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
       const fromPort    = fromTypeDef?.ports.find(p => p.id === cable.fromPortId);
       if (fromPort?.type === 'gate_out') {
-        gateConnRef.current.get(cable.fromModuleId)?.delete(cable.toModuleId);
+        gateConnRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
+        portGateMapRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
       } else {
         const fromAudio = audioModulesRef.current.get(cable.fromModuleId);
         const toAudio   = audioModulesRef.current.get(cable.toModuleId);
@@ -1143,7 +1150,8 @@ export default function SynthApp() {
     const fromTypeDef = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
     const fromPort    = fromTypeDef?.ports.find(p => p.id === cable.fromPortId);
     if (fromPort?.type === 'gate_out') {
-      gateConnRef.current.get(cable.fromModuleId)?.delete(cable.toModuleId);
+      gateConnRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
+      portGateMapRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
     } else {
       const fromAudio = audioModulesRef.current.get(cable.fromModuleId);
       const toAudio   = audioModulesRef.current.get(cable.toModuleId);
@@ -1268,7 +1276,7 @@ export default function SynthApp() {
     const audio    = audioModulesRef.current.get(moduleId);
     const freqNode = audio?.outputs.get('voct_out') as (AudioNode & { offset?: AudioParam }) | undefined;
     if (freqNode && 'offset' in freqNode && freqNode.offset) freqNode.offset.value = on ? freq : 0;
-    const connected = gateConnRef.current.get(moduleId);
+    const connected = gateConnRef.current.get(`${moduleId}:gate_out`);
     for (const id of connected ?? []) {
       const m = audioModulesRef.current.get(id);
       if (on) m?.noteOn?.(ctx.currentTime, freq);

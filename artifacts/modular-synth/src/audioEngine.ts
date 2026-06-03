@@ -8,6 +8,8 @@ export interface AudioModuleNodes {
   setSelector?: (selectorId: string, value: number) => void;
   /** For sequencers/clocks: called by the rack when gate cables connect */
   setGateTrigger?: (fn: ((on: boolean, freq: number) => void) | null) => void;
+  /** Per-port variant: allows modules with multiple gate_out ports to route differently */
+  setPortGateTrigger?: (portId: string, fn: (on: boolean, freq: number) => void) => void;
   destroy: () => void;
   /** Only present on the 'output' module — used for the VU meter */
   analyser?: AnalyserNode;
@@ -2282,6 +2284,7 @@ export function createAudioModule(
 
       let gateCb:    ((on: boolean, freq: number) => void) | null = null;
       let invGateCb: ((on: boolean, freq: number) => void) | null = null;
+      let clkCb:     ((on: boolean, freq: number) => void) | null = null;
       const stepRef = { value: 0 };
       let clockStep = 0;
 
@@ -2302,13 +2305,13 @@ export function createAudioModule(
         stepRef.value = step;
         clockStep++;
         const dur = getMs() * 0.4;
+        // CLK fires on every tick regardless of pattern
+        if (clkCb) { clkCb(true, 440); setTimeout(() => clkCb?.(false, 440), dur); }
         if (pattern[step]) {
           gateCb?.(true, 440);
           setTimeout(() => gateCb?.(false, 440), dur);
         } else {
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-          const cb = invGateCb as ((on: boolean, freq: number) => void) | null;
-          if (cb) { cb(true, 440); setTimeout(() => cb(false, 440), dur); }
+          if (invGateCb) { invGateCb(true, 440); setTimeout(() => invGateCb?.(false, 440), dur); }
         }
       };
 
@@ -2335,7 +2338,11 @@ export function createAudioModule(
           p[id] = val;
           if (id === 'div') restartTimer();
         },
-        setGateTrigger: fn => { gateCb = fn; },
+        setPortGateTrigger: (portId, fn) => {
+          if (portId === 'gate_out') gateCb = fn;
+          else if (portId === 'inv_out') invGateCb = fn;
+          else if (portId === 'clk_out') clkCb = fn;
+        },
         destroy: () => {
           timer.destroy();
           stepsCV.destroy(); fillCV.destroy(); shiftCV.destroy();
