@@ -624,14 +624,30 @@ export default function ModulePanel({
         borderRight: `1px solid ${isDrum ? '#1e1e1e' : '#242424'}`,
         overflow: 'hidden',
       }}>
-        {/* ── Drum machine: fully custom body ── */}
+        {/* ── Drum machine: patchable trigger ports strip + step grid ── */}
         {isDrum ? (
-          <DrumMachineGrid
-            module={module}
-            onParamChange={onParamChange}
-            onSelectorChange={onSelectorChange}
-            stepRef={moduleStepRef}
-          />
+          <>
+            {/* Port patch points — trigger inputs per voice + MIX output */}
+            <div style={{
+              flexShrink: 0, padding: '5px 8px 4px',
+              borderBottom: '1px solid #1c1c1c', background: '#0c0c0c',
+              display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap',
+            }}>
+              {inPorts.map(port => (
+                <PortWithLabel key={port.id} {...portProps(port)} />
+              ))}
+              <div style={{ flex: 1 }} />
+              {outPorts.map(port => (
+                <PortWithLabel key={port.id} {...portProps(port)} />
+              ))}
+            </div>
+            <DrumMachineGrid
+              module={module}
+              onParamChange={onParamChange}
+              onSelectorChange={onSelectorChange}
+              stepRef={moduleStepRef}
+            />
+          </>
         ) : (
           <>
             {/* Input ports */}

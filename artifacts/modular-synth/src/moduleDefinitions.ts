@@ -1090,7 +1090,13 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
     ],
     selectors: [{ id: 'play', name: 'PLAY', options: ['STOP','PLAY'], default: 0 }],
     ports: [
-      { id: 'out', name: 'MIX', type: 'audio_out' },
+      { id: 'kick_trig', name: 'K-TRG', type: 'gate_in' },
+      { id: 'snr_trig',  name: 'S-TRG', type: 'gate_in' },
+      { id: 'hhc_trig',  name: 'HC-T',  type: 'gate_in' },
+      { id: 'hho_trig',  name: 'HO-T',  type: 'gate_in' },
+      { id: 'clp_trig',  name: 'CL-T',  type: 'gate_in' },
+      { id: 'per_trig',  name: 'PR-T',  type: 'gate_in' },
+      { id: 'out',       name: 'MIX',   type: 'audio_out' },
     ],
   },
 ];

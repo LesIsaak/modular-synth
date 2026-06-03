@@ -13,6 +13,8 @@ export interface AudioModuleNodes {
   analyser?: AnalyserNode;
   /** Current sequencer step — polled by the UI at ~30 fps */
   stepRef?: { value: number };
+  /** Per-port gate handlers (e.g. individual drum voice triggers) */
+  portNoteOn?: Map<string, (time: number, freq?: number) => void>;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -2459,10 +2461,21 @@ export function createAudioModule(
         timer = makeClockTimer(getMs16, onTick);
       };
 
+      // Per-port trigger handlers — each voice can be fired by an external gate
+      const portNoteOn = new Map<string, (time: number, freq?: number) => void>([
+        ['kick_trig', () => fireKick()],
+        ['snr_trig',  () => fireSnare()],
+        ['hhc_trig',  () => fireHHC()],
+        ['hho_trig',  () => fireHHO()],
+        ['clp_trig',  () => fireClap()],
+        ['per_trig',  () => firePerc()],
+      ]);
+
       return {
         outputs: new Map([['out', master as AudioNode]]),
         inputs:  new Map(),
         stepRef,
+        portNoteOn,
         setParam: (id, val) => {
           p[id] = val;
           if (id.endsWith('_vol')) {

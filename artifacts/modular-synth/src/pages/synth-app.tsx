@@ -775,6 +775,7 @@ export default function SynthApp() {
       const fp  = ftd?.ports.find(p => p.id === cable.fromPortId);
       if (fp?.type === 'gate_out') {
         gateConnRef.current.get(cable.fromModuleId)?.delete(cable.toModuleId);
+        portGateMapRef.current.get(cable.fromModuleId)?.delete(cable.toModuleId);
       } else {
         const fa = audioModulesRef.current.get(cable.fromModuleId);
         const ta = audioModulesRef.current.get(cable.toModuleId);
@@ -789,6 +790,8 @@ export default function SynthApp() {
       if (fp?.type === 'gate_out') {
         if (!gateConnRef.current.has(cable.fromModuleId)) gateConnRef.current.set(cable.fromModuleId, new Set());
         gateConnRef.current.get(cable.fromModuleId)!.add(cable.toModuleId);
+        if (!portGateMapRef.current.has(cable.fromModuleId)) portGateMapRef.current.set(cable.fromModuleId, new Map());
+        portGateMapRef.current.get(cable.fromModuleId)!.set(cable.toModuleId, cable.toPortId);
       } else {
         const fa = audioModulesRef.current.get(cable.fromModuleId);
         const ta = audioModulesRef.current.get(cable.toModuleId);
@@ -802,6 +805,8 @@ export default function SynthApp() {
       audioModulesRef.current.delete(mod.id);
       gateConnRef.current.delete(mod.id);
       for (const s of gateConnRef.current.values()) s.delete(mod.id);
+      portGateMapRef.current.delete(mod.id);
+      for (const m of portGateMapRef.current.values()) m.delete(mod.id);
     }
     // Re-create modules that were deleted (in snapshot but not current)
     const removedMods = snap.modules.filter(m => !modules.find(p => p.id === m.id));
@@ -817,6 +822,8 @@ export default function SynthApp() {
   const audioCtxRef      = useRef<AudioContext | null>(null);
   const audioModulesRef  = useRef<Map<string, ReturnType<typeof createAudioModule>>>(new Map());
   const gateConnRef      = useRef<Map<string, Set<string>>>(new Map());
+  /** fromModuleId → Map<destModuleId, destPortId> — for per-port drum triggers */
+  const portGateMapRef   = useRef<Map<string, Map<string, string>>>(new Map());
   const portRefsRef      = useRef<Map<string, HTMLDivElement>>(new Map());
   const rackRef          = useRef<HTMLDivElement>(null);
   const dragRef          = useRef<{
@@ -1034,6 +1041,7 @@ export default function SynthApp() {
       const fromPort    = fromTypeDef?.ports.find(p => p.id === fromPortId);
       if (fromPort?.type === 'gate_out') {
         gateConnRef.current.get(fromModuleId)?.delete(moduleId);
+        portGateMapRef.current.get(fromModuleId)?.delete(moduleId);
       } else {
         const fromAudio = audioModulesRef.current.get(fromModuleId);
         const toAudio   = audioModulesRef.current.get(moduleId);
@@ -1053,6 +1061,9 @@ export default function SynthApp() {
     if (fromSig === 'gate') {
       if (!gateConnRef.current.has(fromModuleId)) gateConnRef.current.set(fromModuleId, new Set());
       gateConnRef.current.get(fromModuleId)!.add(moduleId);
+      // Track which port on the destination is connected (for per-port drum dispatch)
+      if (!portGateMapRef.current.has(fromModuleId)) portGateMapRef.current.set(fromModuleId, new Map());
+      portGateMapRef.current.get(fromModuleId)!.set(moduleId, portId);
       // For self-clocking modules (arp, sequencers) register a trigger callback
       const fromAudio = audioModulesRef.current.get(fromModuleId);
       if (fromAudio?.setGateTrigger) {
@@ -1061,8 +1072,15 @@ export default function SynthApp() {
           if (!ctx) return;
           for (const id of gateConnRef.current.get(fromModuleId) ?? []) {
             const m = audioModulesRef.current.get(id);
-            if (on) m?.noteOn?.(ctx.currentTime, freq);
-            else    m?.noteOff?.(ctx.currentTime);
+            const toPortId    = portGateMapRef.current.get(fromModuleId)?.get(id);
+            const portHandler = toPortId ? m?.portNoteOn?.get(toPortId) : undefined;
+            if (portHandler) {
+              if (on) portHandler(ctx.currentTime, freq);
+              // gate_in triggers are one-shot; no noteOff needed for drum voices
+            } else {
+              if (on) m?.noteOn?.(ctx.currentTime, freq);
+              else    m?.noteOff?.(ctx.currentTime);
+            }
           }
         });
       }
@@ -1086,6 +1104,7 @@ export default function SynthApp() {
         const fromPort    = fromTypeDef?.ports.find(p => p.id === cable.fromPortId);
         if (fromPort?.type === 'gate_out') {
           gateConnRef.current.get(cable.fromModuleId)?.delete(cable.toModuleId);
+          portGateMapRef.current.get(cable.fromModuleId)?.delete(cable.toModuleId);
         } else {
           const fromAudio = audioModulesRef.current.get(cable.fromModuleId);
           const toAudio   = audioModulesRef.current.get(cable.toModuleId);
