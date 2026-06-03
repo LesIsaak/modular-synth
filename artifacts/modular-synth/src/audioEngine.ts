@@ -2350,6 +2350,177 @@ export function createAudioModule(
       };
     }
 
+    // ── POLY STEP — 8-track polyrhythmic drum sequencer ─────────────────────────
+    case 'poly_step': {
+      const NTRACKS = 8;
+      const LEN_MAP = [4, 8, 12, 16] as const;
+
+      // CV input taps — sampled at each tick
+      const makeCVTap = () => {
+        const mix = ctx.createGain(); mix.gain.value = 1;
+        const tap = ctx.createAnalyser(); tap.fftSize = 32;
+        mix.connect(tap);
+        const buf = new Float32Array(1);
+        return {
+          input:   { node: mix as AudioNode },
+          read:    () => { tap.getFloatTimeDomainData(buf); return buf[0]; },
+          destroy: () => { mix.disconnect(); tap.disconnect(); },
+        };
+      };
+      const swingCv = makeCVTap();
+      const bpmCv   = makeCVTap();
+
+      // CV output nodes — per-track velocity + global position/step
+      const posNode  = ctx.createConstantSource(); posNode.offset.value  = 0; posNode.start();
+      const stepNode = ctx.createConstantSource(); stepNode.offset.value = 0; stepNode.start();
+      const velNodes = Array.from({ length: NTRACKS }, () => {
+        const n = ctx.createConstantSource(); n.offset.value = 0; n.start(); return n;
+      });
+
+      // Gate callbacks — keyed by output port id
+      const gateCbs = new Map<string, (on: boolean, freq: number) => void>();
+
+      // Runtime state
+      const trackPos = new Int32Array(NTRACKS);
+      const stepRef  = { value: 0 };
+      let running    = true;
+      let fillActive = false;
+      let clkStep    = 0;
+
+      const getMs      = () => Math.max(20, 60000 / Math.max(1, (p.bpm ?? 120) + bpmCv.read() * 120));
+      const getSwing   = () => Math.min(0.49, Math.max(0, (p.swing ?? 0) + swingCv.read() * 0.25));
+      const getGateLen = () => Math.max(0.05, Math.min(0.9, p.gate_len ?? 0.4));
+
+      const fire = (portId: string, dur: number, freq = 440) => {
+        const cb = gateCbs.get(portId);
+        if (!cb) return;
+        cb(true, freq); setTimeout(() => cb(false, freq), dur);
+      };
+
+      const doTick = () => {
+        const ms  = getMs();
+        const dur = ms * getGateLen();
+
+        // Clock passthrough — every tick
+        fire('clk_out', dur);
+
+        // Pack 8×4-bit track positions into stepRef for UI polling
+        let packed = 0;
+        for (let t = 0; t < NTRACKS; t++) packed |= (trackPos[t] << (t * 4));
+        stepRef.value = packed;
+
+        // Master position CV (track 1 length as the master)
+        const masterLenIdx = Math.max(0, Math.min(3, Math.round(p.t1_len ?? 3)));
+        const masterLen    = LEN_MAP[masterLenIdx];
+        const masterStep   = trackPos[0];
+        posNode.offset.value  = masterLen > 1 ? masterStep / (masterLen - 1) : 0;
+        stepNode.offset.value = masterStep / 15;
+
+        // Beat pulse on track-1 step 0
+        if (masterStep === 0) fire('beat_out', dur);
+
+        // Per-track processing
+        for (let t = 0; t < NTRACKS; t++) {
+          const tn    = t + 1;
+          const lenI  = Math.max(0, Math.min(3, Math.round(p[`t${tn}_len`] ?? (t < 2 ? 3 : 1))));
+          const len   = LEN_MAP[lenI];
+          const mask  = Math.round(p[`t${tn}`]     ?? 0) & 0xFFFF;
+          const acc   = Math.round(p[`t${tn}_acc`] ?? 0) & 0xFFFF;
+          const prob  = Math.min(1, Math.max(0, p[`t${tn}_prob`] ?? 1));
+          const muted = (p[`t${tn}_mute`] ?? 0) > 0.5;
+          const vel   = Math.min(1, Math.max(0.01, p[`t${tn}_vel`] ?? 0.8));
+          const step  = trackPos[t];
+          const bit   = 1 << step;
+          const isOn  = (mask & bit) !== 0;
+          const isAcc = (acc  & bit) !== 0;
+          const isEOC = step === len - 1;
+
+          // End-of-cycle outputs
+          if (isEOC) {
+            fire(`t${tn}_eoc`, dur);
+            if (t === 0) fire('eoc_out', dur); // track 1 = master EOC
+          }
+
+          // Velocity CV — non-zero only when step fires
+          velNodes[t].offset.value = isOn ? vel * (isAcc ? 1.0 : 0.6) : 0;
+
+          // Gate + accent — gated by mute and probability
+          if (!muted && isOn && Math.random() < prob) {
+            const freq = isAcc ? 880 : 440;
+            fire(`t${tn}_gate`, dur, freq);
+            if (isAcc || fillActive) fire(`t${tn}_acc`, dur, freq);
+          }
+
+          // Advance track step (wraps at track length)
+          trackPos[t] = (step + 1) % len;
+        }
+
+        clkStep++;
+      };
+
+      const tick = (beatIndex: number) => {
+        if ((p.clk_src ?? 0) > 0.5) return; // external clock mode
+        if (!running) return;
+        const swing = getSwing();
+        if (swing > 0.005 && beatIndex % 2 === 1) {
+          setTimeout(doTick, getMs() * swing);
+        } else {
+          doTick();
+        }
+      };
+
+      let timer = makeClockTimer(getMs, tick);
+
+      const outputs = new Map<string, AudioNode>([
+        ['pos_cv',  posNode  as AudioNode],
+        ['step_cv', stepNode as AudioNode],
+        ...velNodes.map((n, i) => [`t${i + 1}_vel`, n as AudioNode] as [string, AudioNode]),
+      ]);
+
+      const inputs = new Map([
+        ['swing_cv', swingCv.input],
+        ['bpm_cv',   bpmCv.input  ],
+      ]);
+
+      return {
+        outputs,
+        inputs,
+        stepRef,
+        portNoteOn: new Map([
+          // External clock: each rising edge advances one step
+          ['clk_in',  (_t: number, _f?: number) => {
+            if (!running) return;
+            const swing = getSwing();
+            if (swing > 0.005 && clkStep % 2 === 1) setTimeout(doTick, getMs() * swing);
+            else doTick();
+          }],
+          // Reset all tracks to step 0
+          ['rst_in',  () => {
+            for (let i = 0; i < NTRACKS; i++) trackPos[i] = 0;
+            clkStep = 0;
+            posNode.offset.value  = 0;
+            stepNode.offset.value = 0;
+            stepRef.value         = 0;
+          }],
+          // Toggle run/stop
+          ['run_in',  () => { running = !running; }],
+          // Toggle fill (all accent outputs fire on active steps)
+          ['fill_in', () => { fillActive = !fillActive; }],
+        ]),
+        setPortGateTrigger: (portId, fn) => { gateCbs.set(portId, fn); },
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'bpm') { timer.destroy(); timer = makeClockTimer(getMs, tick); }
+        },
+        destroy: () => {
+          timer.destroy();
+          posNode.stop(); stepNode.stop();
+          for (const n of velNodes) n.stop();
+          swingCv.destroy(); bpmCv.destroy();
+        },
+      };
+    }
+
     // ── Drum Machine (Erica Synths Techno System inspired) ──────────────────────
     case 'drum_machine': {
       const master = ctx.createGain(); master.gain.value = 0.8;

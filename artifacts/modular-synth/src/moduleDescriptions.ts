@@ -113,4 +113,5 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   // ─── Clock / Rhythm ─────────────────────────────────────────────────────────
   euclidean_trig: 'Euclidean rhythm generator. Distributes FILL trigger pulses as evenly as possible across STEPS using the Bjorklund algorithm. GATE fires on pattern hits, INV on rests, CLK on every tick regardless of pattern. CV inputs modulate all three pattern parameters; SYNC resets to step 1.',
   drum_machine:   '6-voice analog-modeled drum machine with Kick, Snare, Closed HH, Open HH, Clap, and Perc. Each voice has its own trigger input, per-voice audio output, and synthesis knobs. MIX outputs all voices summed.',
+  poly_step:      '8-track polyrhythmic step sequencer with massive I/O. Each track has independent step length (4/8/12/16), per-step accent (right-click), probability, mute, and velocity. Outputs: per-track gate, accent gate, velocity CV, and end-of-cycle gate — plus global clock, beat, EOC, position CV, and step CV. External clock, reset, run/stop, and fill gate inputs. Click a track label to randomize its pattern; right-click to clear it.',
 };

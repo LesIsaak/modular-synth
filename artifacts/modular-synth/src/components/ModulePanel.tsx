@@ -4,6 +4,7 @@ import { MODULE_TYPE_MAP } from '../moduleDefinitions';
 import Knob from './Knob';
 import PortJack from './PortJack';
 import ModuleInfoPopup from './ModuleInfoPopup';
+import PolyStepPanel from './PolyStepPanel';
 
 interface ModulePanelProps {
   module: ModuleInstance;
@@ -447,9 +448,10 @@ export default function ModulePanel({
 
   if (!typeDef) return null;
 
-  const isOutput = module.typeId === 'output';
-  const isDrum   = module.typeId === 'drum_machine';
-  const isEuc    = module.typeId === 'euclidean_trig';
+  const isOutput   = module.typeId === 'output';
+  const isDrum     = module.typeId === 'drum_machine';
+  const isEuc      = module.typeId === 'euclidean_trig';
+  const isPolyStep = module.typeId === 'poly_step';
   const panelH   = typeDef.height ?? PANEL_H;
   const bodyH    = panelH - RAIL_H * 2;
 
@@ -620,6 +622,55 @@ export default function ModulePanel({
                   <PortWithLabel key={port.id} {...portProps(port)} />
                 ))}
               </div>
+            </div>
+          </>
+        ) : isPolyStep ? (
+          <>
+            {/* Input ports */}
+            <div style={{ flexShrink: 0, padding: '5px 6px 4px' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 3px' }}>
+                {inPorts.map(port => <PortWithLabel key={port.id} {...portProps(port)} />)}
+              </div>
+              <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #2a2a2a, transparent)', margin: '4px 0 0' }} />
+            </div>
+
+            {/* 8-track sequencer grid */}
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              <PolyStepPanel
+                module={module}
+                knobDefs={typeDef.knobs}
+                onParamChange={onParamChange}
+                stepRef={moduleStepRef}
+              />
+            </div>
+
+            {/* Output ports in labeled groups */}
+            <div style={{ flexShrink: 0, padding: '3px 6px 6px' }}>
+              <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #2a2a2a, transparent)', margin: '0 0 3px' }} />
+              {(
+                [
+                  { label: 'GATE', ids: ['t1_gate','t2_gate','t3_gate','t4_gate','t5_gate','t6_gate','t7_gate','t8_gate','clk_out','beat_out','eoc_out'] },
+                  { label: 'ACC',  ids: ['t1_acc','t2_acc','t3_acc','t4_acc','t5_acc','t6_acc','t7_acc','t8_acc'] },
+                  { label: 'VEL',  ids: ['t1_vel','t2_vel','t3_vel','t4_vel','t5_vel','t6_vel','t7_vel','t8_vel','pos_cv','step_cv'] },
+                  { label: 'EOC',  ids: ['t1_eoc','t2_eoc','t3_eoc','t4_eoc','t5_eoc','t6_eoc','t7_eoc','t8_eoc'] },
+                ] as { label: string; ids: string[] }[]
+              ).map(group => {
+                const grpPorts = group.ids.flatMap(id => {
+                  const port = outPorts.find(p => p.id === id);
+                  return port ? [port] : [];
+                });
+                if (!grpPorts.length) return null;
+                return (
+                  <div key={group.label} style={{ marginBottom: 2 }}>
+                    <span style={{ fontSize: 5.5, color: '#363636', textTransform: 'uppercase', letterSpacing: '0.12em', paddingLeft: 1 }}>
+                      {group.label}
+                    </span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 2px' }}>
+                      {grpPorts.map(port => <PortWithLabel key={port.id} {...portProps(port)} />)}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </>
         ) : (
