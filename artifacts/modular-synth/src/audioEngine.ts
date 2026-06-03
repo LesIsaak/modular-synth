@@ -142,12 +142,34 @@ let _clockWorker: Worker | null = null;
 let _clockTimerSeq = 0;
 const _clockCallbacks = new Map<number, (beat: number) => void>();
 
+// Scheduled AudioContext time for the tick currently being processed.
+// Set to the exact beat time before each tick callback fires, reset to 0 after.
+// Voice fire functions read this instead of ctx.currentTime so that late-arriving
+// Worker messages (due to main-thread React renders) don't cause audible timing drift.
+let _currentTickAudioTime = 0;
+
+// Cached AudioContext reference — set on first createAudioModule call.
+let _timingCtx: AudioContext | null = null;
+
+/** Returns the AudioContext time for the tick currently being processed (0 outside a tick). */
+export function getCurrentTickAudioTime(): number { return _currentTickAudioTime; }
+
 function getClockWorker(): Worker {
   if (!_clockWorker) {
     _clockWorker = new Worker(new URL('./clockWorker.ts', import.meta.url), { type: 'module' });
-    _clockWorker.onmessage = (ev: MessageEvent<{ type: string; id: number; beat: number }>) => {
+    _clockWorker.onmessage = (ev: MessageEvent<{ type: string; id: number; beat: number; scheduledAt: number }>) => {
       if (ev.data.type === 'tick') {
+        if (_timingCtx) {
+          // Convert performance.now() timestamp → AudioContext time.
+          // The two clocks have a stable offset once the context is running.
+          const perfNowS   = performance.now() / 1000;
+          const offset     = _timingCtx.currentTime - perfNowS;
+          const scheduled  = ev.data.scheduledAt / 1000 + offset;
+          // Clamp: can't schedule in the past; add 1 ms grace so tiny rounding never fires negative.
+          _currentTickAudioTime = Math.max(_timingCtx.currentTime + 0.001, scheduled);
+        }
         _clockCallbacks.get(ev.data.id)?.(ev.data.beat);
+        _currentTickAudioTime = 0;
       }
     };
   }
@@ -175,6 +197,7 @@ export function createAudioModule(
   typeId: string,
   params: Record<string, number>,
 ): AudioModuleNodes {
+  _timingCtx = ctx; // keep reference current so the Worker handler can convert timestamps
   const p = { ...params };
 
   switch (typeId) {
@@ -2570,7 +2593,7 @@ export function createAudioModule(
 
       // ── Parametric synthesis voices ─────────────────────────────────
       const fireKick = () => {
-        const t     = ctx.currentTime;
+        const t     = _currentTickAudioTime || ctx.currentTime;
         const tune  = p.kick_tune  ?? 0.5;   // 0-1
         const decay = p.kick_decay ?? 0.5;   // s
         const punch = p.kick_punch ?? 0.65;  // 0-1 pitch sweep depth
@@ -2613,7 +2636,7 @@ export function createAudioModule(
       };
 
       const fireSnare = () => {
-        const t     = ctx.currentTime;
+        const t     = _currentTickAudioTime || ctx.currentTime;
         const tune  = p.snr_tune  ?? 190;    // body Hz
         const snap  = p.snr_snap  ?? 0.7;    // noise level
         const decay = p.snr_decay ?? 0.18;   // s
@@ -2643,7 +2666,7 @@ export function createAudioModule(
       // Helper: metallic body component (pitched sub-oscillator added to HH voices)
       const makeHHBody = (freq: number, bodyAmt: number, dur: number, dest: GainNode) => {
         if (bodyAmt < 0.01) return;
-        const t = ctx.currentTime;
+        const t = _currentTickAudioTime || ctx.currentTime;
         const osc = ctx.createOscillator(); osc.type = 'square';
         osc.frequency.value = freq;
         const g = ctx.createGain();
@@ -2653,7 +2676,7 @@ export function createAudioModule(
       };
 
       const fireHHC = () => {
-        const t     = ctx.currentTime;
+        const t     = _currentTickAudioTime || ctx.currentTime;
         const tone  = p.hhc_tone  ?? 7500;   // HP Hz
         const decay = p.hhc_decay ?? 0.04;   // s
         const body  = p.hhc_body  ?? 0.15;   // metallic body amount
@@ -2672,7 +2695,7 @@ export function createAudioModule(
       };
 
       const fireHHO = () => {
-        const t     = ctx.currentTime;
+        const t     = _currentTickAudioTime || ctx.currentTime;
         const tone  = p.hho_tone  ?? 6000;   // HP Hz
         const decay = p.hho_decay ?? 0.35;   // s
         const body  = p.hho_body  ?? 0.15;   // metallic body amount
@@ -2691,7 +2714,7 @@ export function createAudioModule(
       };
 
       const fireClap = () => {
-        const t     = ctx.currentTime;
+        const t     = _currentTickAudioTime || ctx.currentTime;
         const tune  = p.clp_tune  ?? 1400;   // BP Hz
         const snap  = p.clp_snap  ?? 0.8;    // layer spread (0-1)
         const decay = p.clp_decay ?? 0.2;    // s
@@ -2712,7 +2735,7 @@ export function createAudioModule(
       };
 
       const firePerc = () => {
-        const t     = ctx.currentTime;
+        const t     = _currentTickAudioTime || ctx.currentTime;
         const tune  = p.per_tune  ?? 300;    // start Hz
         const decay = p.per_decay ?? 0.15;   // s
         const sweep = p.per_sweep ?? 0.5;    // pitch env depth

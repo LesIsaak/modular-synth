@@ -4,7 +4,7 @@ import {
   MODULE_TYPE_MAP, CATEGORY_ORDER, CATEGORY_LABELS, CATEGORY_COLORS,
   CABLE_COLORS, getDefaultParams, MODULE_TYPES,
 } from '../moduleDefinitions';
-import { createAudioModule, connectAudioPorts, disconnectAudioPorts } from '../audioEngine';
+import { createAudioModule, connectAudioPorts, disconnectAudioPorts, getCurrentTickAudioTime } from '../audioEngine';
 import ModulePanel from '../components/ModulePanel';
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
@@ -1109,11 +1109,11 @@ export default function SynthApp() {
           const toPortId    = portGateMapRef.current.get(key)?.get(id);
           const portHandler = toPortId ? m?.portNoteOn?.get(toPortId) : undefined;
           if (portHandler) {
-            if (on) portHandler(ctx.currentTime, freq);
+            if (on) portHandler(getCurrentTickAudioTime() || ctx.currentTime, freq);
             // gate_in triggers are one-shot; no noteOff needed for drum voices
           } else {
-            if (on) m?.noteOn?.(ctx.currentTime, freq);
-            else    m?.noteOff?.(ctx.currentTime);
+            if (on) m?.noteOn?.(getCurrentTickAudioTime() || ctx.currentTime, freq);
+            else    m?.noteOff?.(getCurrentTickAudioTime() || ctx.currentTime);
           }
         }
       };

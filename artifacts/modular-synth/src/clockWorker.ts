@@ -21,7 +21,8 @@ function schedule(id: number, entry: Entry) {
   entry.timerId = setTimeout(() => {
     const e = timers.get(id);
     if (!e) return;
-    (self as unknown as Worker).postMessage({ type: 'tick', id, beat: e.beat++ });
+    const scheduledAt = e.expectedAt; // when this tick was MEANT to fire
+    (self as unknown as Worker).postMessage({ type: 'tick', id, beat: e.beat++, scheduledAt });
     e.expectedAt += e.intervalMs;
     const nowAfter = performance.now();
     // Resync if we've fallen more than one interval behind (backgrounded tab, etc.)
