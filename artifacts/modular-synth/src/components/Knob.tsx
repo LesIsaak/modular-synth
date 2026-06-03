@@ -20,9 +20,16 @@ function formatValue(value: number, def: KnobDef): string {
 
 export default function Knob({ def, value, onChange, size = 'md' }: KnobProps) {
   const [showValue, setShowValue] = useState(false);
-  const dragging = useRef(false);
-  const startY = useRef(0);
-  const startVal = useRef(0);
+
+  // Local drag state — knob renders from this during drag so the parent never
+  // needs to re-render just for visual feedback.
+  const [localValue, setLocalValue] = useState<number | null>(null);
+
+  const dragging      = useRef(false);
+  const startY        = useRef(0);
+  const startVal      = useRef(0);
+  const rafId         = useRef(0);
+  const pendingVal    = useRef<number | null>(null);
 
   const toNorm = (v: number) => {
     if (def.log) {
@@ -43,7 +50,9 @@ export default function Knob({ def, value, onChange, size = 'md' }: KnobProps) {
     return def.min + clamped * (def.max - def.min);
   };
 
-  const norm = toNorm(value);
+  // Display from local drag state while dragging, otherwise from prop
+  const displayValue = localValue !== null ? localValue : value;
+  const norm  = toNorm(displayValue);
   const angle = norm * 270 - 135;
 
   const sizeMap = { sm: 32, md: 40, lg: 48 };
@@ -53,26 +62,48 @@ export default function Knob({ def, value, onChange, size = 'md' }: KnobProps) {
     e.preventDefault();
     e.stopPropagation();
     dragging.current = true;
-    startY.current = e.clientY;
+    startY.current   = e.clientY;
     startVal.current = value;
     setShowValue(true);
 
     const onMove = (ev: MouseEvent) => {
       if (!dragging.current) return;
-      const dy = startY.current - ev.clientY;
-      const range = def.max - def.min;
+      const dy         = startY.current - ev.clientY;
       const sensitivity = def.log ? 1.5 : 1;
-      const normDelta = (dy / 150) * sensitivity;
-      const newNorm = Math.max(0, Math.min(1, toNorm(startVal.current) + normDelta));
-      let newVal = fromNorm(newNorm);
+      const normDelta  = (dy / 150) * sensitivity;
+      const newNorm    = Math.max(0, Math.min(1, toNorm(startVal.current) + normDelta));
+      let newVal       = fromNorm(newNorm);
       if (def.step) newVal = Math.round(newVal / def.step) * def.step;
       newVal = Math.max(def.min, Math.min(def.max, newVal));
-      onChange(newVal);
+
+      // Visual: update local state immediately — only this Knob re-renders, not the parent
+      setLocalValue(newVal);
+      pendingVal.current = newVal;
+
+      // Parent onChange: at most once per animation frame to avoid flooding React
+      if (!rafId.current) {
+        rafId.current = requestAnimationFrame(() => {
+          rafId.current = 0;
+          if (pendingVal.current !== null) {
+            onChange(pendingVal.current);
+            pendingVal.current = null;
+          }
+        });
+      }
     };
 
     const onUp = () => {
       dragging.current = false;
       setShowValue(false);
+      setLocalValue(null);  // hand control back to prop
+
+      // Flush any pending RAF and commit the final value
+      if (rafId.current) { cancelAnimationFrame(rafId.current); rafId.current = 0; }
+      if (pendingVal.current !== null) {
+        onChange(pendingVal.current);
+        pendingVal.current = null;
+      }
+
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
@@ -146,7 +177,7 @@ export default function Knob({ def, value, onChange, size = 'md' }: KnobProps) {
       <div className="h-3 flex items-center justify-center">
         {showValue ? (
           <span className="text-[9px] text-orange-400 font-mono tabular-nums whitespace-nowrap">
-            {formatValue(value, def)}{def.unit && def.unit !== 'Hz' && def.unit !== 's' && def.unit !== 'ct' ? ` ${def.unit}` : ''}
+            {formatValue(displayValue, def)}{def.unit && def.unit !== 'Hz' && def.unit !== 's' && def.unit !== 'ct' ? ` ${def.unit}` : ''}
           </span>
         ) : (
           <span className="text-[9px] text-gray-500 uppercase tracking-widest">{def.name}</span>
