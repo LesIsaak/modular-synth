@@ -162,7 +162,7 @@ function PatchCables({
       className="absolute top-0 left-0 pointer-events-none"
       width={CONTENT_W}
       height={CONTENT_H}
-      style={{ zIndex: 20 }}
+      style={{ zIndex: 30 }}
     >
       <defs>
         {cables.map(c => (
