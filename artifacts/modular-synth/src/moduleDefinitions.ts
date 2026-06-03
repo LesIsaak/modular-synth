@@ -1082,6 +1082,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
       { id: 'gate_len',   name: 'GATE',   min: 0.05,max: 0.95,  default: 0.4 },
       { id: 'clk_src',    name: 'CLK',    min: 0,   max: 1,     default: 0, step: 1 },
       { id: 'global_len', name: 'LENGTH', min: 0,   max: 3,     default: 3, step: 1 },
+      { id: 'transport',  name: 'TRANS',  min: 0,   max: 2,     default: 1, step: 1 },
       // Step masks (per track)
       { id: 't1', name: 'T1', min: 0, max: 65535, default: 4369, step: 1 },
       { id: 't2', name: 'T2', min: 0, max: 65535, default: 4112, step: 1 },

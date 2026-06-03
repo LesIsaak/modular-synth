@@ -53,6 +53,35 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
         padding: '0 10px', borderBottom: '1px solid #1e1e1e',
         background: '#131313',
       }}>
+        {/* Play / Pause / Stop */}
+        {(
+          [
+            { val: 1, label: '▶', title: 'Play',  active: '#4ade80', activeText: '#000' },
+            { val: 2, label: '⏸', title: 'Pause', active: '#facc15', activeText: '#000' },
+            { val: 0, label: '■', title: 'Stop',  active: '#f87171', activeText: '#000' },
+          ] as { val: number; label: string; title: string; active: string; activeText: string }[]
+        ).map(btn => {
+          const isActive = Math.round(p.transport ?? 1) === btn.val;
+          return (
+            <button
+              key={btn.val}
+              title={btn.title}
+              onMouseDown={e => e.stopPropagation()}
+              onClick={() => set('transport', btn.val)}
+              style={{
+                width: 28, height: 22, fontSize: 11,
+                padding: 0, borderRadius: 4, cursor: 'pointer',
+                background: isActive ? btn.active : '#1a1a1a',
+                color:      isActive ? btn.activeText : '#333',
+                border: `1px solid ${isActive ? btn.active : '#252525'}`,
+                lineHeight: 1,
+              }}
+            >{btn.label}</button>
+          );
+        })}
+
+        <div style={{ width: 1, height: 24, background: '#252525', flexShrink: 0 }} />
+
         {bpmDef && (
           <Knob def={bpmDef} value={p.bpm ?? 120} onChange={v => set('bpm', v)} size="sm" />
         )}

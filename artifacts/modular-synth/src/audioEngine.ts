@@ -2510,6 +2510,17 @@ export function createAudioModule(
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'bpm') { timer.destroy(); timer = makeClockTimer(getMs, tick); }
+          if (id === 'transport') {
+            if (val >= 1 && val < 2) {
+              running = true;                                        // play
+            } else if (val >= 2) {
+              running = false;                                       // pause — keep position
+            } else {
+              running = false;                                       // stop — reset to start
+              for (let i = 0; i < NTRACKS; i++) trackPos[i] = 0;
+              clkStep = 0; stepRef.value = 0;
+            }
+          }
         },
         destroy: () => {
           timer.destroy();
