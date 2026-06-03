@@ -1213,11 +1213,16 @@ export function createAudioModule(
       const heldNotes: number[] = [];   // freqs in play order
       let lastNoteFreq = 0;
       let stepIdx = 0;
-      let gateCb: ((on: boolean, freq: number) => void) | null = null;
+      let gateCb:    ((on: boolean, freq: number) => void) | null = null;
+      let accentCb:  ((on: boolean, freq: number) => void) | null = null;
       // Extra state for new modes
       let zigzagPos = 0;
       let zigzagUp  = true;
       let shuffledSeq: number[] = [];
+      // Swing / accent counters
+      let globalBeat   = 0;  // every timer tick (for swing odd/even)
+      let accentBeat   = 0;  // every fired step (for accent division)
+      const ACCENT_DIVS = [0, 2, 3, 4, 6, 8]; // maps selector index → divisor
 
       // div selector: 1/16 1/8 1/4 1/2 1/1  → beat fractions
       const DIV_MULTS = [0.25, 0.5, 1, 2, 4];
@@ -1326,12 +1331,31 @@ export function createAudioModule(
       };
 
       const tick = () => {
-        const freq = getNextFreq();
-        if (freq === null) return;
-        voct.offset.value = freq;
-        gateCb?.(true, freq);
-        const gl = Math.min(0.95, p.gate_len ?? 0.5);
-        setTimeout(() => gateCb?.(false, freq), getStepMs() * gl);
+        const beat   = globalBeat++;
+        const stepMs = getStepMs();
+        // Swing: delay odd beats
+        const swingDelay = (beat % 2 === 1) ? (p.swing ?? 0) * stepMs : 0;
+
+        setTimeout(() => {
+          // Chance: skip this step probabilistically
+          if (Math.random() > (p.chance ?? 1)) return;
+
+          const freq = getNextFreq();
+          if (freq === null) return;
+
+          voct.offset.value = freq;
+          gateCb?.(true, freq);
+          const gl = Math.min(0.95, p.gate_len ?? 0.5);
+          setTimeout(() => gateCb?.(false, freq), stepMs * gl);
+
+          // Accent: fire accent_out every Nth step
+          const accentDiv = ACCENT_DIVS[Math.round(p.accent ?? 0)] ?? 0;
+          if (accentDiv > 0 && accentBeat % accentDiv === 0) {
+            accentCb?.(true, freq);
+            setTimeout(() => accentCb?.(false, freq), stepMs * gl * 0.5);
+          }
+          accentBeat++;
+        }, swingDelay);
       };
 
       let timer = makeClockTimer(getStepMs, tick);
@@ -1347,10 +1371,11 @@ export function createAudioModule(
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'bpm') { timer.updateInterval(); }
-          if (id === 'div') { resetModeState(); timer.updateInterval(); }
+          if (id === 'div') { resetModeState(); globalBeat = 0; accentBeat = 0; timer.updateInterval(); }
         },
-        setSelector: (id, val) => { p[id] = val; resetModeState(); },
+        setSelector: (id, val) => { p[id] = val; resetModeState(); globalBeat = 0; accentBeat = 0; },
         setGateTrigger: fn => { gateCb = fn; },
+        setPortGateTrigger: (portId, fn) => { if (portId === 'accent_out') accentCb = fn; else gateCb = fn; },
         destroy: () => { timer.destroy(); voct.stop(); voct.disconnect(); },
       };
     }

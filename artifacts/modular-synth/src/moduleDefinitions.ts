@@ -554,18 +554,22 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
   {
     id: 'arpeggiator', name: 'ARPEGGIATOR', category: 'sequencer', accentColor: SEQ, width: 280,
     knobs: [
-      { id: 'bpm',      name: 'BPM',  min: 40,   max: 300,  default: 120, step: 1 },
-      { id: 'gate_len', name: 'GATE', min: 0.05, max: 0.95, default: 0.5 },
-      { id: 'octaves',  name: 'OCT',  min: 1,    max: 4,    default: 1, step: 1 },
+      { id: 'bpm',      name: 'BPM',    min: 40,   max: 300,  default: 120, step: 1 },
+      { id: 'gate_len', name: 'GATE',   min: 0.05, max: 0.95, default: 0.5 },
+      { id: 'octaves',  name: 'OCT',    min: 1,    max: 4,    default: 1, step: 1 },
+      { id: 'swing',    name: 'SWING',  min: 0,    max: 0.7,  default: 0 },
+      { id: 'chance',   name: 'CHANCE', min: 0,    max: 1,    default: 1 },
     ],
     selectors: [
-      { id: 'mode', name: 'MODE', options: ['UP','DOWN','U/D','D/U','RAND','PLAY','OUT→IN','IN→OUT','UP×2','R.WLK','DWN×2','SKIP','×3','PEDAL','ZIGZAG','SHUF'], default: 0 },
-      { id: 'div',  name: 'DIV',  options: ['1/16','1/8','1/4','1/2','1/1'], default: 1 },
+      { id: 'mode',   name: 'MODE',   options: ['UP','DOWN','U/D','D/U','RAND','PLAY','OUT→IN','IN→OUT','UP×2','R.WLK','DWN×2','SKIP','×3','PEDAL','ZIGZAG','SHUF'], default: 0 },
+      { id: 'div',    name: 'DIV',    options: ['1/16','1/8','1/4','1/2','1/1'], default: 1 },
+      { id: 'accent', name: 'ACCENT', options: ['OFF','÷2','÷3','÷4','÷6','÷8'], default: 0 },
     ],
     ports: [
-      { id: 'gate_in',  name: 'GATE',  type: 'gate_in'  },
-      { id: 'voct_out', name: 'V/OCT', type: 'cv_out'   },
-      { id: 'gate_out', name: 'GATE',  type: 'gate_out' },
+      { id: 'gate_in',    name: 'GATE',   type: 'gate_in'  },
+      { id: 'voct_out',   name: 'V/OCT',  type: 'cv_out'   },
+      { id: 'gate_out',   name: 'GATE',   type: 'gate_out' },
+      { id: 'accent_out', name: 'ACCENT', type: 'gate_out' },
     ],
   },
 
