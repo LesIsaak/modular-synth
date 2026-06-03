@@ -901,43 +901,47 @@ export function createAudioModule(
           ['retrig_in', { node: cv }],
         ]),
         noteOn: (time, _freq) => {
-          gateOpen = true; noteOnTime = time;
-          const a = p.attack ?? 0.01, d = p.decay ?? 0.1, s = p.sustain ?? 0.7;
-          cv.offset.cancelScheduledValues(time);
-          cv.offset.setValueAtTime(0, time);
-          cv.offset.linearRampToValueAtTime(1, time + a);
-          cv.offset.linearRampToValueAtTime(s, time + a + d);
-          eoc.offset.setValueAtTime(1, time + a + d); eoc.offset.setValueAtTime(0, time + a + d + 0.01);
+          try {
+            gateOpen = true; noteOnTime = time;
+            const a = p.attack ?? 0.01, d = p.decay ?? 0.1, s = p.sustain ?? 0.7;
+            cv.offset.cancelScheduledValues(time);
+            cv.offset.setValueAtTime(0, time);
+            cv.offset.linearRampToValueAtTime(1, time + a);
+            cv.offset.linearRampToValueAtTime(s, time + a + d);
+            eoc.offset.setValueAtTime(1, time + a + d); eoc.offset.setValueAtTime(0, time + a + d + 0.01);
+          } catch (_) {}
         },
         noteOff: (time) => {
-          gateOpen = false;
-          const r = p.release ?? 0.3;
-          cv.offset.cancelScheduledValues(time);
-          cv.offset.setValueAtTime(cv.offset.value, time);
-          cv.offset.linearRampToValueAtTime(0, time + r);
+          try {
+            gateOpen = false;
+            const r = p.release ?? 0.3;
+            cv.offset.cancelScheduledValues(time);
+            cv.offset.setValueAtTime(cv.offset.value, time);
+            cv.offset.linearRampToValueAtTime(0, time + r);
+          } catch (_) {}
         },
         setParam: (id, val) => {
           p[id] = val;
           if (!gateOpen) return;
-          const now = ctx.currentTime;
-          const a = p.attack ?? 0.01, d = p.decay ?? 0.1;
-          const inSustain = now >= noteOnTime + a + d;
-          if (id === 'sustain' && inSustain) {
-            cv.offset.cancelScheduledValues(now);
-            cv.offset.linearRampToValueAtTime(val, now + 0.015);
-          } else if ((id === 'attack' || id === 'decay') && !inSustain) {
-            // Re-schedule A+D from current value toward sustain with remaining time
-            const elapsed = now - noteOnTime;
-            const s = p.sustain ?? 0.7;
-            const fullEnd = noteOnTime + (p.attack ?? 0.01) + (p.decay ?? 0.1);
-            if (fullEnd > now) {
+          try {
+            const now = ctx.currentTime;
+            const a = p.attack ?? 0.01, d = p.decay ?? 0.1;
+            const inSustain = now >= noteOnTime + a + d;
+            if (id === 'sustain' && inSustain) {
               cv.offset.cancelScheduledValues(now);
-              cv.offset.setValueAtTime(cv.offset.value, now);
-              cv.offset.linearRampToValueAtTime(s, fullEnd);
+              cv.offset.linearRampToValueAtTime(val, now + 0.015);
+            } else if ((id === 'attack' || id === 'decay') && !inSustain) {
+              const s = p.sustain ?? 0.7;
+              const fullEnd = noteOnTime + (p.attack ?? 0.01) + (p.decay ?? 0.1);
+              if (fullEnd > now) {
+                cv.offset.cancelScheduledValues(now);
+                cv.offset.setValueAtTime(cv.offset.value, now);
+                cv.offset.linearRampToValueAtTime(s, fullEnd);
+              }
             }
-          }
+          } catch (_) {}
         },
-        destroy: () => { cv.stop(); cv.disconnect(); eoc.stop(); eoc.disconnect(); },
+        destroy: () => { try { cv.stop(); } catch(_){} cv.disconnect(); try { eoc.stop(); } catch(_){} eoc.disconnect(); },
       };
     }
 
@@ -954,21 +958,25 @@ export function createAudioModule(
           ['retrig_in', { node: cv }],
         ]),
         noteOn: (time, _freq) => {
-          gateOpen = true; noteOnTime = time;
-          const a = p.attack ?? 0.01, h = p.hold ?? 0.05, d = p.decay ?? 0.15, s = p.sustain ?? 0.6;
-          cv.offset.cancelScheduledValues(time);
-          cv.offset.setValueAtTime(0, time);
-          cv.offset.linearRampToValueAtTime(1, time + a);
-          cv.offset.setValueAtTime(1, time + a + h);
-          cv.offset.linearRampToValueAtTime(s, time + a + h + d);
-          eoc.offset.setValueAtTime(1, time + a + h + d); eoc.offset.setValueAtTime(0, time + a + h + d + 0.01);
+          try {
+            gateOpen = true; noteOnTime = time;
+            const a = p.attack ?? 0.01, h = p.hold ?? 0.05, d = p.decay ?? 0.15, s = p.sustain ?? 0.6;
+            cv.offset.cancelScheduledValues(time);
+            cv.offset.setValueAtTime(0, time);
+            cv.offset.linearRampToValueAtTime(1, time + a);
+            cv.offset.setValueAtTime(1, time + a + h);
+            cv.offset.linearRampToValueAtTime(s, time + a + h + d);
+            eoc.offset.setValueAtTime(1, time + a + h + d); eoc.offset.setValueAtTime(0, time + a + h + d + 0.01);
+          } catch (_) {}
         },
         noteOff: (time) => {
-          gateOpen = false;
-          const r = p.release ?? 0.4;
-          cv.offset.cancelScheduledValues(time);
-          cv.offset.setValueAtTime(cv.offset.value, time);
-          cv.offset.linearRampToValueAtTime(0, time + r);
+          try {
+            gateOpen = false;
+            const r = p.release ?? 0.4;
+            cv.offset.cancelScheduledValues(time);
+            cv.offset.setValueAtTime(cv.offset.value, time);
+            cv.offset.linearRampToValueAtTime(0, time + r);
+          } catch (_) {}
         },
         setParam: (id, val) => {
           p[id] = val;
@@ -981,7 +989,7 @@ export function createAudioModule(
             cv.offset.linearRampToValueAtTime(val, now + 0.015);
           }
         },
-        destroy: () => { cv.stop(); cv.disconnect(); eoc.stop(); eoc.disconnect(); },
+        destroy: () => { try { cv.stop(); } catch(_){} cv.disconnect(); try { eoc.stop(); } catch(_){} eoc.disconnect(); },
       };
     }
 
@@ -1030,8 +1038,8 @@ export function createAudioModule(
         },
         getLevel: () => (Math.sin(2 * Math.PI * (p.rate ?? 1) * ctx.currentTime) + 1) / 2,
         destroy: () => {
-          rateCv.stop(); rateCv.disconnect(); depthCv.stop(); depthCv.disconnect();
-          allOscs.forEach(o => { o.stop(); o.disconnect(); });
+          try { rateCv.stop(); } catch(_){} rateCv.disconnect(); try { depthCv.stop(); } catch(_){} depthCv.disconnect();
+          allOscs.forEach(o => { try { o.stop(); } catch(_){} o.disconnect(); });
           allGains.forEach(g => g.disconnect()); mainGain.disconnect();
         },
       };
@@ -1081,9 +1089,9 @@ export function createAudioModule(
         },
         getLevel: () => (Math.sin(2 * Math.PI * (p.rate ?? 0.5) * ctx.currentTime) + 1) / 2,
         destroy: () => {
-          rateCv.stop(); rateCv.disconnect(); depthCv.stop(); depthCv.disconnect();
-          drift.stop(); drift.disconnect(); driftGain.disconnect();
-          allOscs.forEach(o => { o.stop(); o.disconnect(); });
+          try { rateCv.stop(); } catch(_){} rateCv.disconnect(); try { depthCv.stop(); } catch(_){} depthCv.disconnect();
+          try { drift.stop(); } catch(_){} drift.disconnect(); driftGain.disconnect();
+          allOscs.forEach(o => { try { o.stop(); } catch(_){} o.disconnect(); });
           allGains.forEach(g => g.disconnect()); mainGain.disconnect();
         },
       };
@@ -1126,8 +1134,8 @@ export function createAudioModule(
         },
         getLevel: () => (Math.sin(2 * Math.PI * (p.rate ?? 2) * ctx.currentTime) + 1) / 2,
         destroy: () => {
-          rateCv.stop(); rateCv.disconnect(); depthCv.stop(); depthCv.disconnect();
-          allOscs.forEach(o => { o.stop(); o.disconnect(); });
+          try { rateCv.stop(); } catch(_){} rateCv.disconnect(); try { depthCv.stop(); } catch(_){} depthCv.disconnect();
+          allOscs.forEach(o => { try { o.stop(); } catch(_){} o.disconnect(); });
           allGains.forEach(g => g.disconnect()); mainGain.disconnect();
         },
       };
@@ -1161,9 +1169,9 @@ export function createAudioModule(
         },
         getLevel: () => (Math.sin(2 * Math.PI * (p.rate ?? 1) * ctx.currentTime) + 1) / 2,
         destroy: () => {
-          rateCv.stop(); rateCv.disconnect(); depthCv.stop(); depthCv.disconnect();
-          oscs.forEach(o => { o.stop(); o.disconnect(); });
-          gains.forEach(g => g.disconnect());
+          try { rateCv.stop(); } catch(_){} rateCv.disconnect(); try { depthCv.stop(); } catch(_){} depthCv.disconnect();
+          oscs.forEach(o => { try { o.stop(); } catch(_){} o.disconnect(); });
+          gains.forEach(g => { try { g.disconnect(); } catch(_){} });
         },
       };
     }
@@ -1188,7 +1196,7 @@ export function createAudioModule(
         inputs: new Map(),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
-        destroy: () => { timer.destroy(); freqNode.stop(); freqNode.disconnect(); },
+        destroy: () => { timer.destroy(); gateCb = null; try { freqNode.stop(); } catch(_){} freqNode.disconnect(); },
       };
     }
 
@@ -1209,7 +1217,7 @@ export function createAudioModule(
         inputs: new Map(),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
-        destroy: () => { timer.destroy(); },
+        destroy: () => { timer.destroy(); gateCb = null; },
       };
     }
 
@@ -1225,7 +1233,7 @@ export function createAudioModule(
         outputs: new Map([['cv_out', cvNode]]),
         inputs: new Map(),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
-        destroy: () => { timer.destroy(); cvNode.stop(); cvNode.disconnect(); },
+        destroy: () => { timer.destroy(); try { cvNode.stop(); } catch(_){} cvNode.disconnect(); },
       };
     }
 
@@ -1247,7 +1255,7 @@ export function createAudioModule(
         inputs: new Map(),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
-        destroy: () => { timer.destroy(); },
+        destroy: () => { timer.destroy(); gateCb = null; },
       };
     }
 
@@ -1420,7 +1428,7 @@ export function createAudioModule(
         setSelector: (id, val) => { p[id] = val; resetModeState(); globalBeat = 0; accentBeat = 0; },
         setGateTrigger: fn => { gateCb = fn; },
         setPortGateTrigger: (portId, fn) => { if (portId === 'accent_out') accentCb = fn; else gateCb = fn; },
-        destroy: () => { timer.destroy(); voct.stop(); voct.disconnect(); },
+        destroy: () => { timer.destroy(); gateCb = null; accentCb = null; try { voct.stop(); } catch(_){} voct.disconnect(); },
       };
     }
 
@@ -1446,7 +1454,7 @@ export function createAudioModule(
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
         getLevel: () => Math.max(0, 1 - (performance.now() - lastGateMs) / 120),
-        destroy: () => { timer.destroy(); },
+        destroy: () => { timer.destroy(); gateCb = null; },
       };
     }
 
@@ -1461,7 +1469,7 @@ export function createAudioModule(
         outputs: new Map(), inputs: new Map(),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm' || id === 'div') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
-        destroy: () => { timer.destroy(); },
+        destroy: () => { timer.destroy(); gateCb = null; },
       };
     }
 
@@ -1476,7 +1484,7 @@ export function createAudioModule(
         outputs: new Map(), inputs: new Map(),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm' || id === 'mul') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
-        destroy: () => { timer.destroy(); },
+        destroy: () => { timer.destroy(); gateCb = null; },
       };
     }
 
@@ -1494,7 +1502,7 @@ export function createAudioModule(
         outputs: new Map(), inputs: new Map(),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
-        destroy: () => { timer.destroy(); },
+        destroy: () => { timer.destroy(); gateCb = null; },
       };
     }
 
@@ -1514,7 +1522,7 @@ export function createAudioModule(
         outputs: new Map(), inputs: new Map(),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
-        destroy: () => { timer.destroy(); },
+        destroy: () => { timer.destroy(); gateCb = null; },
       };
     }
 
@@ -1535,7 +1543,7 @@ export function createAudioModule(
         outputs: new Map(), inputs: new Map(),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
-        destroy: () => { timer.destroy(); },
+        destroy: () => { timer.destroy(); gateCb = null; },
       };
     }
 
@@ -1616,8 +1624,8 @@ export function createAudioModule(
           if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
         },
         destroy: () => {
-          flutter.stop(); flutter.disconnect();
-          [input, delay, fb, flutterGain, out, dryG, wetG].forEach(n => n.disconnect());
+          try { flutter.stop(); } catch(_){} flutter.disconnect();
+          [input, delay, fb, flutterGain, out, dryG, wetG].forEach(n => { try { n.disconnect(); } catch(_){} });
         },
       };
     }
@@ -1777,8 +1785,8 @@ export function createAudioModule(
           if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
         },
         destroy: () => {
-          pitch.stop(); pitch.disconnect();
-          [input, conv, pitchGain, out, dryG, wetG].forEach(n => n.disconnect());
+          try { pitch.stop(); } catch(_){} pitch.disconnect();
+          [input, conv, pitchGain, out, dryG, wetG].forEach(n => { try { n.disconnect(); } catch(_){} });
         },
       };
     }
@@ -1817,9 +1825,9 @@ export function createAudioModule(
           if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
         },
         destroy: () => {
-          rateCv.stop(); rateCv.disconnect(); depthCv.stop(); depthCv.disconnect();
-          lfos.forEach(l => { l.stop(); l.disconnect(); });
-          [input, wetSum, out, dryG, wetG, ...delays, ...lfoGains].forEach(n => n.disconnect());
+          try { rateCv.stop(); } catch(_){} rateCv.disconnect(); try { depthCv.stop(); } catch(_){} depthCv.disconnect();
+          lfos.forEach(l => { try { l.stop(); } catch(_){} l.disconnect(); });
+          [input, wetSum, out, dryG, wetG, ...delays, ...lfoGains].forEach(n => { try { n.disconnect(); } catch(_){} });
         },
       };
     }
@@ -1852,9 +1860,9 @@ export function createAudioModule(
           if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
         },
         destroy: () => {
-          rateCv.stop(); rateCv.disconnect(); depthCv.stop(); depthCv.disconnect();
-          lfo.stop(); lfo.disconnect();
-          [input, delay, fb, lfoGain, out, dryG, wetG].forEach(n => n.disconnect());
+          try { rateCv.stop(); } catch(_){} rateCv.disconnect(); try { depthCv.stop(); } catch(_){} depthCv.disconnect();
+          try { lfo.stop(); } catch(_){} lfo.disconnect();
+          [input, delay, fb, lfoGain, out, dryG, wetG].forEach(n => { try { n.disconnect(); } catch(_){} });
         },
       };
     }
@@ -1895,9 +1903,9 @@ export function createAudioModule(
           if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
         },
         destroy: () => {
-          rateCv.stop(); rateCv.disconnect(); depthCv.stop(); depthCv.disconnect();
-          lfo.stop(); lfo.disconnect(); lfoOffset.stop(); lfoOffset.disconnect();
-          [input, ...allpasses, lfoGain, fb, out, dryG, wetG].forEach(n => n.disconnect());
+          try { rateCv.stop(); } catch(_){} rateCv.disconnect(); try { depthCv.stop(); } catch(_){} depthCv.disconnect();
+          try { lfo.stop(); } catch(_){} lfo.disconnect(); try { lfoOffset.stop(); } catch(_){} lfoOffset.disconnect();
+          [input, ...allpasses, lfoGain, fb, out, dryG, wetG].forEach(n => { try { n.disconnect(); } catch(_){} });
         },
       };
     }
@@ -1925,9 +1933,9 @@ export function createAudioModule(
           if (id === 'depth') lfoG.gain.value = val * 0.003;
         },
         destroy: () => {
-          rateCv.stop(); rateCv.disconnect(); depthCv.stop(); depthCv.disconnect();
-          lfo.stop(); lfo.disconnect();
-          [input, delay, lfoG].forEach(n => n.disconnect());
+          try { rateCv.stop(); } catch(_){} rateCv.disconnect(); try { depthCv.stop(); } catch(_){} depthCv.disconnect();
+          try { lfo.stop(); } catch(_){} lfo.disconnect();
+          [input, delay, lfoG].forEach(n => { try { n.disconnect(); } catch(_){} });
         },
       };
     }
@@ -1962,9 +1970,9 @@ export function createAudioModule(
           if (id === 'wave') lfo.type = waveMap[Math.round(val)] ?? 'sine';
         },
         destroy: () => {
-          rateCv.stop(); rateCv.disconnect(); depthCv.stop(); depthCv.disconnect();
-          lfo.stop(); lfo.disconnect(); dc.stop(); dc.disconnect();
-          [input, amp, lfoG].forEach(n => n.disconnect());
+          try { rateCv.stop(); } catch(_){} rateCv.disconnect(); try { depthCv.stop(); } catch(_){} depthCv.disconnect();
+          try { lfo.stop(); } catch(_){} lfo.disconnect(); try { dc.stop(); } catch(_){} dc.disconnect();
+          [input, amp, lfoG].forEach(n => { try { n.disconnect(); } catch(_){} });
         },
       };
     }
@@ -2004,9 +2012,9 @@ export function createAudioModule(
           }
         },
         destroy: () => {
-          amLfo.stop(); amLfo.disconnect(); fmLfo.stop(); fmLfo.disconnect();
-          dc.stop(); dc.disconnect();
-          [input, amp, amG, fmG, delay, out, dryG, wetG].forEach(n => n.disconnect());
+          try { amLfo.stop(); } catch(_){} amLfo.disconnect(); try { fmLfo.stop(); } catch(_){} fmLfo.disconnect();
+          try { dc.stop(); } catch(_){} dc.disconnect();
+          [input, amp, amG, fmG, delay, out, dryG, wetG].forEach(n => { try { n.disconnect(); } catch(_){} });
         },
       };
     }
@@ -2539,6 +2547,7 @@ export function createAudioModule(
         },
         destroy: () => {
           timer.destroy();
+          gateCb = null; invGateCb = null; clkCb = null;
           stepsCV.destroy(); fillCV.destroy(); shiftCV.destroy();
         },
       };
@@ -2725,8 +2734,9 @@ export function createAudioModule(
         },
         destroy: () => {
           timer.destroy();
-          posNode.stop(); stepNode.stop();
-          for (const n of velNodes) n.stop();
+          gateCbs.clear();
+          try { posNode.stop(); } catch(_){} try { stepNode.stop(); } catch(_){}
+          for (const n of velNodes) { try { n.stop(); } catch(_){} }
           swingCv.destroy(); bpmCv.destroy();
         },
       };
@@ -2902,14 +2912,16 @@ export function createAudioModule(
         osc.start(t); osc.stop(t + decay + 0.05);
       };
 
+      let drumDestroyed = false;
+
       // Per-port trigger handlers — voices fired entirely by external gates
       const portNoteOn = new Map<string, (time: number, freq?: number) => void>([
-        ['kick_trig', () => fireKick()],
-        ['snr_trig',  () => fireSnare()],
-        ['hhc_trig',  () => fireHHC()],
-        ['hho_trig',  () => fireHHO()],
-        ['clp_trig',  () => fireClap()],
-        ['per_trig',  () => firePerc()],
+        ['kick_trig', () => { if (!drumDestroyed) try { fireKick(); } catch(_){} }],
+        ['snr_trig',  () => { if (!drumDestroyed) try { fireSnare(); } catch(_){} }],
+        ['hhc_trig',  () => { if (!drumDestroyed) try { fireHHC(); } catch(_){} }],
+        ['hho_trig',  () => { if (!drumDestroyed) try { fireHHO(); } catch(_){} }],
+        ['clp_trig',  () => { if (!drumDestroyed) try { fireClap(); } catch(_){} }],
+        ['per_trig',  () => { if (!drumDestroyed) try { firePerc(); } catch(_){} }],
       ]);
 
       return {
@@ -2933,8 +2945,9 @@ export function createAudioModule(
         },
         setSelector: () => {},
         destroy: () => {
-          master.disconnect();
-          for (const ch of CHANS) volGains[ch].disconnect();
+          drumDestroyed = true;
+          try { master.disconnect(); } catch(_){}
+          for (const ch of CHANS) { try { volGains[ch].disconnect(); } catch(_){} }
         },
       };
     }

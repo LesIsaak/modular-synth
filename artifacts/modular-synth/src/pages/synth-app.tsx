@@ -888,7 +888,7 @@ export default function SynthApp() {
     // Clean up modules that were added (in current but not in snapshot)
     const addedMods = modules.filter(m => !snap.modules.find(p => p.id === m.id));
     for (const mod of addedMods) {
-      audioModulesRef.current.get(mod.id)?.destroy();
+      try { audioModulesRef.current.get(mod.id)?.destroy(); } catch (_) {}
       audioModulesRef.current.delete(mod.id);
       for (const k of [...gateConnRef.current.keys()]) if (k.startsWith(`${mod.id}:`)) gateConnRef.current.delete(k);
       for (const s of gateConnRef.current.values()) s.delete(mod.id);
@@ -1041,7 +1041,7 @@ export default function SynthApp() {
     for (const k of [...gateConnRef.current.keys()]) if (k.startsWith(`${moduleId}:`)) gateConnRef.current.delete(k);
     for (const set of gateConnRef.current.values()) set.delete(moduleId);
     const audio = audioModulesRef.current.get(moduleId);
-    if (audio) { audio.destroy(); audioModulesRef.current.delete(moduleId); }
+    if (audio) { try { audio.destroy(); } catch (_) {} audioModulesRef.current.delete(moduleId); }
     setModules(prev => prev.filter(m => m.id !== moduleId));
   }, []);
 
@@ -1160,15 +1160,17 @@ export default function SynthApp() {
         if (!ctx) return;
         for (const id of gateConnRef.current.get(key) ?? []) {
           const m = audioModulesRef.current.get(id);
+          if (!m) continue;
           const toPortId    = portGateMapRef.current.get(key)?.get(id);
-          const portHandler = toPortId ? m?.portNoteOn?.get(toPortId) : undefined;
-          if (portHandler) {
-            if (on) portHandler(getCurrentTickAudioTime() || ctx.currentTime, freq);
-            // gate_in triggers are one-shot; no noteOff needed for drum voices
-          } else {
-            if (on) m?.noteOn?.(getCurrentTickAudioTime() || ctx.currentTime, freq);
-            else    m?.noteOff?.(getCurrentTickAudioTime() || ctx.currentTime);
-          }
+          const portHandler = toPortId ? m.portNoteOn?.get(toPortId) : undefined;
+          try {
+            if (portHandler) {
+              if (on) portHandler(getCurrentTickAudioTime() || ctx.currentTime, freq);
+            } else {
+              if (on) m.noteOn?.(getCurrentTickAudioTime() || ctx.currentTime, freq);
+              else    m.noteOff?.(getCurrentTickAudioTime() || ctx.currentTime);
+            }
+          } catch (_) {}
         }
       };
       if (fromAudio?.setPortGateTrigger) {
