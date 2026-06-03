@@ -390,31 +390,53 @@ export function createAudioModule(
 
     case 'chord_osc': {
       const chordIntervals: number[][] = [
-        [0, 4, 7], [0, 3, 7], [0, 5, 7], [0, 3, 6], [0, 4, 8], [0, 4, 7, 10],
+        [0, 4, 7],        // MAJ
+        [0, 3, 7],        // MIN
+        [0, 5, 7],        // SUS4
+        [0, 3, 6],        // DIM
+        [0, 4, 8],        // AUG
+        [0, 4, 7, 10],    // 7TH
       ];
-      const merge = ctx.createGain(); merge.gain.value = 0.35;
+      const MAX_VOICES = 4; // enough for 7TH (4 notes)
+      const merge = ctx.createGain(); merge.gain.value = 0.28;
       const oscs: OscillatorNode[] = [];
-      const baseFreq = p.freq ?? 220;
-      const intervals = chordIntervals[Math.round(p.chord ?? 0)] ?? chordIntervals[0];
-      for (const semi of intervals) {
+      const oscGains: GainNode[] = [];
+      for (let i = 0; i < MAX_VOICES; i++) {
         const o = ctx.createOscillator();
+        const g = ctx.createGain();
         o.type = 'sawtooth';
-        o.frequency.value = baseFreq * Math.pow(2, semi / 12) * (p.spread ?? 1);
-        o.start(); o.connect(merge); oscs.push(o);
+        o.frequency.value = p.freq ?? 220;
+        g.gain.value = 0; // silenced until noteOn activates voices
+        o.connect(g); g.connect(merge);
+        o.start();
+        oscs.push(o); oscGains.push(g);
       }
-      const voct = ctx.createConstantSource(); voct.offset.value = 0; voct.start();
+      let lastFreq = p.freq ?? 220;
+      const applyChord = (freq: number) => {
+        lastFreq = freq;
+        const intv = chordIntervals[Math.round(p.chord ?? 0)] ?? chordIntervals[0];
+        const spread = p.spread ?? 1;
+        for (let i = 0; i < MAX_VOICES; i++) {
+          if (i < intv.length) {
+            // spread stretches/compresses intervals but keeps root at exact pitch
+            oscs[i].frequency.value = freq * Math.pow(2, intv[i] * spread / 12);
+            oscGains[i].gain.value = 1;
+          } else {
+            oscGains[i].gain.value = 0; // silence unused voices
+          }
+        }
+      };
+      applyChord(lastFreq); // initialise to default freq
       return {
         outputs: new Map([['out', merge]]),
-        inputs: new Map([['voct', { node: voct, param: voct.offset }]]),
-        noteOn: (_t, freq) => {
-          const intv = chordIntervals[Math.round(p.chord ?? 0)] ?? chordIntervals[0];
-          oscs.forEach((o, i) => { o.frequency.value = freq * Math.pow(2, (intv[i] ?? 0) / 12) * (p.spread ?? 1); });
-        },
-        setParam: (id, val) => { p[id] = val; },
-        setSelector: (id, val) => { p[id] = val; },
+        inputs: new Map(),
+        noteOn: (_t, freq) => applyChord(freq),
+        setParam: (id, val) => { p[id] = val; if (id === 'freq' || id === 'spread') applyChord(lastFreq); },
+        setSelector: (id, val) => { p[id] = val; applyChord(lastFreq); },
         destroy: () => {
-          voct.stop(); voct.disconnect();
-          oscs.forEach(o => { o.stop(); o.disconnect(); }); merge.disconnect();
+          oscs.forEach(o => { o.stop(); o.disconnect(); });
+          oscGains.forEach(g => g.disconnect());
+          merge.disconnect();
         },
       };
     }
