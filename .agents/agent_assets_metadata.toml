@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "Y75tJYz1uE_1C7ZXcQs0x"
+uri = "file://artifacts/modular-synth/public/favicon.svg"
+type = "image"
+title = "OrangeCastle Logo (SVG)"
