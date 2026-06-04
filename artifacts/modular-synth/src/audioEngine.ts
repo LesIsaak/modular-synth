@@ -23,10 +23,12 @@ export interface AudioModuleNodes {
   loadSample?: (arrayBuffer: ArrayBuffer, bankIndex: number) => Promise<void>;
   /** Freeze only: instantly silence and clear the frozen loop */
   kill?: () => void;
-  /** Audio Trig: re-open the browser device picker */
-  triggerDeviceRepick?: () => void;
+  /** Audio Trig: start capture with a specific deviceId, or re-open the browser picker when omitted */
+  triggerDeviceRepick?: (deviceId?: string) => void;
   /** Audio Trig: returns the label of the currently captured device */
   getDeviceLabel?: () => string;
+  /** Audio Trig: returns all available audio input devices (non-empty after first permission grant) */
+  getDeviceList?: () => { deviceId: string; label: string }[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -3219,6 +3221,7 @@ export function createAudioModule(
       let sourceNode: MediaStreamAudioSourceNode | null = null;
       let splitter: ChannelSplitterNode | null = null;
       let deviceLabel = 'No device';
+      let deviceList: { deviceId: string; label: string }[] = [];
       const gateCbs = new Map<string, (on: boolean, freq: number) => void>();
       const lastTrigMs: number[] = Array(NUM_CH).fill(-Infinity);
       let pollId: ReturnType<typeof setInterval> | null = null;
@@ -3262,6 +3265,12 @@ export function createAudioModule(
           for (let i = 0; i < Math.min(numCh, NUM_CH); i++) {
             splitter.connect(chGains[i], i, 0);
           }
+          // Enumerate available audio inputs now that permission is granted
+          navigator.mediaDevices.enumerateDevices().then(all => {
+            deviceList = all
+              .filter(d => d.kind === 'audioinput')
+              .map(d => ({ deviceId: d.deviceId, label: d.label || `Mic ${d.deviceId.slice(0, 8)}` }));
+          }).catch(() => {});
         } catch (_) {
           deviceLabel = 'Permission denied';
         }
@@ -3315,8 +3324,9 @@ export function createAudioModule(
           }
           return count > 0 ? Math.min(1, (total / count) * 14) : 0;
         },
-        triggerDeviceRepick: () => { startCapture(); },
+        triggerDeviceRepick: (deviceId?: string) => { startCapture(deviceId); },
         getDeviceLabel: () => deviceLabel,
+        getDeviceList: () => deviceList,
         destroy: () => {
           destroyed = true;
           if (pollId) clearInterval(pollId);

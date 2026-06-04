@@ -1788,8 +1788,9 @@ export default function SynthApp() {
                 midiClockInfo={mod.typeId === 'midi_clock_in' ? midiClockInfo : undefined}
                 onToggleMidiClockLock={mod.typeId === 'midi_clock_in' ? handleToggleMidiClockLock : undefined}
                 onFreezeKill={mod.typeId === 'freeze_proc' ? () => handleFreezeKill(mod.id) : undefined}
-                onAudioTrigPickDevice={mod.typeId === 'audio_trig' ? () => audioModulesRef.current.get(mod.id)?.triggerDeviceRepick?.() : undefined}
+                onAudioTrigPickDevice={mod.typeId === 'audio_trig' ? (deviceId?: string) => audioModulesRef.current.get(mod.id)?.triggerDeviceRepick?.(deviceId) : undefined}
                 audioTrigGetDeviceLabel={mod.typeId === 'audio_trig' ? () => audioModulesRef.current.get(mod.id)?.getDeviceLabel?.() ?? '—' : undefined}
+                audioTrigGetDeviceList={mod.typeId === 'audio_trig' ? () => audioModulesRef.current.get(mod.id)?.getDeviceList?.() ?? [] : undefined}
               />
             </div>
           ))}

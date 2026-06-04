@@ -37,10 +37,12 @@ interface ModulePanelProps {
   onToggleMidiClockLock?: () => void;
   /** Freeze module: instantly kill the frozen loop */
   onFreezeKill?: () => void;
-  /** Audio Trig: re-open device picker */
-  onAudioTrigPickDevice?: () => void;
+  /** Audio Trig: start capture with specific deviceId, or open browser picker when omitted */
+  onAudioTrigPickDevice?: (deviceId?: string) => void;
   /** Audio Trig: getter polled to show the active capture device name */
   audioTrigGetDeviceLabel?: () => string;
+  /** Audio Trig: getter polled to get available audio input devices */
+  audioTrigGetDeviceList?: () => { deviceId: string; label: string }[];
 }
 
 function ActivityLED({ getLevelFn, color }: { getLevelFn: () => number; color: string }) {
@@ -477,7 +479,7 @@ export default function ModulePanel({
   onLoadSample, samplerBanksFilled,
   midiClockInfo, onToggleMidiClockLock,
   onFreezeKill,
-  onAudioTrigPickDevice, audioTrigGetDeviceLabel,
+  onAudioTrigPickDevice, audioTrigGetDeviceLabel, audioTrigGetDeviceList,
 }: ModulePanelProps) {
   const typeDef = MODULE_TYPE_MAP.get(module.typeId);
   const [showDelete, setShowDelete] = useState(false);
@@ -485,12 +487,22 @@ export default function ModulePanel({
   const [infoAnchor, setInfoAnchor] = useState({ x: 0, y: 0 });
   const [eucStep, setEucStep] = useState(0);
   const [audioTrigLabel, setAudioTrigLabel] = useState('—');
+  const [audioTrigDevices, setAudioTrigDevices] = useState<{ deviceId: string; label: string }[]>([]);
+  const [audioTrigSelectedId, setAudioTrigSelectedId] = useState('');
 
   useEffect(() => {
     if (module.typeId !== 'audio_trig' || !audioTrigGetDeviceLabel) return;
     const id = setInterval(() => setAudioTrigLabel(audioTrigGetDeviceLabel()), 800);
     return () => clearInterval(id);
   }, [module.typeId, audioTrigGetDeviceLabel]);
+
+  useEffect(() => {
+    if (module.typeId !== 'audio_trig' || !audioTrigGetDeviceList) return;
+    const update = () => setAudioTrigDevices(audioTrigGetDeviceList());
+    update();
+    const id = setInterval(update, 1500);
+    return () => clearInterval(id);
+  }, [module.typeId, audioTrigGetDeviceList]);
 
   useEffect(() => {
     if (module.typeId !== 'euclidean_trig' || !moduleStepRef) return;
@@ -937,7 +949,7 @@ export default function ModulePanel({
                 {module.typeId === 'audio_trig' && (() => {
                   const NUM_STRIPS = 8;
                   return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                       {/* Channel strips */}
                       <div style={{ display: 'flex', gap: 3, justifyContent: 'center' }}>
                         {Array.from({ length: NUM_STRIPS }, (_, i) => {
@@ -950,11 +962,12 @@ export default function ModulePanel({
                           const gainDef   = typeDef.knobs.find(k => k.id === gainId)!;
                           const threshDef = typeDef.knobs.find(k => k.id === threshId)!;
                           const retrigDef = typeDef.knobs.find(k => k.id === retrigId)!;
+                          const gatePort  = outPorts.find(p => p.id === `gate${n}_out`);
                           const isOn = (module.params[onId] ?? onDef?.default ?? 0) >= 0.5;
                           return (
                             <div key={n} style={{
                               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-                              padding: '5px 3px',
+                              padding: '5px 3px 4px',
                               background: isOn ? '#181818' : '#111',
                               border: `1px solid ${isOn ? '#303030' : '#1c1c1c'}`,
                               borderRadius: 3,
@@ -978,27 +991,56 @@ export default function ModulePanel({
                                 onChange={v => onParamChange(module.id, threshId, v)} size="sm" />}
                               {retrigDef && <Knob def={retrigDef} value={module.params[retrigId] ?? retrigDef.default}
                                 onChange={v => onParamChange(module.id, retrigId, v)} size="sm" />}
+                              {/* Gate output port */}
+                              {gatePort && (
+                                <div style={{ marginTop: 2 }}>
+                                  <PortWithLabel {...portProps(gatePort)} />
+                                </div>
+                              )}
                             </div>
                           );
                         })}
                       </div>
                       {/* Device row */}
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                        <div style={{
-                          fontSize: 7, color: '#555', letterSpacing: '0.06em',
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 280,
-                        }}>{audioTrigLabel}</div>
-                        {onAudioTrigPickDevice && (
-                          <button
-                            onClick={onAudioTrigPickDevice}
-                            style={{
-                              flexShrink: 0, padding: '2px 8px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
-                              background: '#1a1a1a', color: '#94a3b8', border: '1px solid #2e2e2e',
-                              letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600,
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '0 4px' }}>
+                        {audioTrigDevices.length > 0 ? (
+                          <select
+                            value={audioTrigSelectedId}
+                            onChange={e => {
+                              setAudioTrigSelectedId(e.target.value);
+                              onAudioTrigPickDevice?.(e.target.value || undefined);
                             }}
-                            onMouseEnter={e => (e.currentTarget.style.background = '#252525')}
-                            onMouseLeave={e => (e.currentTarget.style.background = '#1a1a1a')}
-                          >PICK DEVICE</button>
+                            style={{
+                              flex: 1, maxWidth: 340, padding: '2px 4px', fontSize: 7,
+                              background: '#141414', color: '#94a3b8',
+                              border: '1px solid #2e2e2e', borderRadius: 2,
+                              cursor: 'pointer', outline: 'none',
+                            }}
+                          >
+                            <option value="">— {audioTrigLabel} —</option>
+                            {audioTrigDevices.map(d => (
+                              <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <>
+                            <div style={{
+                              fontSize: 7, color: '#555', letterSpacing: '0.06em',
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220,
+                            }}>{audioTrigLabel}</div>
+                            {onAudioTrigPickDevice && (
+                              <button
+                                onClick={() => onAudioTrigPickDevice()}
+                                style={{
+                                  flexShrink: 0, padding: '2px 8px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
+                                  background: '#1a1a1a', color: '#94a3b8', border: '1px solid #2e2e2e',
+                                  letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600,
+                                }}
+                                onMouseEnter={e => (e.currentTarget.style.background = '#252525')}
+                                onMouseLeave={e => (e.currentTarget.style.background = '#1a1a1a')}
+                              >PICK DEVICE</button>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>
@@ -1081,8 +1123,8 @@ export default function ModulePanel({
               </div>
             )}
 
-            {/* Output ports */}
-            {outPorts.length > 0 && (
+            {/* Output ports — hidden for audio_trig (ports rendered inside each strip) */}
+            {outPorts.length > 0 && module.typeId !== 'audio_trig' && (
               <div style={{ flexShrink: 0, padding: '4px 5px 7px' }}>
                 <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #2a2a2a, transparent)', margin: '0 0 5px' }} />
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 3px' }}>
