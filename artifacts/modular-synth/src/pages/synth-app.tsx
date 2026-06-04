@@ -1064,16 +1064,18 @@ export default function SynthApp() {
     const kb1 = audioModulesRef.current.get('kb1');
     if (!kb1) return;
 
+    const t = ctx.currentTime + 0.008;
     const freqNode = kb1.outputs.get('voct_out') as (AudioNode & { offset?: AudioParam }) | undefined;
     if (freqNode && 'offset' in freqNode && freqNode.offset) {
-      freqNode.offset.value = on ? freq : 0;
+      freqNode.offset.cancelScheduledValues(t);
+      freqNode.offset.setValueAtTime(on ? freq : 0, t);
     }
 
     const connected = gateConnRef.current.get('kb1:gate_out') ?? new Set<string>();
     for (const id of connected) {
       const m = audioModulesRef.current.get(id);
-      if (on) m?.noteOn?.(ctx.currentTime, freq);
-      else    m?.noteOff?.(ctx.currentTime);
+      if (on) m?.noteOn?.(t, freq);
+      else    m?.noteOff?.(t);
     }
   }, []);
 
@@ -1626,14 +1628,18 @@ export default function SynthApp() {
   const handleModuleKeyPress = useCallback((moduleId: string, freq: number, on: boolean) => {
     const ctx = audioCtxRef.current;
     if (!ctx) return;
+    const t = ctx.currentTime + 0.008;
     const audio    = audioModulesRef.current.get(moduleId);
     const freqNode = audio?.outputs.get('voct_out') as (AudioNode & { offset?: AudioParam }) | undefined;
-    if (freqNode && 'offset' in freqNode && freqNode.offset) freqNode.offset.value = on ? freq : 0;
+    if (freqNode && 'offset' in freqNode && freqNode.offset) {
+      freqNode.offset.cancelScheduledValues(t);
+      freqNode.offset.setValueAtTime(on ? freq : 0, t);
+    }
     const connected = gateConnRef.current.get(`${moduleId}:gate_out`);
     for (const id of connected ?? []) {
       const m = audioModulesRef.current.get(id);
-      if (on) m?.noteOn?.(ctx.currentTime, freq);
-      else    m?.noteOff?.(ctx.currentTime);
+      if (on) m?.noteOn?.(t, freq);
+      else    m?.noteOff?.(t);
     }
   }, []);
 
