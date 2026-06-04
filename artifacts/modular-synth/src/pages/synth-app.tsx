@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { ModuleInstance, Cable, PendingCable, PortType, MidiMonitorData } from '../types';
+import { MidiClockInfo, getMidiClockInfo, setMidiClockLocked, emitMidiClockInfo, addMidiClockListener, removeMidiClockListener } from '../midiClock';
 import {
   MODULE_TYPE_MAP, CATEGORY_ORDER, CATEGORY_LABELS, CATEGORY_COLORS,
   CABLE_COLORS, getDefaultParams, MODULE_TYPES, MODULE_DESCRIPTIONS,
@@ -767,23 +768,6 @@ type MidiMonEvent =
 
 type MidiStatus = 'unsupported' | 'pending' | 'denied' | 'no-devices' | 'ready';
 
-export interface MidiClockInfo {
-  bpm:        number | null;   // measured BPM, null = no clock received yet
-  deviceName: string | null;   // name of the device sending clock
-  locked:     boolean;         // whether the synth clocks are chasing this
-}
-
-type MidiClockListener = (info: MidiClockInfo) => void;
-
-// Singleton MIDI clock state shared between useMIDI and the app
-const _midiClockListeners = new Set<MidiClockListener>();
-let _midiClockInfo: MidiClockInfo = { bpm: null, deviceName: null, locked: false };
-function _emitClockInfo(patch: Partial<MidiClockInfo>) {
-  _midiClockInfo = { ..._midiClockInfo, ...patch };
-  _midiClockListeners.forEach(fn => fn(_midiClockInfo));
-}
-export function setMidiClockLocked(locked: boolean) { _emitClockInfo({ locked }); }
-export function getMidiClockInfo() { return _midiClockInfo; }
 
 function useMIDI(
   onNote:  (freq: number, on: boolean) => void,
@@ -835,7 +819,7 @@ function useMIDI(
           const bpm = Math.round((60000 / avgInterval) / CLOCK_PULSES_PER_BEAT * 10) / 10;
           if (bpm >= 20 && bpm <= 400) {
             if (clockDeviceName !== deviceName) clockDeviceName = deviceName;
-            _emitClockInfo({ bpm, deviceName });
+            emitMidiClockInfo({ bpm, deviceName });
           }
         }
         return;
@@ -890,8 +874,8 @@ function useMIDI(
     };
 
     // Subscribe to clock updates
-    const clockListener: MidiClockListener = (info) => onClockRef.current(info);
-    _midiClockListeners.add(clockListener);
+    const clockListener = (info: MidiClockInfo) => onClockRef.current(info);
+    addMidiClockListener(clockListener);
 
     navigator.requestMIDIAccess({ sysex: false }).then(a => {
       access = a;
@@ -900,7 +884,7 @@ function useMIDI(
     }).catch(() => { setStatus('denied'); });
 
     return () => {
-      _midiClockListeners.delete(clockListener);
+      removeMidiClockListener(clockListener);
       access?.inputs.forEach(i => { i.onmidimessage = null; });
     };
   }, []);
