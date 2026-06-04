@@ -1034,11 +1034,31 @@ export default function ModulePanel({
                           onMouseEnter={e => (e.currentTarget.style.background = '#252525')}
                           onMouseLeave={e => (e.currentTarget.style.background = '#1a1a1a')}
                         >{audioTrigDevices.length > 0 ? 'REPICK' : 'PICK'}</button>
-                        <div style={{
-                          fontSize: 6, color: '#444', letterSpacing: '0.04em', textAlign: 'center',
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                          lineHeight: 1.3,
-                        }}>{audioTrigLabel}</div>
+                        {/* Status label — colour-coded so failures are obvious */}
+                        {(() => {
+                          const isErr  = /denied|error|not available/i.test(audioTrigLabel);
+                          const isOk   = audioTrigDevices.length > 0 && !isErr;
+                          const isPend = /requesting/i.test(audioTrigLabel);
+                          const color  = isErr ? '#f87171' : isOk ? '#4ade80' : isPend ? '#fbbf24' : '#555';
+                          return (
+                            <div style={{
+                              fontSize: 7, color, letterSpacing: '0.03em', textAlign: 'center',
+                              wordBreak: 'break-word', lineHeight: 1.3,
+                            }}>{audioTrigLabel || '—'}</div>
+                          );
+                        })()}
+                        {(/not available|permission denied/i.test(audioTrigLabel) || window.self !== window.top) && (
+                          <a
+                            href={window.location.href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onMouseDown={e => e.stopPropagation()}
+                            style={{
+                              display: 'block', textAlign: 'center', fontSize: 6,
+                              color: '#60a5fa', textDecoration: 'underline', cursor: 'pointer',
+                            }}
+                          >↗ Open in new tab</a>
+                        )}
                       </div>
                     </div>
                   );

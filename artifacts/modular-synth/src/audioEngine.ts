@@ -3247,6 +3247,17 @@ export function createAudioModule(
         if (sourceNode) { try { sourceNode.disconnect(); } catch (_) {} sourceNode = null; }
         if (splitter)   { try { splitter.disconnect(); }   catch (_) {} splitter = null; }
 
+        // Guard: media API might not be available (e.g. non-HTTPS or sandboxed iframe)
+        if (!navigator.mediaDevices?.getUserMedia) {
+          deviceLabel = 'Not available — open in new tab';
+          console.warn('[AUDIO TRIG] navigator.mediaDevices.getUserMedia is unavailable. Open the app in a new browser tab to enable microphone access.');
+          if (!destroyed) pollId = setInterval(() => { /* no-op poll */ }, 500);
+          return;
+        }
+
+        deviceLabel = 'Requesting…';
+        console.log('[AUDIO TRIG] startCapture()', deviceId ?? '(default)');
+
         // Resume AudioContext if browser suspended it
         if (ctx.state === 'suspended') { try { await ctx.resume(); } catch (_) {} }
 
@@ -3261,8 +3272,10 @@ export function createAudioModule(
               autoGainControl:  false,
             },
           });
-          deviceLabel = stream.getAudioTracks()[0]?.label ?? 'Unknown device';
-          const numCh = stream.getAudioTracks()[0]?.getSettings().channelCount ?? 2;
+          const track = stream.getAudioTracks()[0];
+          deviceLabel = track?.label ?? 'Unknown device';
+          const numCh = track?.getSettings().channelCount ?? 2;
+          console.log('[AUDIO TRIG] Capture OK —', deviceLabel, numCh, 'ch');
           sourceNode = ctx.createMediaStreamSource(stream);
           splitter = ctx.createChannelSplitter(Math.max(numCh, 1));
           sourceNode.connect(splitter);
@@ -3274,11 +3287,14 @@ export function createAudioModule(
             deviceList = all
               .filter(d => d.kind === 'audioinput')
               .map(d => ({ deviceId: d.deviceId, label: d.label || `Mic ${d.deviceId.slice(0, 8)}` }));
+            console.log('[AUDIO TRIG] Devices:', deviceList.map(d => d.label));
           }).catch(() => {});
         } catch (err) {
-          deviceLabel = err instanceof DOMException && err.name === 'NotAllowedError'
-            ? 'Permission denied'
-            : `Error: ${err instanceof Error ? err.message : String(err)}`;
+          const msg = err instanceof DOMException
+            ? (err.name === 'NotAllowedError' ? 'Permission denied' : `${err.name}: ${err.message}`)
+            : String(err);
+          deviceLabel = msg;
+          console.error('[AUDIO TRIG] getUserMedia failed:', err);
         }
 
         if (destroyed) return;
