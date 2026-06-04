@@ -645,6 +645,11 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
     ],
   },
 
+  {
+    id: 'midi_clock_in', name: 'MIDI Clock In', category: 'clock', accentColor: CLK, width: 210,
+    knobs: [], selectors: [], ports: [],
+  },
+
   // ─── Delays ────────────────────────────────────────────────────────
   {
     id: 'delay_mod', name: 'Delay', category: 'delay', accentColor: DLY, width: 200,

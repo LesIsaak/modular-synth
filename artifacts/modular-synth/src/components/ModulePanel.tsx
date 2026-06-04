@@ -31,6 +31,10 @@ interface ModulePanelProps {
   onLoadSample?: (file: File, bankIndex: number) => void;
   /** Sampler: which of the 8 banks have a sample loaded */
   samplerBanksFilled?: boolean[];
+  /** MIDI Clock In module: current clock info from the DAW */
+  midiClockInfo?: { bpm: number | null; deviceName: string | null; locked: boolean };
+  /** MIDI Clock In module: toggle sync lock */
+  onToggleMidiClockLock?: () => void;
 }
 
 function ActivityLED({ getLevelFn, color }: { getLevelFn: () => number; color: string }) {
@@ -465,6 +469,7 @@ export default function ModulePanel({
   onSelectorChange, onDragStart, onDelete, onRegisterPortRef, onKeyPress,
   analyser, midiMonitorData, isMidiTarget, moduleStepRef, getLevelFn, cvLevels,
   onLoadSample, samplerBanksFilled,
+  midiClockInfo, onToggleMidiClockLock,
 }: ModulePanelProps) {
   const typeDef = MODULE_TYPE_MAP.get(module.typeId);
   const [showDelete, setShowDelete] = useState(false);
@@ -901,6 +906,75 @@ export default function ModulePanel({
                 {module.typeId === 'midi_monitor' && midiMonitorData && (
                   <MidiMonitorDisplay d={midiMonitorData} />
                 )}
+                {module.typeId === 'midi_clock_in' && midiClockInfo && (() => {
+                  const { bpm, deviceName, locked } = midiClockInfo;
+                  const CLK_AMBER = '#f59e0b';
+                  const CLK_GREEN = '#22c55e';
+                  const hasSignal = bpm !== null;
+                  return (
+                    <div style={{ padding: '10px 10px 6px', fontFamily: 'monospace' }}>
+                      {/* BPM display */}
+                      <div style={{
+                        background: '#0a0a0a', border: '1px solid #2a2a2a',
+                        borderRadius: 4, padding: '8px 10px', marginBottom: 8,
+                        textAlign: 'center',
+                      }}>
+                        <div style={{
+                          fontSize: 28, fontWeight: 700, letterSpacing: '0.05em',
+                          color: hasSignal ? (locked ? CLK_GREEN : CLK_AMBER) : '#333',
+                          lineHeight: 1,
+                          textShadow: hasSignal ? `0 0 12px ${locked ? CLK_GREEN : CLK_AMBER}66` : 'none',
+                          transition: 'color 0.2s, text-shadow 0.2s',
+                        }}>
+                          {hasSignal ? bpm!.toFixed(1) : '---.-'}
+                        </div>
+                        <div style={{ fontSize: 7, color: '#555', letterSpacing: '0.2em', marginTop: 3 }}>
+                          BPM
+                        </div>
+                      </div>
+
+                      {/* Device name */}
+                      <div style={{
+                        fontSize: 7, color: '#666', letterSpacing: '0.08em',
+                        textTransform: 'uppercase', marginBottom: 8,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        textAlign: 'center',
+                      }}>
+                        {deviceName ?? (hasSignal ? 'Unknown Device' : 'No clock received')}
+                      </div>
+
+                      {/* Lock toggle */}
+                      <button
+                        onClick={onToggleMidiClockLock}
+                        style={{
+                          width: '100%', padding: '5px 0',
+                          background: locked ? `${CLK_GREEN}22` : '#111',
+                          border: `1px solid ${locked ? CLK_GREEN : '#333'}`,
+                          borderRadius: 4, cursor: 'pointer',
+                          color: locked ? CLK_GREEN : '#666',
+                          fontSize: 8, fontFamily: 'monospace',
+                          fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase',
+                          transition: 'all 0.15s',
+                          boxShadow: locked ? `0 0 8px ${CLK_GREEN}44` : 'none',
+                        }}
+                        onMouseEnter={e => { if (!locked) (e.currentTarget as HTMLElement).style.borderColor = '#555'; }}
+                        onMouseLeave={e => { if (!locked) (e.currentTarget as HTMLElement).style.borderColor = '#333'; }}
+                      >
+                        {locked ? '⏵ LOCKED' : 'LOCK TO DAW'}
+                      </button>
+
+                      {locked && (
+                        <div style={{
+                          marginTop: 6, fontSize: 7, color: CLK_GREEN,
+                          textAlign: 'center', letterSpacing: '0.08em',
+                          opacity: 0.8,
+                        }}>
+                          All clock BPMs synced
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 

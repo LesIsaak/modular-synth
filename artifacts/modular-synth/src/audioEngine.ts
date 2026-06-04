@@ -3156,7 +3156,8 @@ export function createAudioModule(
       };
     }
 
-    case 'midi_monitor': {
+    case 'midi_monitor':
+    case 'midi_clock_in': {
       return { outputs: new Map(), inputs: new Map(), setParam: () => {}, destroy: () => {} };
     }
 

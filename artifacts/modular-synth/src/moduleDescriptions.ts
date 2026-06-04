@@ -56,6 +56,7 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
 
   // ─── Clocks ─────────────────────────────────────────────────────────────────
   clock_gen:     'Master clock generator with SWING control. Outputs a primary gate plus three divided sub-clocks (/2, /4, /8). RST resets the phase.',
+  midi_clock_in: 'Locks all clock modules to your DAW\'s tempo via MIDI Clock. Add the module, make sure your DAW is sending MIDI Clock on any port, then press LOCK TO DAW — the BPM display turns green and every Clock Gen, Divider, Multiplier, and sequencer BPM knob follows the DAW in real time.',
   clock_div:     'Clock divider that outputs one gate every N incoming clock pulses. DIVIDE sets the division ratio from 1 to 16.',
   clock_mul:     'Clock multiplier that generates multiple pulses between each incoming clock tick. MULTIPLY sets the multiplication factor from 1 to 8.',
   clock_dly:     'Delays each incoming clock pulse by a fraction of the clock period. Creates offset rhythms and polyrhythmic relationships.',

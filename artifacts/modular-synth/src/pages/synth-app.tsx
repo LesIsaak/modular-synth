@@ -735,20 +735,41 @@ type MidiMonEvent =
 
 type MidiStatus = 'unsupported' | 'pending' | 'denied' | 'no-devices' | 'ready';
 
+export interface MidiClockInfo {
+  bpm:        number | null;   // measured BPM, null = no clock received yet
+  deviceName: string | null;   // name of the device sending clock
+  locked:     boolean;         // whether the synth clocks are chasing this
+}
+
+type MidiClockListener = (info: MidiClockInfo) => void;
+
+// Singleton MIDI clock state shared between useMIDI and the app
+const _midiClockListeners = new Set<MidiClockListener>();
+let _midiClockInfo: MidiClockInfo = { bpm: null, deviceName: null, locked: false };
+function _emitClockInfo(patch: Partial<MidiClockInfo>) {
+  _midiClockInfo = { ..._midiClockInfo, ...patch };
+  _midiClockListeners.forEach(fn => fn(_midiClockInfo));
+}
+export function setMidiClockLocked(locked: boolean) { _emitClockInfo({ locked }); }
+export function getMidiClockInfo() { return _midiClockInfo; }
+
 function useMIDI(
-  onNote: (freq: number, on: boolean) => void,
-  onBend: (freq: number) => void,
-  onMod:  (val: number) => void,
-  onMon:  (ev: MidiMonEvent) => void,
+  onNote:  (freq: number, on: boolean) => void,
+  onBend:  (freq: number) => void,
+  onMod:   (val: number) => void,
+  onMon:   (ev: MidiMonEvent) => void,
+  onClock: (info: MidiClockInfo) => void,
 ): { status: MidiStatus; deviceCount: number } {
   const onNoteRef  = useRef(onNote);
   const onBendRef  = useRef(onBend);
   const onModRef   = useRef(onMod);
   const onMonRef   = useRef(onMon);
-  onNoteRef.current = onNote;
-  onBendRef.current = onBend;
-  onModRef.current  = onMod;
-  onMonRef.current  = onMon;
+  const onClockRef = useRef(onClock);
+  onNoteRef.current  = onNote;
+  onBendRef.current  = onBend;
+  onModRef.current   = onMod;
+  onMonRef.current   = onMon;
+  onClockRef.current = onClock;
 
   const [status,      setStatus]      = useState<MidiStatus>('pending');
   const [deviceCount, setDeviceCount] = useState(0);
@@ -758,27 +779,52 @@ function useMIDI(
 
     const baseFreqRef = { current: 0 };
 
-    const handleMsg = (e: MIDIMessageEvent) => {
+    // MIDI Clock (0xF8) BPM measurement — 24 pulses per quarter note
+    const CLOCK_PULSES_PER_BEAT = 24;
+    const CLOCK_WINDOW = 8; // average over this many intervals for stability
+    const clockTimestamps: number[] = [];
+    let clockDeviceName: string | null = null;
+
+    // Per-device handler so we can track which device is sending clock
+    const makeDeviceHandler = (deviceName: string) => (e: MIDIMessageEvent) => {
       const d = e.data;
-      if (!d || d.length < 3) return;
+      if (!d || d.length === 0) return;
+
+      // MIDI Clock tick (single-byte, no channel)
+      if (d[0] === 0xf8) {
+        const now = performance.now();
+        clockTimestamps.push(now);
+        if (clockTimestamps.length > CLOCK_WINDOW + 1) clockTimestamps.shift();
+        if (clockTimestamps.length >= 2) {
+          const intervals: number[] = [];
+          for (let i = 1; i < clockTimestamps.length; i++)
+            intervals.push(clockTimestamps[i] - clockTimestamps[i - 1]);
+          const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+          const bpm = Math.round((60000 / avgInterval) / CLOCK_PULSES_PER_BEAT * 10) / 10;
+          if (bpm >= 20 && bpm <= 400) {
+            if (clockDeviceName !== deviceName) clockDeviceName = deviceName;
+            _emitClockInfo({ bpm, deviceName });
+          }
+        }
+        return;
+      }
+
+      if (d.length < 2) return;
       const type = d[0] & 0xf0;
       const note = d[1];
-      const vel  = d[2];
+      const vel  = d.length >= 3 ? d[2] : 0;
+      const ch   = (d[0] & 0x0f) + 1;
 
-      const ch = (d[0] & 0x0f) + 1;
       if (type === 0x90 && vel > 0) {
-        // Note On
         const freq = 440 * Math.pow(2, (note - 69) / 12);
         baseFreqRef.current = freq;
         onNoteRef.current(freq, true);
         onMonRef.current({ type: 'noteOn', channel: ch, note, velocity: vel });
       } else if (type === 0x80 || (type === 0x90 && vel === 0)) {
-        // Note Off
         baseFreqRef.current = 0;
         onNoteRef.current(0, false);
         onMonRef.current({ type: 'noteOff', channel: ch, note });
-      } else if (type === 0xe0) {
-        // Pitch bend: LSB = d[1], MSB = d[2], center 8192
+      } else if (type === 0xe0 && d.length >= 3) {
         const bend14 = (d[2] << 7) | d[1];
         const norm   = (bend14 - 8192) / 8192;
         if (baseFreqRef.current > 0) {
@@ -786,24 +832,34 @@ function useMIDI(
           onBendRef.current(baseFreqRef.current * Math.pow(2, norm * BEND_ST / 12));
         }
         onMonRef.current({ type: 'bend', channel: ch, bend: (bend14 - 8192) / 8192 });
-      } else if (type === 0xb0 && d[1] === 1) {
-        // CC 1 = mod wheel (0–127 → 0–1)
+      } else if (type === 0xb0 && d.length >= 3 && d[1] === 1) {
         onModRef.current(d[2] / 127);
         onMonRef.current({ type: 'cc', channel: ch, num: 1, val: d[2] });
-      } else if (type === 0xb0) {
-        // Other CC
+      } else if (type === 0xb0 && d.length >= 3) {
         onMonRef.current({ type: 'cc', channel: ch, num: d[1], val: d[2] });
       }
     };
 
     let access: MIDIAccess | null = null;
+    const deviceHandlers = new Map<string, (e: MIDIMessageEvent) => void>();
 
     const refreshDevices = (a: MIDIAccess) => {
       let n = 0;
-      for (const input of a.inputs.values()) { input.onmidimessage = handleMsg; n++; }
+      for (const input of a.inputs.values()) {
+        const name = input.name ?? 'Unknown Device';
+        if (!deviceHandlers.has(input.id)) {
+          deviceHandlers.set(input.id, makeDeviceHandler(name));
+        }
+        input.onmidimessage = deviceHandlers.get(input.id)!;
+        n++;
+      }
       setDeviceCount(n);
       setStatus(n > 0 ? 'ready' : 'no-devices');
     };
+
+    // Subscribe to clock updates
+    const clockListener: MidiClockListener = (info) => onClockRef.current(info);
+    _midiClockListeners.add(clockListener);
 
     navigator.requestMIDIAccess({ sysex: false }).then(a => {
       access = a;
@@ -812,6 +868,7 @@ function useMIDI(
     }).catch(() => { setStatus('denied'); });
 
     return () => {
+      _midiClockListeners.delete(clockListener);
       access?.inputs.forEach(i => { i.onmidimessage = null; });
     };
   }, []);
@@ -1121,8 +1178,36 @@ export default function SynthApp() {
     }
   }, [focusedModuleId, modules, handleParamChange]);
 
-  // MIDI input — routes USB keyboard events + Minilab CC→knob mapping
-  const { status: midiStatus, deviceCount: midiDeviceCount } = useMIDI(handleKeyNote, handleKeyBend, handleKeyMod, handleMidiMon);
+  // ─── MIDI Clock sync ────────────────────────────────────────────────────────
+  const [midiClockInfo, setMidiClockInfo] = useState<MidiClockInfo>({ bpm: null, deviceName: null, locked: false });
+  const midiClockInfoRef = useRef(midiClockInfo);
+  midiClockInfoRef.current = midiClockInfo;
+
+  const BPM_KNOB_IDS = new Set(['bpm']); // param ids that represent BPM across clock modules
+
+  const handleMidiClock = useCallback((info: MidiClockInfo) => {
+    setMidiClockInfo(info);
+    if (info.locked && info.bpm !== null) {
+      // Push rounded BPM to every module that has a 'bpm' param
+      setModules(prev => prev.map(m => {
+        if (!BPM_KNOB_IDS.has('bpm')) return m;
+        const typeDef = MODULE_TYPE_MAP.get(m.typeId);
+        if (!typeDef) return m;
+        const hasBpm = typeDef.knobs.some(k => k.id === 'bpm');
+        if (!hasBpm) return m;
+        const bpmClamped = Math.max(20, Math.min(300, Math.round(info.bpm!)));
+        audioModulesRef.current.get(m.id)?.setParam('bpm', bpmClamped);
+        return { ...m, params: { ...m.params, bpm: bpmClamped } };
+      }));
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleToggleMidiClockLock = useCallback(() => {
+    setMidiClockLocked(!midiClockInfoRef.current.locked);
+  }, []);
+
+  // MIDI input — routes USB keyboard events + Minilab CC→knob mapping + MIDI Clock
+  const { status: midiStatus, deviceCount: midiDeviceCount } = useMIDI(handleKeyNote, handleKeyBend, handleKeyMod, handleMidiMon, handleMidiClock);
 
   // ─── Port click — cable patching ────────────────────────────────────────────
   const handlePortClick = useCallback((moduleId: string, portId: string, portType: PortType) => {
@@ -1550,6 +1635,8 @@ export default function SynthApp() {
                 cvLevels={cvLevelMap.get(mod.id)}
                 onLoadSample={mod.typeId === 'sampler' ? (file, bank) => handleLoadSample(mod.id, file, bank) : undefined}
                 samplerBanksFilled={mod.typeId === 'sampler' ? samplerBanks.get(mod.id) : undefined}
+                midiClockInfo={mod.typeId === 'midi_clock_in' ? midiClockInfo : undefined}
+                onToggleMidiClockLock={mod.typeId === 'midi_clock_in' ? handleToggleMidiClockLock : undefined}
               />
             </div>
           ))}
