@@ -892,6 +892,18 @@ export function createAudioModule(
     }
 
     // ── Envelopes ────────────────────────────────────────────────────
+    // Cross-browser helper: hold the current automated value at `t` rather than snapping
+    const cancelAndHold = (param: AudioParam, t: number) => {
+      if (typeof (param as AudioParam & { cancelAndHoldAtTime?: (t: number) => AudioParam }).cancelAndHoldAtTime === 'function') {
+        (param as AudioParam & { cancelAndHoldAtTime: (t: number) => AudioParam }).cancelAndHoldAtTime(t);
+      } else {
+        // Fallback: read the live value NOW (before cancelling) then pin it at t
+        const v = param.value;
+        param.cancelScheduledValues(t);
+        param.setValueAtTime(v, t);
+      }
+    };
+
     case 'adsr': {
       const cv = ctx.createConstantSource();
       cv.offset.value = 0; cv.start();
@@ -909,7 +921,7 @@ export function createAudioModule(
             gateOpen = true; noteOnTime = time;
             const a = p.attack ?? 0.01, d = p.decay ?? 0.1, s = p.sustain ?? 0.7;
             const DC = 0.003;
-            cv.offset.cancelAndHoldAtTime(time);
+            cancelAndHold(cv.offset, time);
             cv.offset.linearRampToValueAtTime(0, time + DC);
             cv.offset.linearRampToValueAtTime(1, time + DC + a);
             cv.offset.linearRampToValueAtTime(s, time + DC + a + d);
@@ -920,7 +932,7 @@ export function createAudioModule(
           try {
             gateOpen = false;
             const r = p.release ?? 0.3;
-            cv.offset.cancelAndHoldAtTime(time);
+            cancelAndHold(cv.offset, time);
             cv.offset.linearRampToValueAtTime(0, time + r);
           } catch (_) {}
         },
@@ -966,7 +978,7 @@ export function createAudioModule(
             gateOpen = true; noteOnTime = time;
             const a = p.attack ?? 0.01, h = p.hold ?? 0.05, d = p.decay ?? 0.15, s = p.sustain ?? 0.6;
             const DC = 0.003;
-            cv.offset.cancelAndHoldAtTime(time);
+            cancelAndHold(cv.offset, time);
             cv.offset.linearRampToValueAtTime(0, time + DC);
             cv.offset.linearRampToValueAtTime(1, time + DC + a);
             cv.offset.setValueAtTime(1, time + DC + a + h);
@@ -978,7 +990,7 @@ export function createAudioModule(
           try {
             gateOpen = false;
             const r = p.release ?? 0.4;
-            cv.offset.cancelAndHoldAtTime(time);
+            cancelAndHold(cv.offset, time);
             cv.offset.linearRampToValueAtTime(0, time + r);
           } catch (_) {}
         },
