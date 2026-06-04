@@ -35,6 +35,8 @@ interface ModulePanelProps {
   midiClockInfo?: { bpm: number | null; deviceName: string | null; locked: boolean };
   /** MIDI Clock In module: toggle sync lock */
   onToggleMidiClockLock?: () => void;
+  /** Freeze module: instantly kill the frozen loop */
+  onFreezeKill?: () => void;
 }
 
 function ActivityLED({ getLevelFn, color }: { getLevelFn: () => number; color: string }) {
@@ -470,6 +472,7 @@ export default function ModulePanel({
   analyser, midiMonitorData, isMidiTarget, moduleStepRef, getLevelFn, cvLevels,
   onLoadSample, samplerBanksFilled,
   midiClockInfo, onToggleMidiClockLock,
+  onFreezeKill,
 }: ModulePanelProps) {
   const typeDef = MODULE_TYPE_MAP.get(module.typeId);
   const [showDelete, setShowDelete] = useState(false);
@@ -901,6 +904,23 @@ export default function ModulePanel({
                     </div>
                   );
                 })}
+
+                {module.typeId === 'freeze_proc' && onFreezeKill && (
+                  <div style={{ display: 'flex', justifyContent: 'center', marginTop: 2 }}>
+                    <button
+                      onClick={onFreezeKill}
+                      style={{
+                        padding: '3px 12px', fontSize: 8, borderRadius: 2, cursor: 'pointer',
+                        background: '#7f1d1d', color: '#fca5a5',
+                        border: '1px solid #991b1b',
+                        letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 700,
+                        transition: 'background 0.1s',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#991b1b')}
+                      onMouseLeave={e => (e.currentTarget.style.background = '#7f1d1d')}
+                    >KILL</button>
+                  </div>
+                )}
 
                 {isOutput && <OutputMeter analyser={analyser} />}
                 {module.typeId === 'midi_monitor' && midiMonitorData && (

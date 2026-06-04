@@ -1206,6 +1206,10 @@ export default function SynthApp() {
     setMidiClockLocked(!midiClockInfoRef.current.locked);
   }, []);
 
+  const handleFreezeKill = useCallback((moduleId: string) => {
+    audioModulesRef.current.get(moduleId)?.kill?.();
+  }, []);
+
   // MIDI input — routes USB keyboard events + Minilab CC→knob mapping + MIDI Clock
   const { status: midiStatus, deviceCount: midiDeviceCount } = useMIDI(handleKeyNote, handleKeyBend, handleKeyMod, handleMidiMon, handleMidiClock);
 
@@ -1637,6 +1641,7 @@ export default function SynthApp() {
                 samplerBanksFilled={mod.typeId === 'sampler' ? samplerBanks.get(mod.id) : undefined}
                 midiClockInfo={mod.typeId === 'midi_clock_in' ? midiClockInfo : undefined}
                 onToggleMidiClockLock={mod.typeId === 'midi_clock_in' ? handleToggleMidiClockLock : undefined}
+                onFreezeKill={mod.typeId === 'freeze_proc' ? () => handleFreezeKill(mod.id) : undefined}
               />
             </div>
           ))}

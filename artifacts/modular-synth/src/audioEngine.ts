@@ -21,6 +21,8 @@ export interface AudioModuleNodes {
   portNoteOn?: Map<string, (time: number, freq?: number) => void>;
   /** Sampler only: decode and store an ArrayBuffer into the given bank slot */
   loadSample?: (arrayBuffer: ArrayBuffer, bankIndex: number) => Promise<void>;
+  /** Freeze only: instantly silence and clear the frozen loop */
+  kill?: () => void;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -2400,6 +2402,17 @@ export function createAudioModule(
             fb.gain.value = val > 0.5 ? 0.98 : 0;
             dryG.gain.value = val > 0.5 ? 0 : 1 - (p.mix ?? 1);
           }
+        },
+        kill: () => {
+          // Instantly silence the frozen loop: zero feedback + mute wet
+          fb.gain.setTargetAtTime(0, delay.context.currentTime, 0.01);
+          wetG.gain.setTargetAtTime(0, delay.context.currentTime, 0.01);
+          // After the tail fades, restore dry + feedback ready for next freeze
+          setTimeout(() => {
+            fb.gain.value = 0;
+            wetG.gain.value = p.mix ?? 1;
+            dryG.gain.value = 1 - (p.mix ?? 1);
+          }, 200);
         },
         destroy: () => { [input, delay, fb, out, dryG, wetG].forEach(n => n.disconnect()); },
       };
