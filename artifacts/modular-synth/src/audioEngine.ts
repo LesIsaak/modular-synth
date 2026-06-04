@@ -906,13 +906,16 @@ export function createAudioModule(
         ]),
         noteOn: (time, _freq) => {
           try {
-            gateOpen = true; noteOnTime = time;
+            gateOpen = true;
             const a = p.attack ?? 0.01, d = p.decay ?? 0.1, s = p.sustain ?? 0.7;
+            const declick = 0.002;
             cv.offset.cancelScheduledValues(time);
-            cv.offset.setValueAtTime(0, time);
-            cv.offset.linearRampToValueAtTime(1, time + a);
-            cv.offset.linearRampToValueAtTime(s, time + a + d);
-            eoc.offset.setValueAtTime(1, time + a + d); eoc.offset.setValueAtTime(0, time + a + d + 0.01);
+            cv.offset.setValueAtTime(cv.offset.value, time);
+            cv.offset.linearRampToValueAtTime(0, time + declick);
+            noteOnTime = time + declick;
+            cv.offset.linearRampToValueAtTime(1, time + declick + a);
+            cv.offset.linearRampToValueAtTime(s, time + declick + a + d);
+            eoc.offset.setValueAtTime(1, time + declick + a + d); eoc.offset.setValueAtTime(0, time + declick + a + d + 0.01);
           } catch (_) {}
         },
         noteOff: (time) => {
@@ -963,14 +966,17 @@ export function createAudioModule(
         ]),
         noteOn: (time, _freq) => {
           try {
-            gateOpen = true; noteOnTime = time;
+            gateOpen = true;
             const a = p.attack ?? 0.01, h = p.hold ?? 0.05, d = p.decay ?? 0.15, s = p.sustain ?? 0.6;
+            const declick = 0.002;
             cv.offset.cancelScheduledValues(time);
-            cv.offset.setValueAtTime(0, time);
-            cv.offset.linearRampToValueAtTime(1, time + a);
-            cv.offset.setValueAtTime(1, time + a + h);
-            cv.offset.linearRampToValueAtTime(s, time + a + h + d);
-            eoc.offset.setValueAtTime(1, time + a + h + d); eoc.offset.setValueAtTime(0, time + a + h + d + 0.01);
+            cv.offset.setValueAtTime(cv.offset.value, time);
+            cv.offset.linearRampToValueAtTime(0, time + declick);
+            noteOnTime = time + declick;
+            cv.offset.linearRampToValueAtTime(1, time + declick + a);
+            cv.offset.setValueAtTime(1, time + declick + a + h);
+            cv.offset.linearRampToValueAtTime(s, time + declick + a + h + d);
+            eoc.offset.setValueAtTime(1, time + declick + a + h + d); eoc.offset.setValueAtTime(0, time + declick + a + h + d + 0.01);
           } catch (_) {}
         },
         noteOff: (time) => {
