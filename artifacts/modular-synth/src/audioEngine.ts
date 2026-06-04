@@ -898,6 +898,23 @@ export function createAudioModule(
       const eoc = ctx.createConstantSource(); eoc.offset.value = 0; eoc.start();
       let gateOpen = false;
       let noteOnTime = 0;
+      let releaseStartVal = 0;
+      let releaseStartTime = 0;
+
+      const envValueAt = (t: number): number => {
+        const a = p.attack ?? 0.01, d = p.decay ?? 0.1, s = p.sustain ?? 0.7, r = p.release ?? 0.3;
+        if (gateOpen) {
+          const e = t - noteOnTime;
+          if (e < 0) return 0;
+          if (e < a) return a > 0 ? e / a : 1;
+          if (e < a + d) return 1 - (1 - s) * (d > 0 ? (e - a) / d : 1);
+          return s;
+        }
+        const e = t - releaseStartTime;
+        if (e <= 0) return releaseStartVal;
+        return Math.max(0, releaseStartVal * (r > 0 ? 1 - e / r : 0));
+      };
+
       return {
         outputs: new Map([['env_out', cv], ['eoc_out', eoc]]),
         inputs: new Map([
@@ -906,21 +923,27 @@ export function createAudioModule(
         ]),
         noteOn: (time, _freq) => {
           try {
-            gateOpen = true; noteOnTime = time;
             const a = p.attack ?? 0.01, d = p.decay ?? 0.1, s = p.sustain ?? 0.7;
+            const startVal = envValueAt(time);
+            const DECLICK = startVal > 0.005 ? 0.003 : 0;
+            const t0 = time + DECLICK;
+            gateOpen = true; noteOnTime = t0;
             cv.offset.cancelScheduledValues(time);
-            cv.offset.setValueAtTime(0, time);
-            cv.offset.linearRampToValueAtTime(1, time + a);
-            cv.offset.linearRampToValueAtTime(s, time + a + d);
-            eoc.offset.setValueAtTime(1, time + a + d); eoc.offset.setValueAtTime(0, time + a + d + 0.01);
+            cv.offset.setValueAtTime(startVal, time);
+            if (DECLICK > 0) cv.offset.linearRampToValueAtTime(0, t0);
+            cv.offset.linearRampToValueAtTime(1, t0 + a);
+            cv.offset.linearRampToValueAtTime(s, t0 + a + d);
+            eoc.offset.setValueAtTime(1, t0 + a + d); eoc.offset.setValueAtTime(0, t0 + a + d + 0.01);
           } catch (_) {}
         },
         noteOff: (time) => {
           try {
+            releaseStartVal = envValueAt(time);
+            releaseStartTime = time;
             gateOpen = false;
             const r = p.release ?? 0.3;
             cv.offset.cancelScheduledValues(time);
-            cv.offset.setValueAtTime(cv.offset.value, time);
+            cv.offset.setValueAtTime(releaseStartVal, time);
             cv.offset.linearRampToValueAtTime(0, time + r);
           } catch (_) {}
         },
@@ -939,7 +962,7 @@ export function createAudioModule(
               const fullEnd = noteOnTime + (p.attack ?? 0.01) + (p.decay ?? 0.1);
               if (fullEnd > now) {
                 cv.offset.cancelScheduledValues(now);
-                cv.offset.setValueAtTime(cv.offset.value, now);
+                cv.offset.setValueAtTime(envValueAt(now), now);
                 cv.offset.linearRampToValueAtTime(s, fullEnd);
               }
             }
@@ -955,6 +978,24 @@ export function createAudioModule(
       const eoc = ctx.createConstantSource(); eoc.offset.value = 0; eoc.start();
       let gateOpen = false;
       let noteOnTime = 0;
+      let releaseStartVal = 0;
+      let releaseStartTime = 0;
+
+      const envValueAt = (t: number): number => {
+        const a = p.attack ?? 0.01, h = p.hold ?? 0.05, d = p.decay ?? 0.15, s = p.sustain ?? 0.6, r = p.release ?? 0.4;
+        if (gateOpen) {
+          const e = t - noteOnTime;
+          if (e < 0) return 0;
+          if (e < a) return a > 0 ? e / a : 1;
+          if (e < a + h) return 1;
+          if (e < a + h + d) return 1 - (1 - s) * (d > 0 ? (e - a - h) / d : 1);
+          return s;
+        }
+        const e = t - releaseStartTime;
+        if (e <= 0) return releaseStartVal;
+        return Math.max(0, releaseStartVal * (r > 0 ? 1 - e / r : 0));
+      };
+
       return {
         outputs: new Map([['env_out', cv], ['eoc_out', eoc]]),
         inputs: new Map([
@@ -963,22 +1004,28 @@ export function createAudioModule(
         ]),
         noteOn: (time, _freq) => {
           try {
-            gateOpen = true; noteOnTime = time;
             const a = p.attack ?? 0.01, h = p.hold ?? 0.05, d = p.decay ?? 0.15, s = p.sustain ?? 0.6;
+            const startVal = envValueAt(time);
+            const DECLICK = startVal > 0.005 ? 0.003 : 0;
+            const t0 = time + DECLICK;
+            gateOpen = true; noteOnTime = t0;
             cv.offset.cancelScheduledValues(time);
-            cv.offset.setValueAtTime(0, time);
-            cv.offset.linearRampToValueAtTime(1, time + a);
-            cv.offset.setValueAtTime(1, time + a + h);
-            cv.offset.linearRampToValueAtTime(s, time + a + h + d);
-            eoc.offset.setValueAtTime(1, time + a + h + d); eoc.offset.setValueAtTime(0, time + a + h + d + 0.01);
+            cv.offset.setValueAtTime(startVal, time);
+            if (DECLICK > 0) cv.offset.linearRampToValueAtTime(0, t0);
+            cv.offset.linearRampToValueAtTime(1, t0 + a);
+            cv.offset.setValueAtTime(1, t0 + a + h);
+            cv.offset.linearRampToValueAtTime(s, t0 + a + h + d);
+            eoc.offset.setValueAtTime(1, t0 + a + h + d); eoc.offset.setValueAtTime(0, t0 + a + h + d + 0.01);
           } catch (_) {}
         },
         noteOff: (time) => {
           try {
+            releaseStartVal = envValueAt(time);
+            releaseStartTime = time;
             gateOpen = false;
             const r = p.release ?? 0.4;
             cv.offset.cancelScheduledValues(time);
-            cv.offset.setValueAtTime(cv.offset.value, time);
+            cv.offset.setValueAtTime(releaseStartVal, time);
             cv.offset.linearRampToValueAtTime(0, time + r);
           } catch (_) {}
         },
