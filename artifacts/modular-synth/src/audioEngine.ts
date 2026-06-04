@@ -3224,13 +3224,16 @@ export function createAudioModule(
       let pollId: ReturnType<typeof setInterval> | null = null;
       let destroyed = false;
 
-      const mainGain = ctx.createGain();
-      mainGain.gain.value = p.gain ?? 1;
-
+      // Per-channel gain nodes and analysers
+      const chGains: GainNode[] = [];
       const analysers: AnalyserNode[] = [];
       const dataArrays: Float32Array<ArrayBuffer>[] = [];
       for (let i = 0; i < NUM_CH; i++) {
+        const g = ctx.createGain();
+        g.gain.value = p[`ch${i + 1}_gain`] ?? 1;
+        chGains.push(g);
         const a = ctx.createAnalyser(); a.fftSize = 512;
+        g.connect(a);
         analysers.push(a);
         dataArrays.push(new Float32Array(a.fftSize) as Float32Array<ArrayBuffer>);
       }
@@ -3254,11 +3257,10 @@ export function createAudioModule(
           deviceLabel = stream.getAudioTracks()[0]?.label ?? 'Unknown device';
           const numCh = stream.getAudioTracks()[0]?.getSettings().channelCount ?? 2;
           sourceNode = ctx.createMediaStreamSource(stream);
-          sourceNode.connect(mainGain);
           splitter = ctx.createChannelSplitter(Math.max(numCh, 1));
-          mainGain.connect(splitter);
+          sourceNode.connect(splitter);
           for (let i = 0; i < Math.min(numCh, NUM_CH); i++) {
-            splitter.connect(analysers[i], i, 0);
+            splitter.connect(chGains[i], i, 0);
           }
         } catch (_) {
           deviceLabel = 'Permission denied';
@@ -3266,11 +3268,11 @@ export function createAudioModule(
 
         if (destroyed) return;
         pollId = setInterval(() => {
-          const thresh   = p.threshold ?? 0.12;
-          const retrigMs = (p.retrig   ?? 0.08) * 1000;
-          const now      = performance.now();
+          const now = performance.now();
           for (let i = 0; i < NUM_CH; i++) {
             if ((p[`ch${i + 1}_on`] ?? (i < 6 ? 1 : 0)) < 0.5) continue;
+            const thresh   = p[`ch${i + 1}_thresh`] ?? 0.12;
+            const retrigMs = (p[`ch${i + 1}_retrig`] ?? 0.08) * 1000;
             const d = dataArrays[i];
             analysers[i].getFloatTimeDomainData(d);
             let rms = 0;
@@ -3293,7 +3295,11 @@ export function createAudioModule(
         inputs:  new Map(),
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'gain') mainGain.gain.value = val;
+          const gainMatch = id.match(/^ch(\d+)_gain$/);
+          if (gainMatch) {
+            const idx = parseInt(gainMatch[1]) - 1;
+            if (chGains[idx]) chGains[idx].gain.value = val;
+          }
         },
         setPortGateTrigger: (portId, fn) => { gateCbs.set(portId, fn); },
         getLevel: () => {
@@ -3317,7 +3323,7 @@ export function createAudioModule(
           stream?.getTracks().forEach(t => t.stop());
           try { sourceNode?.disconnect(); } catch (_) {}
           try { splitter?.disconnect(); }   catch (_) {}
-          mainGain.disconnect();
+          chGains.forEach(g => { try { g.disconnect(); } catch (_) {} });
           analysers.forEach(a => { try { a.disconnect(); } catch (_) {} });
         },
       };
