@@ -453,6 +453,8 @@ function FixedKeyboardPanel({
   midiStatus,
   midiDeviceCount,
   midiActiveNotes,
+  onSave,
+  onLoad,
 }: {
   started: boolean;
   onNote:           (freq: number, on: boolean) => void;
@@ -466,6 +468,8 @@ function FixedKeyboardPanel({
   midiStatus:       MidiStatus;
   midiDeviceCount:  number;
   midiActiveNotes?: ReadonlySet<number>;
+  onSave:           () => void;
+  onLoad:           () => void;
 }) {
   const [octave,     setOctave]     = useState(4);
   const [activeNote, setActiveNote] = useState<number | null>(null);
@@ -644,6 +648,34 @@ function FixedKeyboardPanel({
               style={{ width: 52, height: 4, cursor: 'pointer', accentColor: '#555' }}
             />
           </div>
+          {/* SAVE button */}
+          <button
+            onClick={onSave}
+            disabled={!started}
+            title="Save patch (Ctrl+S)"
+            style={{
+              height: 16, padding: '0 7px', fontSize: 7, letterSpacing: '0.16em',
+              borderRadius: 2, cursor: started ? 'pointer' : 'default',
+              fontWeight: 700, textTransform: 'uppercase',
+              border: '1px solid #374151', background: '#181818',
+              color: started ? '#9ca3af' : '#2a2a2a',
+              transition: 'all 0.1s', opacity: started ? 1 : 0.4,
+            }}
+          >↓ SAVE</button>
+          {/* LOAD button */}
+          <button
+            onClick={onLoad}
+            disabled={!started}
+            title="Load patch (Ctrl+O)"
+            style={{
+              height: 16, padding: '0 7px', fontSize: 7, letterSpacing: '0.16em',
+              borderRadius: 2, cursor: started ? 'pointer' : 'default',
+              fontWeight: 700, textTransform: 'uppercase',
+              border: '1px solid #374151', background: '#181818',
+              color: started ? '#9ca3af' : '#2a2a2a',
+              transition: 'all 0.1s', opacity: started ? 1 : 0.4,
+            }}
+          >↑ LOAD</button>
           {/* UNDO button */}
           <button
             onClick={onUndo}
@@ -964,6 +996,7 @@ export default function SynthApp() {
     setModules(snap.modules);
   }, [cables, modules]);
 
+  const fileInputRef     = useRef<HTMLInputElement>(null);
   const audioCtxRef      = useRef<AudioContext | null>(null);
   const audioModulesRef  = useRef<Map<string, ReturnType<typeof createAudioModule>>>(new Map());
   const gateConnRef      = useRef<Map<string, Set<string>>>(new Map());
@@ -1208,6 +1241,73 @@ export default function SynthApp() {
 
   const handleFreezeKill = useCallback((moduleId: string) => {
     audioModulesRef.current.get(moduleId)?.kill?.();
+  }, []);
+
+  // ─── Patch save / load ───────────────────────────────────────────────────────
+  const handleSavePatch = useCallback(() => {
+    const patch = { version: 1, modules, cables };
+    const json  = JSON.stringify(patch, null, 2);
+    const blob  = new Blob([json], { type: 'application/json' });
+    const url   = URL.createObjectURL(blob);
+    const a     = document.createElement('a');
+    a.href      = url;
+    a.download  = `patch-${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.synth`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [modules, cables]);
+
+  const handleLoadPatch = useCallback((json: string) => {
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
+    let patch: { version?: number; modules?: ModuleInstance[]; cables?: Cable[] };
+    try { patch = JSON.parse(json); } catch { return; }
+    if (!Array.isArray(patch.modules) || !Array.isArray(patch.cables)) return;
+
+    pushUndo(cables, modules);
+
+    // Tear down all current audio
+    for (const nodes of audioModulesRef.current.values()) {
+      try { nodes.destroy(); } catch (_) {}
+    }
+    audioModulesRef.current.clear();
+    gateConnRef.current.clear();
+    portGateMapRef.current.clear();
+
+    // Rebuild from patch
+    for (const mod of patch.modules) {
+      const audio = createAudioModule(ctx, mod.typeId, { ...mod.params });
+      audioModulesRef.current.set(mod.id, audio);
+      // Selectors aren't applied by the constructor — apply them now
+      const typeDef = MODULE_TYPE_MAP.get(mod.typeId);
+      for (const sel of typeDef?.selectors ?? []) {
+        const val = mod.params[sel.id] ?? sel.default;
+        audio.setSelector?.(sel.id, val);
+      }
+    }
+
+    // Re-connect cables
+    for (const cable of patch.cables) {
+      const fromTypeDef = MODULE_TYPE_MAP.get(patch.modules!.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
+      const fromPort    = fromTypeDef?.ports.find(p => p.id === cable.fromPortId);
+      if (fromPort?.type === 'gate_out') {
+        const gk = `${cable.fromModuleId}:${cable.fromPortId}`;
+        if (!gateConnRef.current.has(gk)) gateConnRef.current.set(gk, new Set());
+        gateConnRef.current.get(gk)!.add(cable.toModuleId);
+        if (!portGateMapRef.current.has(gk)) portGateMapRef.current.set(gk, new Map());
+        portGateMapRef.current.get(gk)!.set(cable.toModuleId, cable.toPortId);
+      } else {
+        const fa = audioModulesRef.current.get(cable.fromModuleId);
+        const ta = audioModulesRef.current.get(cable.toModuleId);
+        if (fa && ta) connectAudioPorts(fa, cable.fromPortId, ta, cable.toPortId);
+      }
+    }
+
+    setCables(patch.cables);
+    setModules(patch.modules);
+  }, [cables, modules, pushUndo]);
+
+  const handleLoadClick = useCallback(() => {
+    fileInputRef.current?.click();
   }, []);
 
   // MIDI input — routes USB keyboard events + Minilab CC→knob mapping + MIDI Clock
@@ -1505,11 +1605,13 @@ export default function SynthApp() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { setPendingCable(null); return; }
-      if (e.key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleUndo(); }
+      if (e.key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleUndo(); return; }
+      if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleSavePatch(); return; }
+      if (e.key === 'o' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleLoadClick(); return; }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [handleUndo]);
+  }, [handleUndo, handleSavePatch, handleLoadClick]);
 
   // Legacy keyboard handler (for any keyboard module instances in modules list — none by default)
   const handleModuleKeyPress = useCallback((moduleId: string, freq: number, on: boolean) => {
@@ -1657,6 +1759,24 @@ export default function SynthApp() {
         </div>
       </div>
 
+      {/* Hidden file input for patch loading */}
+      <input
+        type="file"
+        accept=".synth,.json"
+        ref={fileInputRef}
+        style={{ display: 'none' }}
+        onChange={e => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = ev => {
+            if (typeof ev.target?.result === 'string') handleLoadPatch(ev.target.result);
+          };
+          reader.readAsText(file);
+          e.target.value = '';
+        }}
+      />
+
       {/* Fixed keyboard panel — always at the bottom */}
       <FixedKeyboardPanel
         started={started}
@@ -1671,6 +1791,8 @@ export default function SynthApp() {
         midiStatus={midiStatus}
         midiDeviceCount={midiDeviceCount}
         midiActiveNotes={midiActiveNotes}
+        onSave={handleSavePatch}
+        onLoad={handleLoadClick}
       />
     </div>
   );
