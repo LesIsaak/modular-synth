@@ -910,8 +910,10 @@ function useMIDI(
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function SynthApp() {
-  const [started,      setStarted]      = useState(false);
-  const [samplerBanks, setSamplerBanks] = useState<Map<string, boolean[]>>(new Map());
+  const [started,         setStarted]         = useState(false);
+  const [samplerBanks,    setSamplerBanks]    = useState<Map<string, boolean[]>>(new Map());
+  const [saveDialogOpen,  setSaveDialogOpen]  = useState(false);
+  const [saveDialogInput, setSaveDialogInput] = useState('');
   const [modules,      setModules]      = useState<ModuleInstance[]>(DEFAULT_MODULES);
   const [cables,       setCables]       = useState<Cable[]>(DEFAULT_CABLES);
   const [pendingCable, setPendingCable] = useState<PendingCable | null>(null);
@@ -1245,15 +1247,22 @@ export default function SynthApp() {
 
   // ─── Patch save / load ───────────────────────────────────────────────────────
   const handleSavePatch = useCallback(() => {
+    setSaveDialogInput('my-patch');
+    setSaveDialogOpen(true);
+  }, []);
+
+  const handleConfirmSave = useCallback((name: string) => {
+    const safeName = name.trim().replace(/[^a-zA-Z0-9_\- ]/g, '').trim() || 'my-patch';
     const patch = { version: 1, modules, cables };
     const json  = JSON.stringify(patch, null, 2);
     const blob  = new Blob([json], { type: 'application/json' });
     const url   = URL.createObjectURL(blob);
     const a     = document.createElement('a');
     a.href      = url;
-    a.download  = `patch-${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.synth`;
+    a.download  = `${safeName}.synth`;
     a.click();
     URL.revokeObjectURL(url);
+    setSaveDialogOpen(false);
   }, [modules, cables]);
 
   const handleLoadPatch = useCallback((json: string) => {
@@ -1758,6 +1767,67 @@ export default function SynthApp() {
           )}
         </div>
       </div>
+
+      {/* Save patch name dialog */}
+      {saveDialogOpen && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 200,
+            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(2px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+          onClick={() => setSaveDialogOpen(false)}
+        >
+          <div
+            style={{
+              background: '#141414', border: '1px solid #2a2a2a', borderRadius: 6,
+              padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 14,
+              minWidth: 280, boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 8, letterSpacing: '0.22em', color: '#555', textTransform: 'uppercase' }}>
+              SAVE PATCH
+            </div>
+            <input
+              autoFocus
+              value={saveDialogInput}
+              onChange={e => setSaveDialogInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') handleConfirmSave(saveDialogInput);
+                if (e.key === 'Escape') setSaveDialogOpen(false);
+              }}
+              placeholder="my-patch"
+              style={{
+                background: '#0a0a0a', border: '1px solid #333', borderRadius: 3,
+                color: '#ccc', fontSize: 13, padding: '7px 10px', fontFamily: 'monospace',
+                outline: 'none', width: '100%', boxSizing: 'border-box',
+              }}
+            />
+            <div style={{ fontSize: 7, color: '#444', letterSpacing: '0.08em', marginTop: -8 }}>
+              file will be saved as <span style={{ color: '#666' }}>{(saveDialogInput.trim() || 'my-patch').replace(/[^a-zA-Z0-9_\- ]/g, '') || 'my-patch'}.synth</span>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setSaveDialogOpen(false)}
+                style={{
+                  height: 26, padding: '0 12px', fontSize: 8, letterSpacing: '0.14em',
+                  borderRadius: 3, cursor: 'pointer', fontWeight: 700, textTransform: 'uppercase',
+                  border: '1px solid #2a2a2a', background: '#181818', color: '#555',
+                }}
+              >CANCEL</button>
+              <button
+                onClick={() => handleConfirmSave(saveDialogInput)}
+                style={{
+                  height: 26, padding: '0 14px', fontSize: 8, letterSpacing: '0.14em',
+                  borderRadius: 3, cursor: 'pointer', fontWeight: 700, textTransform: 'uppercase',
+                  border: '1px solid #c96a1a', background: '#e87d27', color: '#000',
+                }}
+              >SAVE</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Hidden file input for patch loading */}
       <input
