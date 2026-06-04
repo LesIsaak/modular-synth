@@ -878,9 +878,9 @@ export default function ModulePanel({
             ) : (
               /* ── Standard controls ── */
               <div style={{ flex: 1, padding: '6px 5px', display: 'flex', flexDirection: 'column', gap: 6, overflow: 'hidden' }}>
-                {typeDef.knobs.length > 0 && (
+                {typeDef.knobs.filter(k => !/^ch\d+_on$/.test(k.id)).length > 0 && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 4px', justifyContent: 'center' }}>
-                    {typeDef.knobs.map(knob => (
+                    {typeDef.knobs.filter(k => !/^ch\d+_on$/.test(k.id)).map(knob => (
                       <Knob
                         key={knob.id}
                         def={knob}
@@ -934,31 +934,56 @@ export default function ModulePanel({
                   </div>
                 )}
 
-                {module.typeId === 'audio_trig' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                    <div style={{
-                      fontSize: 7, color: '#555', letterSpacing: '0.08em',
-                      textTransform: 'uppercase', textAlign: 'center',
-                      maxWidth: 170, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
-                      {audioTrigLabel}
+                {module.typeId === 'audio_trig' && (() => {
+                  const chKnobs = typeDef.knobs.filter(k => /^ch\d+_on$/.test(k.id));
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, marginTop: 2 }}>
+                      {/* Channel toggles */}
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                        <span style={{ fontSize: 7, color: '#484848', textTransform: 'uppercase', letterSpacing: '0.1em' }}>CHANNELS</span>
+                        <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
+                          {chKnobs.map(k => {
+                            const on = (module.params[k.id] ?? k.default) >= 0.5;
+                            return (
+                              <button
+                                key={k.id}
+                                onClick={() => onParamChange(module.id, k.id, on ? 0 : 1)}
+                                style={{
+                                  padding: '2px 6px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
+                                  background: on ? accent : '#1c1c1c',
+                                  color: on ? '#000' : '#4a4a4a',
+                                  border: `1px solid ${on ? accent : '#282828'}`,
+                                  fontWeight: 600,
+                                }}
+                              >{k.name}</button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      {/* Device label + picker */}
+                      <div style={{
+                        fontSize: 7, color: '#555', letterSpacing: '0.06em',
+                        textAlign: 'center', maxWidth: 210,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>
+                        {audioTrigLabel}
+                      </div>
+                      {onAudioTrigPickDevice && (
+                        <button
+                          onClick={onAudioTrigPickDevice}
+                          style={{
+                            padding: '3px 10px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
+                            background: '#1a1a1a', color: '#94a3b8',
+                            border: '1px solid #2e2e2e',
+                            letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 600,
+                          }}
+                          onMouseEnter={e => (e.currentTarget.style.background = '#252525')}
+                          onMouseLeave={e => (e.currentTarget.style.background = '#1a1a1a')}
+                        >PICK DEVICE</button>
+                      )}
                     </div>
-                    {onAudioTrigPickDevice && (
-                      <button
-                        onClick={onAudioTrigPickDevice}
-                        style={{
-                          padding: '3px 10px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
-                          background: '#1a1a1a', color: '#94a3b8',
-                          border: '1px solid #2e2e2e',
-                          letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 600,
-                          transition: 'background 0.1s',
-                        }}
-                        onMouseEnter={e => (e.currentTarget.style.background = '#252525')}
-                        onMouseLeave={e => (e.currentTarget.style.background = '#1a1a1a')}
-                      >PICK DEVICE</button>
-                    )}
-                  </div>
-                )}
+                  );
+                })()}
 
                 {isOutput && <OutputMeter analyser={analyser} />}
                 {module.typeId === 'midi_monitor' && midiMonitorData && (

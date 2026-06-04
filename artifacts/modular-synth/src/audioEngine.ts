@@ -3214,31 +3214,26 @@ export function createAudioModule(
 
     // ── Audio Trig ────────────────────────────────────────────────────
     case 'audio_trig': {
+      const NUM_CH = 8;
       let stream: MediaStream | null = null;
       let sourceNode: MediaStreamAudioSourceNode | null = null;
       let splitter: ChannelSplitterNode | null = null;
       let deviceLabel = 'No device';
-      let gateCb: ((on: boolean, freq: number) => void) | null = null;
-      let lastTrigMs = -Infinity;
+      const gateCbs = new Map<string, (on: boolean, freq: number) => void>();
+      const lastTrigMs: number[] = Array(NUM_CH).fill(-Infinity);
       let pollId: ReturnType<typeof setInterval> | null = null;
       let destroyed = false;
 
-      const gainNode = ctx.createGain();
-      gainNode.gain.value = p.gain ?? 1;
+      const mainGain = ctx.createGain();
+      mainGain.gain.value = p.gain ?? 1;
 
-      const analyserNode = ctx.createAnalyser();
-      analyserNode.fftSize = 512;
-      const dataArray = new Float32Array(analyserNode.fftSize);
-      gainNode.connect(analyserNode);
-
-      const reconnectChannel = () => {
-        if (!splitter || !stream) return;
-        try { splitter.disconnect(gainNode); } catch (_) {}
-        const settings = stream.getAudioTracks()[0]?.getSettings();
-        const numCh = settings?.channelCount ?? 2;
-        const ch = Math.min(Math.round(p.channel ?? 0), numCh - 1);
-        splitter.connect(gainNode, ch, 0);
-      };
+      const analysers: AnalyserNode[] = [];
+      const dataArrays: Float32Array<ArrayBuffer>[] = [];
+      for (let i = 0; i < NUM_CH; i++) {
+        const a = ctx.createAnalyser(); a.fftSize = 512;
+        analysers.push(a);
+        dataArrays.push(new Float32Array(a.fftSize) as Float32Array<ArrayBuffer>);
+      }
 
       const startCapture = async (deviceId?: string) => {
         if (pollId) { clearInterval(pollId); pollId = null; }
@@ -3250,37 +3245,43 @@ export function createAudioModule(
           stream = await navigator.mediaDevices.getUserMedia({
             audio: {
               ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
-              channelCount:      { ideal: 8 },
-              echoCancellation:  false,
-              noiseSuppression:  false,
-              autoGainControl:   false,
+              channelCount:     { ideal: NUM_CH },
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl:  false,
             },
           });
           deviceLabel = stream.getAudioTracks()[0]?.label ?? 'Unknown device';
-          sourceNode  = ctx.createMediaStreamSource(stream);
           const numCh = stream.getAudioTracks()[0]?.getSettings().channelCount ?? 2;
-          splitter    = ctx.createChannelSplitter(Math.max(numCh, 1));
-          sourceNode.connect(splitter);
-          reconnectChannel();
-        } catch (e) {
+          sourceNode = ctx.createMediaStreamSource(stream);
+          sourceNode.connect(mainGain);
+          splitter = ctx.createChannelSplitter(Math.max(numCh, 1));
+          mainGain.connect(splitter);
+          for (let i = 0; i < Math.min(numCh, NUM_CH); i++) {
+            splitter.connect(analysers[i], i, 0);
+          }
+        } catch (_) {
           deviceLabel = 'Permission denied';
         }
 
         if (destroyed) return;
         pollId = setInterval(() => {
-          analyserNode.getFloatTimeDomainData(dataArray);
-          let rms = 0;
-          for (let i = 0; i < dataArray.length; i++) rms += dataArray[i] * dataArray[i];
-          rms = Math.sqrt(rms / dataArray.length);
-
-          const thresh    = p.threshold ?? 0.12;
-          const retrigMs  = (p.retrig   ?? 0.08) * 1000;
-          const now       = performance.now();
-
-          if (rms > thresh && now - lastTrigMs > retrigMs) {
-            lastTrigMs = now;
-            gateCb?.(true, 440);
-            setTimeout(() => gateCb?.(false, 440), 12);
+          const thresh   = p.threshold ?? 0.12;
+          const retrigMs = (p.retrig   ?? 0.08) * 1000;
+          const now      = performance.now();
+          for (let i = 0; i < NUM_CH; i++) {
+            if ((p[`ch${i + 1}_on`] ?? (i < 6 ? 1 : 0)) < 0.5) continue;
+            const d = dataArrays[i];
+            analysers[i].getFloatTimeDomainData(d);
+            let rms = 0;
+            for (let j = 0; j < d.length; j++) rms += d[j] * d[j];
+            rms = Math.sqrt(rms / d.length);
+            if (rms > thresh && now - lastTrigMs[i] > retrigMs) {
+              lastTrigMs[i] = now;
+              const cb = gateCbs.get(`gate${i + 1}_out`);
+              cb?.(true, 440);
+              setTimeout(() => cb?.(false, 440), 12);
+            }
           }
         }, 16);
       };
@@ -3288,24 +3289,25 @@ export function createAudioModule(
       startCapture();
 
       return {
-        outputs: new Map<string, AudioNode>([
-          ['audio_out', gainNode],
-        ]),
-        inputs: new Map(),
+        outputs: new Map<string, AudioNode>(),
+        inputs:  new Map(),
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'gain')    gainNode.gain.value = val;
-          if (id === 'channel') reconnectChannel();
+          if (id === 'gain') mainGain.gain.value = val;
         },
-        setSelector: (id, val) => {
-          if (id === 'channel') { p.channel = val; reconnectChannel(); }
-        },
-        setGateTrigger: fn => { gateCb = fn; },
+        setPortGateTrigger: (portId, fn) => { gateCbs.set(portId, fn); },
         getLevel: () => {
-          analyserNode.getFloatTimeDomainData(dataArray);
-          let rms = 0;
-          for (let i = 0; i < dataArray.length; i++) rms += dataArray[i] * dataArray[i];
-          return Math.min(1, Math.sqrt(rms / dataArray.length) * 12);
+          let total = 0, count = 0;
+          for (let i = 0; i < NUM_CH; i++) {
+            if ((p[`ch${i + 1}_on`] ?? (i < 6 ? 1 : 0)) < 0.5) continue;
+            const d = dataArrays[i];
+            analysers[i].getFloatTimeDomainData(d);
+            let rms = 0;
+            for (let j = 0; j < d.length; j++) rms += d[j] * d[j];
+            total += Math.sqrt(rms / d.length);
+            count++;
+          }
+          return count > 0 ? Math.min(1, (total / count) * 14) : 0;
         },
         triggerDeviceRepick: () => { startCapture(); },
         getDeviceLabel: () => deviceLabel,
@@ -3315,8 +3317,8 @@ export function createAudioModule(
           stream?.getTracks().forEach(t => t.stop());
           try { sourceNode?.disconnect(); } catch (_) {}
           try { splitter?.disconnect(); }   catch (_) {}
-          gainNode.disconnect();
-          analyserNode.disconnect();
+          mainGain.disconnect();
+          analysers.forEach(a => { try { a.disconnect(); } catch (_) {} });
         },
       };
     }

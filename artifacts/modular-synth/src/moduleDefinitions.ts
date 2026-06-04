@@ -1064,18 +1064,30 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
     ],
   },
   {
-    id: 'audio_trig', name: 'AUDIO TRIG', category: 'utility', accentColor: UTL, width: 210,
+    id: 'audio_trig', name: 'AUDIO TRIG', category: 'utility', accentColor: UTL, width: 240,
     knobs: [
       { id: 'gain',      name: 'GAIN',   min: 0,    max: 3,    default: 1,    step: 0.01 },
       { id: 'threshold', name: 'THRESH', min: 0,    max: 1,    default: 0.12, step: 0.005 },
       { id: 'retrig',    name: 'RETRIG', min: 0.01, max: 2,    default: 0.08, step: 0.01 },
-    ],
-    selectors: [
-      { id: 'channel', name: 'CH', options: ['1','2','3','4','5','6','7','8'], default: 0 },
+      // per-channel enable toggles stored as 0/1 knobs (rendered as buttons, not knobs)
+      { id: 'ch1_on', name: 'CH1', min: 0, max: 1, default: 1, step: 1 },
+      { id: 'ch2_on', name: 'CH2', min: 0, max: 1, default: 1, step: 1 },
+      { id: 'ch3_on', name: 'CH3', min: 0, max: 1, default: 1, step: 1 },
+      { id: 'ch4_on', name: 'CH4', min: 0, max: 1, default: 1, step: 1 },
+      { id: 'ch5_on', name: 'CH5', min: 0, max: 1, default: 1, step: 1 },
+      { id: 'ch6_on', name: 'CH6', min: 0, max: 1, default: 1, step: 1 },
+      { id: 'ch7_on', name: 'CH7', min: 0, max: 1, default: 0, step: 1 },
+      { id: 'ch8_on', name: 'CH8', min: 0, max: 1, default: 0, step: 1 },
     ],
     ports: [
-      { id: 'audio_out', name: 'OUT',  type: 'audio_out' },
-      { id: 'gate_out',  name: 'GATE', type: 'gate_out'  },
+      { id: 'gate1_out', name: 'GATE 1', type: 'gate_out' },
+      { id: 'gate2_out', name: 'GATE 2', type: 'gate_out' },
+      { id: 'gate3_out', name: 'GATE 3', type: 'gate_out' },
+      { id: 'gate4_out', name: 'GATE 4', type: 'gate_out' },
+      { id: 'gate5_out', name: 'GATE 5', type: 'gate_out' },
+      { id: 'gate6_out', name: 'GATE 6', type: 'gate_out' },
+      { id: 'gate7_out', name: 'GATE 7', type: 'gate_out' },
+      { id: 'gate8_out', name: 'GATE 8', type: 'gate_out' },
     ],
   },
   {
