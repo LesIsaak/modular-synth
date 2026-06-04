@@ -209,6 +209,16 @@ export function createAudioModule(
   _timingCtx = ctx; // keep reference current so the Worker handler can convert timestamps
   const p = { ...params };
 
+  const cancelAndHold = (param: AudioParam, t: number) => {
+    if (typeof (param as AudioParam & { cancelAndHoldAtTime?: (t: number) => AudioParam }).cancelAndHoldAtTime === 'function') {
+      (param as AudioParam & { cancelAndHoldAtTime: (t: number) => AudioParam }).cancelAndHoldAtTime(t);
+    } else {
+      const v = param.value;
+      param.cancelScheduledValues(t);
+      param.setValueAtTime(v, t);
+    }
+  };
+
   switch (typeId) {
     // ── Oscillators ─────────────────────────────────────────────────
     case 'analog_vco': {
@@ -892,18 +902,6 @@ export function createAudioModule(
     }
 
     // ── Envelopes ────────────────────────────────────────────────────
-    // Cross-browser helper: hold the current automated value at `t` rather than snapping
-    const cancelAndHold = (param: AudioParam, t: number) => {
-      if (typeof (param as AudioParam & { cancelAndHoldAtTime?: (t: number) => AudioParam }).cancelAndHoldAtTime === 'function') {
-        (param as AudioParam & { cancelAndHoldAtTime: (t: number) => AudioParam }).cancelAndHoldAtTime(t);
-      } else {
-        // Fallback: read the live value NOW (before cancelling) then pin it at t
-        const v = param.value;
-        param.cancelScheduledValues(t);
-        param.setValueAtTime(v, t);
-      }
-    };
-
     case 'adsr': {
       const cv = ctx.createConstantSource();
       cv.offset.value = 0; cv.start();
