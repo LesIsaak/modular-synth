@@ -19,6 +19,8 @@ export interface AudioModuleNodes {
   getLevel?: () => number;
   /** Per-port gate handlers (e.g. individual drum voice triggers) */
   portNoteOn?: Map<string, (time: number, freq?: number) => void>;
+  /** Sampler only: decode and store an ArrayBuffer into the given bank slot */
+  loadSample?: (arrayBuffer: ArrayBuffer, bankIndex: number) => Promise<void>;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -2400,6 +2402,131 @@ export function createAudioModule(
           }
         },
         destroy: () => { [input, delay, fb, out, dryG, wetG].forEach(n => n.disconnect()); },
+      };
+    }
+
+    // ── Sampler ───────────────────────────────────────────────────────
+    case 'sampler': {
+      const NUM_BANKS = 8;
+      const sampOut = ctx.createGain(); sampOut.gain.value = 1;
+      const banks: (AudioBuffer | null)[]    = new Array(NUM_BANKS).fill(null);
+      const banksRev: (AudioBuffer | null)[] = new Array(NUM_BANKS).fill(null);
+
+      // CV tap: Analyser read at note-on time
+      const makeSamplerCVTap = () => {
+        const mix = ctx.createGain(); mix.gain.value = 1;
+        const tap = ctx.createAnalyser(); tap.fftSize = 32;
+        mix.connect(tap);
+        const fbuf = new Float32Array(1);
+        return {
+          input:   { node: mix as AudioNode },
+          read:    () => { tap.getFloatTimeDomainData(fbuf); return fbuf[0]; },
+          destroy: () => { try { mix.disconnect(); } catch(_){} try { tap.disconnect(); } catch(_){} },
+        };
+      };
+      const pitchCvTap = makeSamplerCVTap();
+      const startCvTap = makeSamplerCVTap();
+      const lenCvTap   = makeSamplerCVTap();
+      const bankCvTap  = makeSamplerCVTap();
+
+      let activeSource: AudioBufferSourceNode | null = null;
+      let eocCb: ((on: boolean, freq: number) => void) | null = null;
+      let samplerDestroyed = false;
+      let lastTriggerMs = 0;
+
+      const makeReversed = (buf: AudioBuffer): AudioBuffer => {
+        const rev = ctx.createBuffer(buf.numberOfChannels, buf.length, buf.sampleRate);
+        for (let c = 0; c < buf.numberOfChannels; c++) {
+          const fwd   = buf.getChannelData(c);
+          const revCh = rev.getChannelData(c);
+          for (let i = 0; i < buf.length; i++) revCh[i] = fwd[buf.length - 1 - i];
+        }
+        return rev;
+      };
+
+      const sampPlay = (time: number, freq = 440) => {
+        if (samplerDestroyed) return;
+        const bankIdx = Math.max(0, Math.min(NUM_BANKS - 1, Math.round((p.bank ?? 0) + bankCvTap.read())));
+        const isRev   = Math.round(p.reverse ?? 0) > 0;
+        const buf     = isRev ? banksRev[bankIdx] : banks[bankIdx];
+        if (!buf) return;
+        lastTriggerMs = performance.now();
+
+        if (activeSource) {
+          try { activeSource.stop(time); } catch (_) {}
+          try { activeSource.disconnect(); } catch (_) {}
+          activeSource = null;
+        }
+
+        const semis        = (p.pitch ?? 0) + pitchCvTap.read() * 12;
+        const playbackRate = Math.max(0.01, Math.pow(2, semis / 12));
+        const startFrac    = Math.max(0, Math.min(0.99, (p.start  ?? 0) + startCvTap.read() * 0.5));
+        const lenFrac      = Math.max(0.01, Math.min(1 - startFrac, (p.length ?? 1) + lenCvTap.read() * 0.5));
+        const offset       = startFrac * buf.duration;
+        const duration     = lenFrac   * buf.duration;
+        const looping      = Math.round(p.loop ?? 0) > 0;
+
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.playbackRate.value = playbackRate;
+        src.loop = looping;
+        src.connect(sampOut);
+        src.start(time, offset, looping ? undefined : duration);
+        activeSource = src;
+
+        src.onended = () => {
+          if (activeSource === src) activeSource = null;
+          if (!samplerDestroyed && eocCb) {
+            try {
+              eocCb(true, freq);
+              setTimeout(() => { if (!samplerDestroyed) eocCb?.(false, freq); }, 20);
+            } catch (_) {}
+          }
+        };
+      };
+
+      const sampStop = (time: number) => {
+        if (activeSource) {
+          try { activeSource.stop(time); } catch (_) {}
+          try { activeSource.disconnect(); } catch (_) {}
+          activeSource = null;
+        }
+      };
+
+      return {
+        outputs: new Map([['audio_out', sampOut]]),
+        inputs: new Map([
+          ['pitch_cv',  pitchCvTap.input],
+          ['start_cv',  startCvTap.input],
+          ['length_cv', lenCvTap.input],
+          ['bank_cv',   bankCvTap.input],
+        ]),
+        noteOn:  (time: number, freq: number) => sampPlay(time, freq),
+        noteOff: (time: number) => { if (Math.round(p.loop ?? 0) > 0) sampStop(time); },
+        portNoteOn: new Map<string, (time: number, freq: number) => void>([
+          ['gate_in', (time, freq) => sampPlay(time, freq)],
+          ['sync_in', (time, freq) => sampPlay(time, freq)],
+        ]),
+        setParam:    (id: string, val: number) => { p[id] = val; },
+        setSelector: (id: string, val: number) => { p[id] = val; },
+        setPortGateTrigger: (_portId: string, fn: (on: boolean, freq: number) => void) => {
+          eocCb = fn;
+        },
+        getLevel: () => Math.max(0, 1 - (performance.now() - lastTriggerMs) / 500),
+        loadSample: async (arrayBuffer: ArrayBuffer, bankIndex: number) => {
+          const idx = Math.max(0, Math.min(NUM_BANKS - 1, bankIndex));
+          const buf = await ctx.decodeAudioData(arrayBuffer.slice(0));
+          banks[idx]    = buf;
+          banksRev[idx] = makeReversed(buf);
+        },
+        destroy: () => {
+          samplerDestroyed = true;
+          eocCb = null;
+          sampStop(ctx.currentTime);
+          pitchCvTap.destroy(); startCvTap.destroy();
+          lenCvTap.destroy();   bankCvTap.destroy();
+          try { sampOut.disconnect(); } catch (_) {}
+        },
       };
     }
 

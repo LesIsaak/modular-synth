@@ -822,6 +822,7 @@ function useMIDI(
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function SynthApp() {
   const [started,      setStarted]      = useState(false);
+  const [samplerBanks, setSamplerBanks] = useState<Map<string, boolean[]>>(new Map());
   const [modules,      setModules]      = useState<ModuleInstance[]>(DEFAULT_MODULES);
   const [cables,       setCables]       = useState<Cable[]>(DEFAULT_CABLES);
   const [pendingCable, setPendingCable] = useState<PendingCable | null>(null);
@@ -1054,6 +1055,27 @@ export default function SynthApp() {
   const handleSelectorChange = useCallback((moduleId: string, selId: string, value: number) => {
     setModules(prev => prev.map(m => m.id === moduleId ? { ...m, params: { ...m.params, [selId]: value } } : m));
     audioModulesRef.current.get(moduleId)?.setSelector?.(selId, value);
+  }, []);
+
+  const handleLoadSample = useCallback((moduleId: string, file: File, bankIndex: number) => {
+    const audio = audioModulesRef.current.get(moduleId);
+    if (!audio?.loadSample) return;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const buf = e.target?.result;
+      if (!(buf instanceof ArrayBuffer)) return;
+      try {
+        await audio.loadSample!(buf, bankIndex);
+        setSamplerBanks(prev => {
+          const next = new Map(prev);
+          const banks = [...(next.get(moduleId) ?? new Array(8).fill(false))];
+          banks[bankIndex] = true;
+          next.set(moduleId, banks);
+          return next;
+        });
+      } catch (_) {}
+    };
+    reader.readAsArrayBuffer(file);
   }, []);
 
   // ─── MIDI monitor + CC→knob auto-mapping ─────────────────────────────────
@@ -1526,6 +1548,8 @@ export default function SynthApp() {
                   : undefined}
                 getLevelFn={audioModulesRef.current.get(mod.id)?.getLevel}
                 cvLevels={cvLevelMap.get(mod.id)}
+                onLoadSample={mod.typeId === 'sampler' ? (file, bank) => handleLoadSample(mod.id, file, bank) : undefined}
+                samplerBanksFilled={mod.typeId === 'sampler' ? samplerBanks.get(mod.id) : undefined}
               />
             </div>
           ))}

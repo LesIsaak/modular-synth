@@ -1012,6 +1012,29 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
       audioOut,
     ],
   },
+  {
+    id: 'sampler', name: 'Sampler', category: 'granular', accentColor: '#d97706', width: 260,
+    knobs: [
+      { id: 'pitch',  name: 'PITCH', min: -24,  max: 24, default: 0,   step: 0.01, unit: 'st' },
+      { id: 'start',  name: 'START', min: 0,    max: 1,  default: 0                            },
+      { id: 'length', name: 'LEN',   min: 0.01, max: 1,  default: 1                            },
+      { id: 'bank',   name: 'BANK',  min: 0,    max: 7,  default: 0,   step: 1                 },
+    ],
+    selectors: [
+      { id: 'reverse', name: 'DIR',  options: ['FWD', 'REV'],       default: 0 },
+      { id: 'loop',    name: 'LOOP', options: ['ONE-SHOT', 'LOOP'], default: 0 },
+    ],
+    ports: [
+      { id: 'gate_in',   name: 'GATE', type: 'gate_in'   },
+      { id: 'sync_in',   name: 'SYNC', type: 'gate_in'   },
+      { id: 'pitch_cv',  name: 'PTCH', type: 'cv_in'     },
+      { id: 'start_cv',  name: 'STRT', type: 'cv_in'     },
+      { id: 'length_cv', name: 'LEN',  type: 'cv_in'     },
+      { id: 'bank_cv',   name: 'BNK',  type: 'cv_in'     },
+      { id: 'audio_out', name: 'OUT',  type: 'audio_out' },
+      { id: 'eoc_out',   name: 'EOC',  type: 'gate_out'  },
+    ],
+  },
 
   // ─── Utility / I/O ─────────────────────────────────────────────────
   {
@@ -1335,6 +1358,7 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   granular:     'Slices audio into tiny grains and scatters / overlaps them. POSITION scans the grain buffer; SIZE sets grain length; SPREAD randomizes position for clouds and textures.',
   time_stretch: 'Changes playback speed without pitch shift — or vice versa — using granular grain manipulation.',
   freeze_proc:  'Captures a snapshot of the audio and loops it as a sustained drone. FADE controls how quickly the frozen image builds up.',
+  sampler:      'Plays back audio samples from up to 8 banks. PITCH shifts playback in semitones; START trims the play head; LEN sets the region length. GATE triggers playback; SYNC re-triggers without retriggering the envelope. FWD/REV reverses the sample; LOOP sustains until gate-off. Click LOAD to drop a file into the selected bank.',
 
   // ── Utility ────────────────────────────────────────────────────────
   mixer:        '4-channel audio mixer with individual gain knobs. Basic signal summing — use to combine multiple oscillators or effects before the output.',

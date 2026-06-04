@@ -27,6 +27,10 @@ interface ModulePanelProps {
   getLevelFn?: () => number;
   /** Map of paramId → getLevel fn for knobs that have a live CV signal patched in */
   cvLevels?: Map<string, () => number>;
+  /** Sampler: called when user picks a file; bankIndex = currently selected bank */
+  onLoadSample?: (file: File, bankIndex: number) => void;
+  /** Sampler: which of the 8 banks have a sample loaded */
+  samplerBanksFilled?: boolean[];
 }
 
 function ActivityLED({ getLevelFn, color }: { getLevelFn: () => number; color: string }) {
@@ -460,6 +464,7 @@ export default function ModulePanel({
   module, connectedPorts, pendingCable, onPortClick, onPortDoubleClick, onParamChange,
   onSelectorChange, onDragStart, onDelete, onRegisterPortRef, onKeyPress,
   analyser, midiMonitorData, isMidiTarget, moduleStepRef, getLevelFn, cvLevels,
+  onLoadSample, samplerBanksFilled,
 }: ModulePanelProps) {
   const typeDef = MODULE_TYPE_MAP.get(module.typeId);
   const [showDelete, setShowDelete] = useState(false);
@@ -479,6 +484,7 @@ export default function ModulePanel({
   const isDrum     = module.typeId === 'drum_machine';
   const isEuc      = module.typeId === 'euclidean_trig';
   const isPolyStep = module.typeId === 'poly_step';
+  const isSampler  = module.typeId === 'sampler';
   const panelH   = typeDef.height ?? PANEL_H;
   const bodyH    = panelH - RAIL_H * 2;
 
@@ -697,7 +703,107 @@ export default function ModulePanel({
             )}
 
             {/* Controls */}
-            {isEuc ? (
+            {isSampler ? (
+              /* ── Sampler: bank dots, load button, knobs, dir/loop selectors ── */
+              <div style={{ flex: 1, padding: '6px 5px', display: 'flex', flexDirection: 'column', gap: 6, overflow: 'hidden' }}>
+                {/* Bank row */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '4px 6px', background: '#0e0e0e',
+                  borderRadius: 3, border: '1px solid #1c1c1c', flexShrink: 0,
+                }}>
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                    {Array.from({ length: 8 }, (_, i) => {
+                      const isSelected = Math.round(module.params.bank ?? 0) === i;
+                      const isFilled   = samplerBanksFilled?.[i] ?? false;
+                      return (
+                        <div
+                          key={i}
+                          onClick={() => onParamChange(module.id, 'bank', i)}
+                          onMouseDown={e => e.stopPropagation()}
+                          title={`Bank ${i + 1}${isFilled ? ' · loaded' : ' · empty'}`}
+                          style={{
+                            width: 11, height: 11, borderRadius: '50%',
+                            cursor: 'pointer', flexShrink: 0,
+                            background: isSelected ? accent : isFilled ? `${accent}55` : '#1a1a1a',
+                            border: `1px solid ${isSelected ? accent : isFilled ? `${accent}88` : '#2a2a2a'}`,
+                            boxShadow: isSelected ? `0 0 6px ${accent}aa` : 'none',
+                            transition: 'background 0.1s, box-shadow 0.1s',
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                  <label
+                    style={{
+                      marginLeft: 'auto', padding: '2px 7px', fontSize: 7,
+                      borderRadius: 2, cursor: 'pointer', background: '#1c1c1c',
+                      color: accent, border: `1px solid ${accent}55`,
+                      textTransform: 'uppercase', letterSpacing: '0.12em',
+                      flexShrink: 0, lineHeight: '14px', userSelect: 'none',
+                    }}
+                    onMouseDown={e => e.stopPropagation()}
+                    title={`Load into bank ${Math.round(module.params.bank ?? 0) + 1}`}
+                  >
+                    LOAD
+                    <input
+                      type="file"
+                      accept="audio/*,.wav,.mp3,.flac,.ogg,.aiff"
+                      style={{ display: 'none' }}
+                      onChange={e => {
+                        const file = e.target.files?.[0];
+                        if (file && onLoadSample) {
+                          onLoadSample(file, Math.round(module.params.bank ?? 0));
+                          e.target.value = '';
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+
+                {/* Knobs */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 4px', justifyContent: 'center' }}>
+                  {typeDef.knobs.map(knob => (
+                    <Knob
+                      key={knob.id}
+                      def={knob}
+                      value={module.params[knob.id] ?? knob.default}
+                      onChange={val => onParamChange(module.id, knob.id, val)}
+                      size="sm"
+                      cvGetLevel={cvLevels?.get(knob.id)}
+                    />
+                  ))}
+                </div>
+
+                {/* DIR + LOOP selectors */}
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+                  {(typeDef.selectors ?? []).map(sel => {
+                    const curVal = module.params[sel.id] ?? sel.default;
+                    return (
+                      <div key={sel.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                        <span style={{ fontSize: 6, color: '#666', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{sel.name}</span>
+                        <div style={{ display: 'flex', gap: 2 }}>
+                          {sel.options.map((opt, i) => (
+                            <button
+                              key={opt}
+                              onMouseDown={e => e.stopPropagation()}
+                              onClick={() => onSelectorChange(module.id, sel.id, i)}
+                              data-testid={`selector-${module.id}-${sel.id}-${opt}`}
+                              style={{
+                                padding: '2px 5px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
+                                background: Math.round(curVal) === i ? accent : '#1c1c1c',
+                                color: Math.round(curVal) === i ? '#000' : '#666',
+                                border: `1px solid ${Math.round(curVal) === i ? accent : '#282828'}`,
+                              }}
+                            >{opt}</button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : isEuc ? (
               /* ── KNIGHT GATE: knobs+selector left, LED ring right ── */
               <div style={{ flex: 1, padding: '6px 8px', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 10, overflow: 'hidden' }}>
                 {/* Left column: knobs + CLK DIV */}
