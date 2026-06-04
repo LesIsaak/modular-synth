@@ -2472,7 +2472,8 @@ export function createAudioModule(
         }
 
         const semis        = (p.pitch ?? 0) + pitchCvTap.read() * 12;
-        const rate         = Math.max(0.01, Math.pow(2, semis / 12));
+        // freq / 440 tracks keyboard pitch — no-op when freq defaults to 440
+        const rate         = Math.max(0.01, (freq / 440) * Math.pow(2, semis / 12));
         const startFrac    = Math.max(0, Math.min(0.99, (p.start  ?? 0) + startCvTap.read() * 0.5));
         const lenFrac      = Math.max(0.01, Math.min(1 - startFrac, (p.length ?? 1) + lenCvTap.read() * 0.5));
         const startOffset  = startFrac * buf.duration;
@@ -2534,7 +2535,7 @@ export function createAudioModule(
           if (id === 'pitch') {
             // Live pitch update — no glitch, just update playbackRate
             const semis = (p.pitch ?? 0) + pitchCvTap.read() * 12;
-            const rate  = Math.max(0.01, Math.pow(2, semis / 12));
+            const rate  = Math.max(0.01, (lastFreq / 440) * Math.pow(2, semis / 12));
             activeSource.playbackRate.value = rate;
             // Keep position tracking accurate after rate change
             playOffset   = currentPos(activeSource.buffer!);
