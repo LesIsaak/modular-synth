@@ -3294,7 +3294,9 @@ export function createAudioModule(
             ? (err.name === 'NotAllowedError' ? 'Permission denied' : `${err.name}: ${err.message}`)
             : String(err);
           deviceLabel = msg;
-          console.error('[AUDIO TRIG] getUserMedia failed:', err);
+          const name = err instanceof DOMException ? err.name : '';
+          const msg2 = err instanceof DOMException ? err.message : String(err);
+          console.error('[AUDIO TRIG] getUserMedia failed:', name, msg2);
         }
 
         if (destroyed) return;

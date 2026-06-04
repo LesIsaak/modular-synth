@@ -1047,18 +1047,6 @@ export default function ModulePanel({
                             }}>{audioTrigLabel || '—'}</div>
                           );
                         })()}
-                        {(/not available|permission denied/i.test(audioTrigLabel) || window.self !== window.top) && (
-                          <a
-                            href={window.location.href}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onMouseDown={e => e.stopPropagation()}
-                            style={{
-                              display: 'block', textAlign: 'center', fontSize: 6,
-                              color: '#60a5fa', textDecoration: 'underline', cursor: 'pointer',
-                            }}
-                          >↗ Open in new tab</a>
-                        )}
                       </div>
                     </div>
                   );
