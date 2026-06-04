@@ -1015,10 +1015,11 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
   {
     id: 'sampler', name: 'Sampler', category: 'granular', accentColor: '#d97706', width: 260,
     knobs: [
-      { id: 'pitch',  name: 'PITCH', min: -24,  max: 24, default: 0,   step: 0.01, unit: 'st' },
-      { id: 'start',  name: 'START', min: 0,    max: 1,  default: 0                            },
-      { id: 'length', name: 'LEN',   min: 0.01, max: 1,  default: 1                            },
-      { id: 'bank',   name: 'BANK',  min: 0,    max: 7,  default: 0,   step: 1                 },
+      { id: 'pitch',  name: 'PITCH', min: -24,  max: 24,  default: 0,   step: 0.01, unit: 'st' },
+      { id: 'start',  name: 'START', min: 0,    max: 1,   default: 0                            },
+      { id: 'length', name: 'LEN',   min: 0.01, max: 1,   default: 1                            },
+      { id: 'bank',   name: 'BANK',  min: 0,    max: 7,   default: 0,   step: 1                 },
+      { id: 'attack', name: 'ATK',   min: 0,    max: 2,   default: 0,   step: 0.001, unit: 's' },
     ],
     selectors: [
       { id: 'reverse', name: 'DIR',  options: ['FWD', 'REV'],       default: 0 },

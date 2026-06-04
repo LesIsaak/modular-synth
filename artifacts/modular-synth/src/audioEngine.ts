@@ -2409,6 +2409,9 @@ export function createAudioModule(
     case 'sampler': {
       const NUM_BANKS = 8;
       const sampOut = ctx.createGain(); sampOut.gain.value = 1;
+      // Persistent envelope gain for the attack ramp — sits between sources and sampOut
+      const envGain = ctx.createGain(); envGain.gain.value = 1;
+      envGain.connect(sampOut);
       const banks: (AudioBuffer | null)[]    = new Array(NUM_BANKS).fill(null);
       const banksRev: (AudioBuffer | null)[] = new Array(NUM_BANKS).fill(null);
 
@@ -2484,12 +2487,22 @@ export function createAudioModule(
           ? Math.max(startOffset, Math.min(startOffset + duration, fromPos))
           : startOffset;
 
+        // Schedule attack ramp on the shared envelope gain
+        const atk = Math.max(0, p.attack ?? 0);
+        envGain.gain.cancelScheduledValues(time);
+        if (atk > 0.001) {
+          envGain.gain.setValueAtTime(0, time);
+          envGain.gain.linearRampToValueAtTime(1, time + atk);
+        } else {
+          envGain.gain.setValueAtTime(1, time);
+        }
+
         const src = ctx.createBufferSource();
         src.buffer = buf;
         src.playbackRate.value = rate;
         src.loop = looping;
         if (looping) { src.loopStart = startOffset; src.loopEnd = startOffset + duration; }
-        src.connect(sampOut);
+        src.connect(envGain);
         src.start(time, offset, looping ? undefined : Math.max(0.001, startOffset + duration - offset));
         activeSource  = src;
         playStartCtx  = time;
@@ -2588,6 +2601,7 @@ export function createAudioModule(
           sampStop(ctx.currentTime);
           pitchCvTap.destroy(); startCvTap.destroy();
           lenCvTap.destroy();   bankCvTap.destroy();
+          try { envGain.disconnect(); } catch (_) {}
           try { sampOut.disconnect(); } catch (_) {}
         },
       };
