@@ -2433,6 +2433,11 @@ export function createAudioModule(
       let eocCb: ((on: boolean, freq: number) => void) | null = null;
       let samplerDestroyed = false;
       let lastTriggerMs = 0;
+      let lastFreq = 440;
+      // Track when and where playback started so we can resume from current position
+      let playStartCtx  = 0; // ctx.currentTime at src.start()
+      let playOffset    = 0; // offset (seconds) passed to src.start()
+      let playRate      = 1; // playbackRate at start (for position estimation)
 
       const makeReversed = (buf: AudioBuffer): AudioBuffer => {
         const rev = ctx.createBuffer(buf.numberOfChannels, buf.length, buf.sampleRate);
@@ -2444,8 +2449,16 @@ export function createAudioModule(
         return rev;
       };
 
-      const sampPlay = (time: number, freq = 440) => {
+      // Returns estimated current playback position in seconds within the buffer
+      const currentPos = (buf: AudioBuffer): number => {
+        if (!activeSource) return 0;
+        const pos = playOffset + (ctx.currentTime - playStartCtx) * playRate;
+        return Math.max(0, Math.min(buf.duration, pos));
+      };
+
+      const sampPlay = (time: number, freq = 440, fromPos?: number) => {
         if (samplerDestroyed) return;
+        lastFreq = freq;
         const bankIdx = Math.max(0, Math.min(NUM_BANKS - 1, Math.round((p.bank ?? 0) + bankCvTap.read())));
         const isRev   = Math.round(p.reverse ?? 0) > 0;
         const buf     = isRev ? banksRev[bankIdx] : banks[bankIdx];
@@ -2459,20 +2472,28 @@ export function createAudioModule(
         }
 
         const semis        = (p.pitch ?? 0) + pitchCvTap.read() * 12;
-        const playbackRate = Math.max(0.01, Math.pow(2, semis / 12));
+        const rate         = Math.max(0.01, Math.pow(2, semis / 12));
         const startFrac    = Math.max(0, Math.min(0.99, (p.start  ?? 0) + startCvTap.read() * 0.5));
         const lenFrac      = Math.max(0.01, Math.min(1 - startFrac, (p.length ?? 1) + lenCvTap.read() * 0.5));
-        const offset       = startFrac * buf.duration;
+        const startOffset  = startFrac * buf.duration;
         const duration     = lenFrac   * buf.duration;
         const looping      = Math.round(p.loop ?? 0) > 0;
+        // If resuming mid-playback, clamp within the new region
+        const offset = fromPos !== undefined
+          ? Math.max(startOffset, Math.min(startOffset + duration, fromPos))
+          : startOffset;
 
         const src = ctx.createBufferSource();
         src.buffer = buf;
-        src.playbackRate.value = playbackRate;
+        src.playbackRate.value = rate;
         src.loop = looping;
+        if (looping) { src.loopStart = startOffset; src.loopEnd = startOffset + duration; }
         src.connect(sampOut);
-        src.start(time, offset, looping ? undefined : duration);
-        activeSource = src;
+        src.start(time, offset, looping ? undefined : Math.max(0.001, startOffset + duration - offset));
+        activeSource  = src;
+        playStartCtx  = time;
+        playOffset    = offset;
+        playRate      = rate;
 
         src.onended = () => {
           if (activeSource === src) activeSource = null;
@@ -2507,8 +2528,49 @@ export function createAudioModule(
           ['gate_in', (time, freq) => sampPlay(time, freq)],
           ['sync_in', (time, freq) => sampPlay(time, freq)],
         ]),
-        setParam:    (id: string, val: number) => { p[id] = val; },
-        setSelector: (id: string, val: number) => { p[id] = val; },
+        setParam: (id: string, val: number) => {
+          p[id] = val;
+          if (!activeSource || samplerDestroyed) return;
+          if (id === 'pitch') {
+            // Live pitch update — no glitch, just update playbackRate
+            const semis = (p.pitch ?? 0) + pitchCvTap.read() * 12;
+            const rate  = Math.max(0.01, Math.pow(2, semis / 12));
+            activeSource.playbackRate.value = rate;
+            // Keep position tracking accurate after rate change
+            playOffset   = currentPos(activeSource.buffer!);
+            playStartCtx = ctx.currentTime;
+            playRate     = rate;
+          } else if (id === 'start' || id === 'length') {
+            // Restart from start of new region (scrub behaviour)
+            sampPlay(ctx.currentTime, lastFreq);
+          } else if (id === 'bank') {
+            // Switch buffer — restart from beginning of new bank
+            sampPlay(ctx.currentTime, lastFreq);
+          }
+        },
+        setSelector: (id: string, val: number) => {
+          p[id] = val;
+          if (!activeSource || samplerDestroyed) return;
+          if (id === 'loop') {
+            // Toggle loop live
+            const looping = Math.round(val) > 0;
+            activeSource.loop = looping;
+            if (looping && activeSource.buffer) {
+              const startFrac = Math.max(0, Math.min(0.99, p.start ?? 0));
+              const lenFrac   = Math.max(0.01, Math.min(1 - startFrac, p.length ?? 1));
+              activeSource.loopStart = startFrac * activeSource.buffer.duration;
+              activeSource.loopEnd   = (startFrac + lenFrac) * activeSource.buffer.duration;
+            }
+          } else if (id === 'reverse') {
+            // Flip direction — restart with reversed/forward buffer from current position
+            const bankIdx = Math.max(0, Math.min(NUM_BANKS - 1, Math.round(p.bank ?? 0)));
+            const buf = activeSource.buffer;
+            const pos = buf ? currentPos(buf) : 0;
+            // Mirror position within buffer for the reversed variant
+            const mirroredPos = buf ? Math.max(0, buf.duration - pos) : 0;
+            sampPlay(ctx.currentTime, lastFreq, mirroredPos);
+          }
+        },
         setPortGateTrigger: (_portId: string, fn: (on: boolean, freq: number) => void) => {
           eocCb = fn;
         },
