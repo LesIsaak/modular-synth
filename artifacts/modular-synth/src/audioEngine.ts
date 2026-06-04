@@ -23,6 +23,10 @@ export interface AudioModuleNodes {
   loadSample?: (arrayBuffer: ArrayBuffer, bankIndex: number) => Promise<void>;
   /** Freeze only: instantly silence and clear the frozen loop */
   kill?: () => void;
+  /** Audio Trig: re-open the browser device picker */
+  triggerDeviceRepick?: () => void;
+  /** Audio Trig: returns the label of the currently captured device */
+  getDeviceLabel?: () => string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -3205,6 +3209,115 @@ export function createAudioModule(
         setParam: (id, val) => { p[id] = val; if (id === 'volume') master.gain.value = val; },
         destroy: () => { volCv.stop(); volCv.disconnect(); master.disconnect(); analyser.disconnect(); },
         analyser,
+      };
+    }
+
+    // ── Audio Trig ────────────────────────────────────────────────────
+    case 'audio_trig': {
+      let stream: MediaStream | null = null;
+      let sourceNode: MediaStreamAudioSourceNode | null = null;
+      let splitter: ChannelSplitterNode | null = null;
+      let deviceLabel = 'No device';
+      let gateCb: ((on: boolean, freq: number) => void) | null = null;
+      let lastTrigMs = -Infinity;
+      let pollId: ReturnType<typeof setInterval> | null = null;
+      let destroyed = false;
+
+      const gainNode = ctx.createGain();
+      gainNode.gain.value = p.gain ?? 1;
+
+      const analyserNode = ctx.createAnalyser();
+      analyserNode.fftSize = 512;
+      const dataArray = new Float32Array(analyserNode.fftSize);
+      gainNode.connect(analyserNode);
+
+      const reconnectChannel = () => {
+        if (!splitter || !stream) return;
+        try { splitter.disconnect(gainNode); } catch (_) {}
+        const settings = stream.getAudioTracks()[0]?.getSettings();
+        const numCh = settings?.channelCount ?? 2;
+        const ch = Math.min(Math.round(p.channel ?? 0), numCh - 1);
+        splitter.connect(gainNode, ch, 0);
+      };
+
+      const startCapture = async (deviceId?: string) => {
+        if (pollId) { clearInterval(pollId); pollId = null; }
+        if (stream) stream.getTracks().forEach(t => t.stop());
+        if (sourceNode) { try { sourceNode.disconnect(); } catch (_) {} sourceNode = null; }
+        if (splitter)   { try { splitter.disconnect(); }   catch (_) {} splitter = null; }
+
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+              channelCount:      { ideal: 8 },
+              echoCancellation:  false,
+              noiseSuppression:  false,
+              autoGainControl:   false,
+            },
+          });
+          deviceLabel = stream.getAudioTracks()[0]?.label ?? 'Unknown device';
+          sourceNode  = ctx.createMediaStreamSource(stream);
+          const numCh = stream.getAudioTracks()[0]?.getSettings().channelCount ?? 2;
+          splitter    = ctx.createChannelSplitter(Math.max(numCh, 1));
+          sourceNode.connect(splitter);
+          reconnectChannel();
+        } catch (e) {
+          deviceLabel = 'Permission denied';
+        }
+
+        if (destroyed) return;
+        pollId = setInterval(() => {
+          analyserNode.getFloatTimeDomainData(dataArray);
+          let rms = 0;
+          for (let i = 0; i < dataArray.length; i++) rms += dataArray[i] * dataArray[i];
+          rms = Math.sqrt(rms / dataArray.length);
+
+          const thresh    = p.threshold ?? 0.12;
+          const retrigMs  = (p.retrig   ?? 0.08) * 1000;
+          const now       = performance.now();
+
+          if (rms > thresh && now - lastTrigMs > retrigMs) {
+            lastTrigMs = now;
+            gateCb?.(true, 440);
+            setTimeout(() => gateCb?.(false, 440), 12);
+          }
+        }, 16);
+      };
+
+      startCapture();
+
+      return {
+        outputs: new Map<string, AudioNode>([
+          ['audio_out', gainNode],
+        ]),
+        inputs: new Map(),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'gain')    gainNode.gain.value = val;
+          if (id === 'channel') reconnectChannel();
+        },
+        setSelector: (id, val) => {
+          if (id === 'channel') { p.channel = val; reconnectChannel(); }
+        },
+        setGateTrigger: fn => { gateCb = fn; },
+        getLevel: () => {
+          analyserNode.getFloatTimeDomainData(dataArray);
+          let rms = 0;
+          for (let i = 0; i < dataArray.length; i++) rms += dataArray[i] * dataArray[i];
+          return Math.min(1, Math.sqrt(rms / dataArray.length) * 12);
+        },
+        triggerDeviceRepick: () => { startCapture(); },
+        getDeviceLabel: () => deviceLabel,
+        destroy: () => {
+          destroyed = true;
+          if (pollId) clearInterval(pollId);
+          stream?.getTracks().forEach(t => t.stop());
+          try { sourceNode?.disconnect(); } catch (_) {}
+          try { splitter?.disconnect(); }   catch (_) {}
+          gainNode.disconnect();
+          analyserNode.disconnect();
+        },
       };
     }
 

@@ -1064,6 +1064,21 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
     ],
   },
   {
+    id: 'audio_trig', name: 'AUDIO TRIG', category: 'utility', accentColor: UTL, width: 210,
+    knobs: [
+      { id: 'gain',      name: 'GAIN',   min: 0,    max: 3,    default: 1,    step: 0.01 },
+      { id: 'threshold', name: 'THRESH', min: 0,    max: 1,    default: 0.12, step: 0.005 },
+      { id: 'retrig',    name: 'RETRIG', min: 0.01, max: 2,    default: 0.08, step: 0.01 },
+    ],
+    selectors: [
+      { id: 'channel', name: 'CH', options: ['1','2','3','4','5','6','7','8'], default: 0 },
+    ],
+    ports: [
+      { id: 'audio_out', name: 'OUT',  type: 'audio_out' },
+      { id: 'gate_out',  name: 'GATE', type: 'gate_out'  },
+    ],
+  },
+  {
     id: 'keyboard', name: 'KB OUT', category: 'utility', accentColor: UTL, width: 200,
     knobs: [
       { id: 'glide', name: 'GLIDE', min: 0, max: 2, default: 0, step: 0.01 },
@@ -1369,6 +1384,7 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   sampler:      'Plays back audio samples from up to 8 banks. PITCH shifts playback in semitones; START trims the play head; LEN sets the region length. GATE triggers playback; SYNC re-triggers without retriggering the envelope. FWD/REV reverses the sample; LOOP sustains until gate-off. Click LOAD to drop a file into the selected bank.',
 
   // ── Utility ────────────────────────────────────────────────────────
+  audio_trig:   'Captures a live audio input (USB mixer, microphone, interface) via the browser and converts transients into gate pulses. GAIN sets input level; THRESH is the RMS level a hit must exceed; RETRIG is the minimum time between triggers. CH selects which channel of a multi-channel device to listen on (1 = left, 2 = right, 3–8 for multi-channel USB interfaces). Click PICK DEVICE to choose a different audio input.',
   mixer:        '4-channel audio mixer with individual gain knobs. Basic signal summing — use to combine multiple oscillators or effects before the output.',
   keyboard:     'Exposes the on-screen keyboard as V/OCT and gate outputs so you can patch it to oscillators and envelopes like any other module.',
   midi_monitor: 'Displays incoming MIDI data — note, velocity, CC, pitch bend, and more. Useful for debugging MIDI patches and monitoring live input.',

@@ -37,6 +37,10 @@ interface ModulePanelProps {
   onToggleMidiClockLock?: () => void;
   /** Freeze module: instantly kill the frozen loop */
   onFreezeKill?: () => void;
+  /** Audio Trig: re-open device picker */
+  onAudioTrigPickDevice?: () => void;
+  /** Audio Trig: getter polled to show the active capture device name */
+  audioTrigGetDeviceLabel?: () => string;
 }
 
 function ActivityLED({ getLevelFn, color }: { getLevelFn: () => number; color: string }) {
@@ -473,12 +477,20 @@ export default function ModulePanel({
   onLoadSample, samplerBanksFilled,
   midiClockInfo, onToggleMidiClockLock,
   onFreezeKill,
+  onAudioTrigPickDevice, audioTrigGetDeviceLabel,
 }: ModulePanelProps) {
   const typeDef = MODULE_TYPE_MAP.get(module.typeId);
   const [showDelete, setShowDelete] = useState(false);
   const [showInfo,   setShowInfo]   = useState(false);
   const [infoAnchor, setInfoAnchor] = useState({ x: 0, y: 0 });
   const [eucStep, setEucStep] = useState(0);
+  const [audioTrigLabel, setAudioTrigLabel] = useState('—');
+
+  useEffect(() => {
+    if (module.typeId !== 'audio_trig' || !audioTrigGetDeviceLabel) return;
+    const id = setInterval(() => setAudioTrigLabel(audioTrigGetDeviceLabel()), 800);
+    return () => clearInterval(id);
+  }, [module.typeId, audioTrigGetDeviceLabel]);
 
   useEffect(() => {
     if (module.typeId !== 'euclidean_trig' || !moduleStepRef) return;
@@ -919,6 +931,32 @@ export default function ModulePanel({
                       onMouseEnter={e => (e.currentTarget.style.background = '#991b1b')}
                       onMouseLeave={e => (e.currentTarget.style.background = '#7f1d1d')}
                     >KILL</button>
+                  </div>
+                )}
+
+                {module.typeId === 'audio_trig' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                    <div style={{
+                      fontSize: 7, color: '#555', letterSpacing: '0.08em',
+                      textTransform: 'uppercase', textAlign: 'center',
+                      maxWidth: 170, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {audioTrigLabel}
+                    </div>
+                    {onAudioTrigPickDevice && (
+                      <button
+                        onClick={onAudioTrigPickDevice}
+                        style={{
+                          padding: '3px 10px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
+                          background: '#1a1a1a', color: '#94a3b8',
+                          border: '1px solid #2e2e2e',
+                          letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 600,
+                          transition: 'background 0.1s',
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.background = '#252525')}
+                        onMouseLeave={e => (e.currentTarget.style.background = '#1a1a1a')}
+                      >PICK DEVICE</button>
+                    )}
                   </div>
                 )}
 
