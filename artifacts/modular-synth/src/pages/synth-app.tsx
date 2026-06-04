@@ -1672,6 +1672,7 @@ export default function SynthApp() {
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/95 backdrop-blur-sm">
           <div className="text-center space-y-6">
             <div>
+              <div className="text-xs font-semibold tracking-[0.4em] uppercase mb-1" style={{ color: '#e87d27' }}>OrangeCastle</div>
               <div className="text-4xl font-bold tracking-[0.3em] uppercase mb-2" style={{ color: '#e87d27' }}>
                 MODULAR
               </div>

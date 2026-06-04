@@ -1,6 +1,6 @@
 kind = "web"
 previewPath = "/"
-title = "Modular Synthesizer"
+title = "OrangeCastle MODULAR Synthesizer"
 version = "1.0.0"
 id = "artifacts/modular-synth"
 router = "path"
