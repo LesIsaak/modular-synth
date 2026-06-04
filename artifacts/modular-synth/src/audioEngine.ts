@@ -3247,10 +3247,14 @@ export function createAudioModule(
         if (sourceNode) { try { sourceNode.disconnect(); } catch (_) {} sourceNode = null; }
         if (splitter)   { try { splitter.disconnect(); }   catch (_) {} splitter = null; }
 
+        // Resume AudioContext if browser suspended it
+        if (ctx.state === 'suspended') { try { await ctx.resume(); } catch (_) {} }
+
         try {
           stream = await navigator.mediaDevices.getUserMedia({
             audio: {
-              ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+              // Use 'ideal' so the browser gracefully falls back instead of throwing OverconstrainedError
+              ...(deviceId ? { deviceId: { ideal: deviceId } } : {}),
               channelCount:     { ideal: NUM_CH },
               echoCancellation: false,
               noiseSuppression: false,
@@ -3271,8 +3275,10 @@ export function createAudioModule(
               .filter(d => d.kind === 'audioinput')
               .map(d => ({ deviceId: d.deviceId, label: d.label || `Mic ${d.deviceId.slice(0, 8)}` }));
           }).catch(() => {});
-        } catch (_) {
-          deviceLabel = 'Permission denied';
+        } catch (err) {
+          deviceLabel = err instanceof DOMException && err.name === 'NotAllowedError'
+            ? 'Permission denied'
+            : `Error: ${err instanceof Error ? err.message : String(err)}`;
         }
 
         if (destroyed) return;

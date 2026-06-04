@@ -1002,9 +1002,10 @@ export default function ModulePanel({
                         border: '1px solid #1e1e1e', borderRadius: 3, minWidth: 64,
                       }}>
                         <span style={{ fontSize: 6, color: '#484848', textTransform: 'uppercase', letterSpacing: '0.12em', textAlign: 'center' }}>SOURCE</span>
-                        {audioTrigDevices.length > 0 ? (
+                        {audioTrigDevices.length > 0 && (
                           <select
                             value={audioTrigSelectedId}
+                            onMouseDown={e => e.stopPropagation()}
                             onChange={e => {
                               setAudioTrigSelectedId(e.target.value);
                               onAudioTrigPickDevice?.(e.target.value || undefined);
@@ -1021,18 +1022,18 @@ export default function ModulePanel({
                               <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
                             ))}
                           </select>
-                        ) : (
-                          <button
-                            onClick={() => onAudioTrigPickDevice?.()}
-                            style={{
-                              width: '100%', padding: '3px 4px', fontSize: 6, borderRadius: 2, cursor: 'pointer',
-                              background: '#1a1a1a', color: '#94a3b8', border: '1px solid #2e2e2e',
-                              letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600,
-                            }}
-                            onMouseEnter={e => (e.currentTarget.style.background = '#252525')}
-                            onMouseLeave={e => (e.currentTarget.style.background = '#1a1a1a')}
-                          >PICK</button>
                         )}
+                        <button
+                          onMouseDown={e => e.stopPropagation()}
+                          onClick={() => onAudioTrigPickDevice?.()}
+                          style={{
+                            width: '100%', padding: '3px 4px', fontSize: 6, borderRadius: 2, cursor: 'pointer',
+                            background: '#1a1a1a', color: '#94a3b8', border: '1px solid #2e2e2e',
+                            letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600,
+                          }}
+                          onMouseEnter={e => (e.currentTarget.style.background = '#252525')}
+                          onMouseLeave={e => (e.currentTarget.style.background = '#1a1a1a')}
+                        >{audioTrigDevices.length > 0 ? 'REPICK' : 'PICK'}</button>
                         <div style={{
                           fontSize: 6, color: '#444', letterSpacing: '0.04em', textAlign: 'center',
                           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
