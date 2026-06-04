@@ -949,9 +949,9 @@ export default function ModulePanel({
                 {module.typeId === 'audio_trig' && (() => {
                   const NUM_STRIPS = 8;
                   return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    <div style={{ display: 'flex', gap: 4, alignItems: 'stretch' }}>
                       {/* Channel strips */}
-                      <div style={{ display: 'flex', gap: 3, justifyContent: 'center' }}>
+                      <div style={{ display: 'flex', gap: 2 }}>
                         {Array.from({ length: NUM_STRIPS }, (_, i) => {
                           const n = i + 1;
                           const onId     = `ch${n}_on`;
@@ -966,43 +966,42 @@ export default function ModulePanel({
                           const isOn = (module.params[onId] ?? onDef?.default ?? 0) >= 0.5;
                           return (
                             <div key={n} style={{
-                              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-                              padding: '5px 3px 4px',
+                              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+                              padding: '3px 2px',
                               background: isOn ? '#181818' : '#111',
                               border: `1px solid ${isOn ? '#303030' : '#1c1c1c'}`,
                               borderRadius: 3,
-                              minWidth: 42,
+                              minWidth: 40,
                             }}>
-                              {/* Toggle */}
                               <button
                                 onClick={() => onParamChange(module.id, onId, isOn ? 0 : 1)}
                                 style={{
-                                  padding: '2px 5px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
+                                  padding: '1px 4px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
                                   background: isOn ? accent : '#1c1c1c',
                                   color: isOn ? '#000' : '#444',
                                   border: `1px solid ${isOn ? accent : '#2a2a2a'}`,
                                   fontWeight: 700, letterSpacing: '0.05em', width: '100%',
                                 }}
                               >CH{n}</button>
-                              {/* Knobs */}
                               {gainDef && <Knob def={gainDef} value={module.params[gainId] ?? gainDef.default}
                                 onChange={v => onParamChange(module.id, gainId, v)} size="sm" />}
                               {threshDef && <Knob def={threshDef} value={module.params[threshId] ?? threshDef.default}
                                 onChange={v => onParamChange(module.id, threshId, v)} size="sm" />}
                               {retrigDef && <Knob def={retrigDef} value={module.params[retrigId] ?? retrigDef.default}
                                 onChange={v => onParamChange(module.id, retrigId, v)} size="sm" />}
-                              {/* Gate output port */}
-                              {gatePort && (
-                                <div style={{ marginTop: 2 }}>
-                                  <PortWithLabel {...portProps(gatePort)} />
-                                </div>
-                              )}
+                              {gatePort && <PortWithLabel {...portProps(gatePort)} />}
                             </div>
                           );
                         })}
                       </div>
-                      {/* Device row */}
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '0 4px' }}>
+
+                      {/* Device panel — right side */}
+                      <div style={{
+                        display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 5,
+                        padding: '4px 5px', background: '#0e0e0e',
+                        border: '1px solid #1e1e1e', borderRadius: 3, minWidth: 64,
+                      }}>
+                        <span style={{ fontSize: 6, color: '#484848', textTransform: 'uppercase', letterSpacing: '0.12em', textAlign: 'center' }}>SOURCE</span>
                         {audioTrigDevices.length > 0 ? (
                           <select
                             value={audioTrigSelectedId}
@@ -1011,37 +1010,34 @@ export default function ModulePanel({
                               onAudioTrigPickDevice?.(e.target.value || undefined);
                             }}
                             style={{
-                              flex: 1, maxWidth: 340, padding: '2px 4px', fontSize: 7,
+                              width: '100%', padding: '2px 3px', fontSize: 6,
                               background: '#141414', color: '#94a3b8',
-                              border: '1px solid #2e2e2e', borderRadius: 2,
+                              border: '1px solid #2a2a2a', borderRadius: 2,
                               cursor: 'pointer', outline: 'none',
                             }}
                           >
-                            <option value="">— {audioTrigLabel} —</option>
+                            <option value="">— active —</option>
                             {audioTrigDevices.map(d => (
                               <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
                             ))}
                           </select>
                         ) : (
-                          <>
-                            <div style={{
-                              fontSize: 7, color: '#555', letterSpacing: '0.06em',
-                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220,
-                            }}>{audioTrigLabel}</div>
-                            {onAudioTrigPickDevice && (
-                              <button
-                                onClick={() => onAudioTrigPickDevice()}
-                                style={{
-                                  flexShrink: 0, padding: '2px 8px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
-                                  background: '#1a1a1a', color: '#94a3b8', border: '1px solid #2e2e2e',
-                                  letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600,
-                                }}
-                                onMouseEnter={e => (e.currentTarget.style.background = '#252525')}
-                                onMouseLeave={e => (e.currentTarget.style.background = '#1a1a1a')}
-                              >PICK DEVICE</button>
-                            )}
-                          </>
+                          <button
+                            onClick={() => onAudioTrigPickDevice?.()}
+                            style={{
+                              width: '100%', padding: '3px 4px', fontSize: 6, borderRadius: 2, cursor: 'pointer',
+                              background: '#1a1a1a', color: '#94a3b8', border: '1px solid #2e2e2e',
+                              letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600,
+                            }}
+                            onMouseEnter={e => (e.currentTarget.style.background = '#252525')}
+                            onMouseLeave={e => (e.currentTarget.style.background = '#1a1a1a')}
+                          >PICK</button>
                         )}
+                        <div style={{
+                          fontSize: 6, color: '#444', letterSpacing: '0.04em', textAlign: 'center',
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          lineHeight: 1.3,
+                        }}>{audioTrigLabel}</div>
                       </div>
                     </div>
                   );
