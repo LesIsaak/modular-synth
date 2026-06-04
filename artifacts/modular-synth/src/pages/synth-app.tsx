@@ -1032,6 +1032,7 @@ export default function SynthApp() {
   // ─── Initialize audio ───────────────────────────────────────────────────────
   const handleStart = useCallback(() => {
     const ctx = new AudioContext();
+    ctx.resume().catch(() => {});
     audioCtxRef.current = ctx;
 
     // All rack modules (kb1 is now part of DEFAULT_MODULES)
@@ -1061,14 +1062,17 @@ export default function SynthApp() {
   const handleKeyNote = useCallback((freq: number, on: boolean) => {
     const ctx = audioCtxRef.current;
     if (!ctx) return;
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
     const kb1 = audioModulesRef.current.get('kb1');
     if (!kb1) return;
 
     const t = ctx.currentTime + 0.008;
-    const freqNode = kb1.outputs.get('voct_out') as (AudioNode & { offset?: AudioParam }) | undefined;
-    if (freqNode && 'offset' in freqNode && freqNode.offset) {
-      freqNode.offset.cancelScheduledValues(t);
-      freqNode.offset.setValueAtTime(on ? freq : 0, t);
+    if (on) {
+      const freqNode = kb1.outputs.get('voct_out') as (AudioNode & { offset?: AudioParam }) | undefined;
+      if (freqNode && 'offset' in freqNode && freqNode.offset) {
+        freqNode.offset.cancelScheduledValues(t);
+        freqNode.offset.setValueAtTime(freq, t);
+      }
     }
 
     const connected = gateConnRef.current.get('kb1:gate_out') ?? new Set<string>();
