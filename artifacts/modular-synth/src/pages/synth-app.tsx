@@ -1671,6 +1671,18 @@ export default function SynthApp() {
       {!started && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/95 backdrop-blur-sm">
           <div className="text-center space-y-6">
+            <div className="flex justify-center mb-2">
+              <svg width="72" height="72" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="180" height="180" rx="36" fill="#E87D27"/>
+                <rect x="27" y="30" width="30" height="38" rx="5" fill="white"/>
+                <rect x="75" y="30" width="30" height="38" rx="5" fill="white"/>
+                <rect x="123" y="30" width="30" height="38" rx="5" fill="white"/>
+                <rect x="27" y="60" width="126" height="90" rx="5" fill="white"/>
+                <circle cx="54" cy="97" r="13" fill="#E87D27"/>
+                <circle cx="126" cy="97" r="13" fill="#E87D27"/>
+                <path d="M76 150 L76 117 Q76 103 90 103 Q104 103 104 117 L104 150 Z" fill="#E87D27"/>
+              </svg>
+            </div>
             <div>
               <div className="text-xs font-semibold tracking-[0.4em] uppercase mb-1" style={{ color: '#e87d27' }}>OrangeCastle</div>
               <div className="text-4xl font-bold tracking-[0.3em] uppercase mb-2" style={{ color: '#e87d27' }}>
