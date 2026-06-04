@@ -1065,7 +1065,9 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
   },
   {
     id: 'keyboard', name: 'KB OUT', category: 'utility', accentColor: UTL, width: 200,
-    knobs: [],
+    knobs: [
+      { id: 'glide', name: 'GLIDE', min: 0, max: 2, default: 0, step: 0.01 },
+    ],
     ports: [
       { id: 'gate_out',  name: 'GATE',  type: 'gate_out' },
       { id: 'voct_out',  name: 'V/OCT', type: 'cv_out'   },

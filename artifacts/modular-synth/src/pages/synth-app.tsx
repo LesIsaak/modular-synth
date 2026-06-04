@@ -1002,6 +1002,8 @@ export default function SynthApp() {
   const audioCtxRef      = useRef<AudioContext | null>(null);
   const audioModulesRef  = useRef<Map<string, ReturnType<typeof createAudioModule>>>(new Map());
   const gateConnRef      = useRef<Map<string, Set<string>>>(new Map());
+  const heldNotesRef     = useRef<number[]>([]);
+  const glideRef         = useRef<number>(0);
   /** fromModuleId → Map<destModuleId, destPortId> — for per-port drum triggers */
   const portGateMapRef   = useRef<Map<string, Map<string, string>>>(new Map());
   const portRefsRef      = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -1058,7 +1060,7 @@ export default function SynthApp() {
     setStarted(true);
   }, []);
 
-  // ─── Fixed keyboard callbacks ───────────────────────────────────────────────
+  // ─── Keyboard callbacks — last-note priority with note memory + glide ───────
   const handleKeyNote = useCallback((freq: number, on: boolean) => {
     const ctx = audioCtxRef.current;
     if (!ctx) return;
@@ -1066,20 +1068,42 @@ export default function SynthApp() {
     const kb1 = audioModulesRef.current.get('kb1');
     if (!kb1) return;
 
-    const t = ctx.currentTime + 0.008;
-    if (on) {
-      const freqNode = kb1.outputs.get('voct_out') as (AudioNode & { offset?: AudioParam }) | undefined;
-      if (freqNode && 'offset' in freqNode && freqNode.offset) {
-        freqNode.offset.cancelScheduledValues(t);
-        freqNode.offset.setValueAtTime(freq, t);
-      }
-    }
+    const t    = ctx.currentTime + 0.008;
+    const held = heldNotesRef.current;
 
-    const connected = gateConnRef.current.get('kb1:gate_out') ?? new Set<string>();
-    for (const id of connected) {
-      const m = audioModulesRef.current.get(id);
-      if (on) m?.noteOn?.(t, freq);
-      else    m?.noteOff?.(t);
+    const applyPitch = (target: number, legato: boolean) => {
+      const freqNode = kb1.outputs.get('voct_out') as (AudioNode & { offset?: AudioParam }) | undefined;
+      if (!freqNode || !('offset' in freqNode) || !freqNode.offset) return;
+      const g = glideRef.current;
+      if (g > 0 && legato) {
+        const current = freqNode.offset.value;
+        freqNode.offset.cancelScheduledValues(t);
+        freqNode.offset.setValueAtTime(current, t);
+        freqNode.offset.linearRampToValueAtTime(target, t + g);
+      } else {
+        freqNode.offset.cancelScheduledValues(t);
+        freqNode.offset.setValueAtTime(target, t);
+      }
+    };
+
+    const gateModules = gateConnRef.current.get('kb1:gate_out') ?? new Set<string>();
+    const triggerOn  = (time: number, f: number) => { for (const id of gateModules) audioModulesRef.current.get(id)?.noteOn?.(time, f); };
+    const triggerOff = (time: number)            => { for (const id of gateModules) audioModulesRef.current.get(id)?.noteOff?.(time); };
+
+    if (on) {
+      if (!held.includes(freq)) held.push(freq);
+      const isFirst = held.length === 1;
+      applyPitch(freq, !isFirst);        // instant on first note, glide on legato
+      if (isFirst) triggerOn(t, freq);   // only gate-trigger ADSR on first note
+    } else {
+      const idx = held.indexOf(freq);
+      if (idx >= 0) held.splice(idx, 1);
+
+      if (held.length === 0) {
+        triggerOff(t);                   // last note released → release envelope
+      } else {
+        applyPitch(held[held.length - 1], true);   // return legato to last held note
+      }
     }
   }, []);
 
@@ -1148,6 +1172,7 @@ export default function SynthApp() {
   const handleParamChange = useCallback((moduleId: string, paramId: string, value: number) => {
     setModules(prev => prev.map(m => m.id === moduleId ? { ...m, params: { ...m.params, [paramId]: value } } : m));
     audioModulesRef.current.get(moduleId)?.setParam(paramId, value);
+    if (moduleId === 'kb1' && paramId === 'glide') glideRef.current = value;
   }, []);
 
   const handleSelectorChange = useCallback((moduleId: string, selId: string, value: number) => {
