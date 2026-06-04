@@ -1,0 +1,6 @@
+{
+  "installCommand": "pnpm install",
+  "buildCommand": "pnpm --filter @workspace/modular-synth run build",
+  "outputDirectory": "artifacts/modular-synth/dist/public",
+  "framework": null
+}
