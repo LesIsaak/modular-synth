@@ -19,7 +19,7 @@ run = "pnpm --filter @workspace/modular-synth run dev"
 
 [services.production]
 build = [ "pnpm", "--filter", "@workspace/modular-synth", "run", "build" ]
-publicDir = "artifacts/modular-synth/dist/public"
+publicDir = "artifacts/modular-synth/dist"
 serve = "static"
 
 [[services.production.rewrites]]
