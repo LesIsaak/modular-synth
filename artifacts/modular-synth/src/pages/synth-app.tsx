@@ -486,7 +486,7 @@ function FixedKeyboardPanel({
     const freq = midiToHz(midi);
     const BEND_ST = 2;
     const bentFreq = freq * Math.pow(2, pitchRef.current * BEND_ST / 12);
-    heldFreqRef.current = freq;
+    heldFreqRef.current = bentFreq;   // store bentFreq so release can match it
     heldMidiRef.current = midi;
     setActiveNote(midi);
     onNote(bentFreq, true);
@@ -495,10 +495,11 @@ function FixedKeyboardPanel({
   const releaseKey = (midi: number) => {
     if (heldMidiRef.current !== midi) return;
     if (holdRef.current) return;     // hold mode: don't release
+    const freq = heldFreqRef.current;
     heldFreqRef.current = 0;
     heldMidiRef.current = null;
     setActiveNote(null);
-    onNote(0, false);
+    onNote(freq, false);             // pass the same freq that was used in pressKey
   };
 
   const toggleHold = () => {
@@ -506,10 +507,11 @@ function FixedKeyboardPanel({
     holdRef.current = next;
     setHold(next);
     if (!next && heldFreqRef.current > 0) {
+      const freq = heldFreqRef.current;
       heldFreqRef.current = 0;
       heldMidiRef.current = null;
       setActiveNote(null);
-      onNote(0, false);
+      onNote(freq, false);           // pass the same freq that was used in pressKey
     }
   };
 
@@ -837,8 +839,9 @@ function useMIDI(
         onNoteRef.current(freq, true);
         onMonRef.current({ type: 'noteOn', channel: ch, note, velocity: vel });
       } else if (type === 0x80 || (type === 0x90 && vel === 0)) {
+        const freq = 440 * Math.pow(2, (note - 69) / 12);
         baseFreqRef.current = 0;
-        onNoteRef.current(0, false);
+        onNoteRef.current(freq, false);
         onMonRef.current({ type: 'noteOff', channel: ch, note });
       } else if (type === 0xe0 && d.length >= 3) {
         const bend14 = (d[2] << 7) | d[1];
