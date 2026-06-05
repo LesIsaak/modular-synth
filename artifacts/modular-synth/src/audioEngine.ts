@@ -713,13 +713,28 @@ export function createAudioModule(
       const morph = p.morph ?? 0;
       lpG.gain.value = 1 - morph; hpG.gain.value = morph;
       [lp, hp].forEach(f => { f.frequency.value = p.cutoff ?? 1000; f.Q.value = p.res ?? 1; });
+
+      // audio_in splitter — feeds both lp and hp so the full morph range works
+      const inSplit = ctx.createGain(); inSplit.gain.value = 1;
+      inSplit.connect(lp); inSplit.connect(hp);
       lp.connect(lpG); hp.connect(hpG); lpG.connect(out); hpG.connect(out);
+
+      // cutoff CV splitter — modulates frequency on both filters simultaneously
+      const cutoffCvSplit = ctx.createGain(); cutoffCvSplit.gain.value = 1;
+      cutoffCvSplit.connect(lp.frequency); cutoffCvSplit.connect(hp.frequency);
+
+      // res CV splitter — modulates Q on both filters simultaneously
+      const resCvSplit = ctx.createGain(); resCvSplit.gain.value = 1;
+      resCvSplit.connect(lp.Q); resCvSplit.connect(hp.Q);
+
       const morphCs = ctx.createConstantSource(); morphCs.offset.value = morph; morphCs.start();
       return {
         outputs: new Map([['out', out]]),
         inputs: new Map([
-          ['audio_in', { node: lp }],
-          ['morph_cv', { node: morphCs, param: morphCs.offset }],
+          ['audio_in',  { node: inSplit }],
+          ['cutoff_cv', { node: cutoffCvSplit }],
+          ['res_cv',    { node: resCvSplit }],
+          ['morph_cv',  { node: morphCs, param: morphCs.offset }],
         ]),
         setParam: (id, val) => {
           p[id] = val;
@@ -729,7 +744,7 @@ export function createAudioModule(
         },
         destroy: () => {
           morphCs.stop(); morphCs.disconnect();
-          [lp, hp, lpG, hpG, out].forEach(n => n.disconnect());
+          [lp, hp, lpG, hpG, out, inSplit, cutoffCvSplit, resCvSplit].forEach(n => n.disconnect());
         },
       };
     }
