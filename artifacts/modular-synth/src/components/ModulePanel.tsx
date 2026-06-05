@@ -394,40 +394,37 @@ function Screw() {
  *  Shown in a tiny second line below the port name so users know the signal role
  *  without it just repeating the name. */
 function portHint(id: string, type: PortType): string {
-  // Exact-id overrides first
-  if (id === 'audio_in')        return 'signal in';
-  if (id === 'audio_out')       return 'to mixer';
-  if (id === 'env_out')         return 'to vca/filter';
-  if (id === 'eoc_out')         return 'end of cycle';
-  if (id === 'open_out')        return 'open gate';
-  if (id === 'fm_in')           return 'freq mod';
-  if (id === 'pwm_in')          return 'pulse width';
-  if (id === 'pitch_bend_out')  return 'pitch bend';
-  if (id === 'mod_wheel_out')   return 'mod wheel';
-  if (id === 'freeze_in')       return 'freeze';
-  // Prefix / substring rules
+  if (id === 'audio_in')        return 'sig in';
+  if (id === 'audio_out')       return 'mixer';
+  if (id === 'env_out')         return 'vca/flt';
+  if (id === 'eoc_out')         return 'eoc';
+  if (id === 'open_out')        return 'open';
+  if (id === 'fm_in')           return 'fm';
+  if (id === 'pwm_in')          return 'pwm';
+  if (id === 'pitch_bend_out')  return 'p.bend';
+  if (id === 'mod_wheel_out')   return 'm.wheel';
+  if (id === 'freeze_in')       return 'frz';
   if (id.startsWith('voct'))    return 'pitch';
-  if (id.includes('gate'))      return type.endsWith('_out') ? 'trig out' : 'trig in';
-  if (id.includes('accent'))    return 'accent';
+  if (id.includes('gate'))      return 'trig';
+  if (id.includes('accent'))    return 'acc';
   if (id.includes('audio'))     return 'audio';
-  if (id.includes('env'))       return 'envelope';
-  if (id.match(/div\d/))        return 'clk div';
-  if (id.includes('cutoff'))    return 'cutoff cv';
-  if (id.includes('res'))       return 'resonance';
-  if (id.includes('sub'))       return 'sub osc';
-  if (id.match(/saw|sq_|tri_|sin_/)) return 'waveform';
+  if (id.includes('env'))       return 'env';
+  if (id.match(/div\d/))        return 'clk÷';
+  if (id.includes('cutoff'))    return 'cut cv';
+  if (id.includes('res'))       return 'res';
+  if (id.includes('sub'))       return 'sub';
+  if (id.match(/saw|sq_|tri_|sin_/)) return 'wave';
   if (id.includes('lfo'))       return 'lfo';
-  if (id.includes('noise'))     return 'noise';
-  if (id.includes('mod'))       return 'modulation';
-  if (id.match(/cv_in|cv_out/)) return 'control v';
-  // Generic type fallback
+  if (id.includes('noise'))     return 'nse';
+  if (id.includes('mod'))       return 'mod';
+  if (id.match(/cv_in|cv_out/)) return 'cv';
   switch (type) {
-    case 'audio_in':  return 'signal in';
-    case 'audio_out': return 'signal out';
-    case 'cv_in':     return 'control v';
-    case 'cv_out':    return 'control v';
-    case 'gate_in':   return 'trig in';
-    case 'gate_out':  return 'trig out';
+    case 'audio_in':  return 'sig in';
+    case 'audio_out': return 'sig out';
+    case 'cv_in':     return 'cv';
+    case 'cv_out':    return 'cv';
+    case 'gate_in':   return 'trig';
+    case 'gate_out':  return 'trig';
   }
 }
 
