@@ -390,6 +390,47 @@ function Screw() {
   );
 }
 
+/** Returns a short contextual hint for a port — what it carries or where it goes.
+ *  Shown in a tiny second line below the port name so users know the signal role
+ *  without it just repeating the name. */
+function portHint(id: string, type: PortType): string {
+  // Exact-id overrides first
+  if (id === 'audio_in')        return 'signal in';
+  if (id === 'audio_out')       return 'to mixer';
+  if (id === 'env_out')         return 'to vca/filter';
+  if (id === 'eoc_out')         return 'end of cycle';
+  if (id === 'open_out')        return 'open gate';
+  if (id === 'fm_in')           return 'freq mod';
+  if (id === 'pwm_in')          return 'pulse width';
+  if (id === 'pitch_bend_out')  return 'pitch bend';
+  if (id === 'mod_wheel_out')   return 'mod wheel';
+  if (id === 'freeze_in')       return 'freeze';
+  // Prefix / substring rules
+  if (id.startsWith('voct'))    return 'pitch';
+  if (id.includes('gate'))      return type.endsWith('_out') ? 'trig out' : 'trig in';
+  if (id.includes('accent'))    return 'accent';
+  if (id.includes('audio'))     return 'audio';
+  if (id.includes('env'))       return 'envelope';
+  if (id.match(/div\d/))        return 'clk div';
+  if (id.includes('cutoff'))    return 'cutoff cv';
+  if (id.includes('res'))       return 'resonance';
+  if (id.includes('sub'))       return 'sub osc';
+  if (id.match(/saw|sq_|tri_|sin_/)) return 'waveform';
+  if (id.includes('lfo'))       return 'lfo';
+  if (id.includes('noise'))     return 'noise';
+  if (id.includes('mod'))       return 'modulation';
+  if (id.match(/cv_in|cv_out/)) return 'control v';
+  // Generic type fallback
+  switch (type) {
+    case 'audio_in':  return 'signal in';
+    case 'audio_out': return 'signal out';
+    case 'cv_in':     return 'control v';
+    case 'cv_out':    return 'control v';
+    case 'gate_in':   return 'trig in';
+    case 'gate_out':  return 'trig out';
+  }
+}
+
 function PortWithLabel({
   moduleId, port, isConnected, isPendingSource, canConnect, onPortClick, onPortDoubleClick, onPortHold, onRegisterRef, getLevelFn,
 }: {
@@ -404,6 +445,7 @@ function PortWithLabel({
   onRegisterRef: (key: string, el: HTMLDivElement | null) => void;
   getLevelFn?: () => number;
 }) {
+  const hint = portHint(port.id, port.type);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, width: 28, flexShrink: 0 }}>
       <PortJack
@@ -418,13 +460,15 @@ function PortWithLabel({
         onRegisterRef={onRegisterRef}
         getInputLevel={getLevelFn}
       />
-      <span style={{
-        fontSize: 6, color: '#909090', textTransform: 'uppercase',
-        letterSpacing: '0.04em', lineHeight: 1, textAlign: 'center',
-        maxWidth: 28, overflow: 'hidden', textOverflow: 'clip', whiteSpace: 'nowrap',
-      }}>
-        {port.name}
-      </span>
+      {hint && (
+        <span style={{
+          fontSize: 6, color: '#606878', textTransform: 'uppercase',
+          letterSpacing: '0.04em', lineHeight: 1, textAlign: 'center',
+          maxWidth: 32, overflow: 'hidden', textOverflow: 'clip', whiteSpace: 'nowrap',
+        }}>
+          {hint}
+        </span>
+      )}
     </div>
   );
 }
