@@ -91,7 +91,7 @@ export default function PortJack({
       >
         {/* Expanded transparent hit-area */}
         <div
-          style={{ position: 'absolute', inset: -9, cursor: 'pointer', zIndex: 1 }}
+          style={{ position: 'absolute', inset: -9, cursor: 'pointer', zIndex: 35 }}
           onPointerDown={e => {
             e.stopPropagation();
             holdFiredRef.current = false;
