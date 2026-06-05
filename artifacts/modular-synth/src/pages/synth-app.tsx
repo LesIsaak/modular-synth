@@ -10,8 +10,9 @@ import ModulePanel from '../components/ModulePanel';
 import IORefPanel from '../components/IORefPanel';
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
-const SLOT_W  = 220;   // rack slot width (snap grid)
-const SLOT_H  = 300;   // rack row height — matches standard module height for tight packing
+const SLOT_W    = 220;  // rack slot width (snap grid)
+const SLOT_H    = 300;  // rack row height — matches standard module height for tight packing
+const SNAP_DIST = 40;   // ~1 cm at 96 dpi — proximity threshold for live snapping
 const CONTENT_W = 2400;
 const CONTENT_H = 3000; // 10 rows × SLOT_H
 const KB_H    = 152;   // fixed keyboard panel height
@@ -41,6 +42,41 @@ function snapToSlot(
   snapPoints[0]);
 
   return { x: Math.max(0, snappedX), y: snappedY };
+}
+
+/**
+ * Proximity snap — used live during drag.
+ * Snaps X/Y only if within SNAP_DIST of a snap point; otherwise returns raw coords.
+ * Snap points: x=0 (left wall) + right edges of same-row neighbours.
+ */
+function snapWithProximity(
+  rawX: number, rawY: number,
+  modules: ModuleInstance[], draggingId: string,
+): { x: number; y: number } {
+  // Y: snap to nearest row boundary if close enough, else keep raw
+  const nearestRowY = Math.round(rawY / SLOT_H) * SLOT_H;
+  const finalY = Math.max(0, Math.abs(nearestRowY - rawY) <= SNAP_DIST ? nearestRowY : rawY);
+
+  // X snap points relative to the target row
+  const targetRow = Math.round(finalY / SLOT_H);
+  const snapXs: number[] = [0];
+  for (const m of modules) {
+    if (m.id === draggingId) continue;
+    if (Math.round(m.y / SLOT_H) !== targetRow) continue;
+    const w = MODULE_TYPE_MAP.get(m.typeId)?.width ?? SLOT_W;
+    snapXs.push(m.x + w);   // butt left edge of dragged against right edge of neighbour
+    snapXs.push(m.x);        // align left edges
+  }
+
+  // Snap X only if closest point is within threshold
+  let bestX = rawX;
+  let bestDist = SNAP_DIST;
+  for (const sx of snapXs) {
+    const d = Math.abs(sx - rawX);
+    if (d <= bestDist) { bestDist = d; bestX = sx; }
+  }
+
+  return { x: Math.max(0, bestX), y: finalY };
 }
 
 /** Find the next available tightly-packed position for a new module of the given type. */
@@ -1751,13 +1787,12 @@ export default function SynthApp() {
           const { moduleId, startX, startY, origX, origY, origScrollLeft, origScrollTop } = dragRef.current!;
           const sl = rackRef.current.scrollLeft;
           const st = rackRef.current.scrollTop;
-          setModules(prev => prev.map(m =>
-            m.id === moduleId
-              ? { ...m,
-                  x: Math.max(0, origX + mx - startX + sl - origScrollLeft),
-                  y: Math.max(0, origY + my - startY + st - origScrollTop) }
-              : m
-          ));
+          setModules(prev => prev.map(m => {
+            if (m.id !== moduleId) return m;
+            const rawX = Math.max(0, origX + mx - startX + sl - origScrollLeft);
+            const rawY = Math.max(0, origY + my - startY + st - origScrollTop);
+            return { ...m, ...snapWithProximity(rawX, rawY, prev, moduleId) };
+          }));
         }
         if (hasCable) {
           setMousePos({
@@ -1794,13 +1829,12 @@ export default function SynthApp() {
           const { moduleId, startX, startY, origX, origY, origScrollLeft, origScrollTop } = dragRef.current;
           const sl = rackRef.current.scrollLeft;
           const st = rackRef.current.scrollTop;
-          setModules(prev => prev.map(m =>
-            m.id === moduleId
-              ? { ...m,
-                  x: Math.max(0, origX + lastMouse.x - startX + sl - origScrollLeft),
-                  y: Math.max(0, origY + lastMouse.y - startY + st - origScrollTop) }
-              : m
-          ));
+          setModules(prev => prev.map(m => {
+            if (m.id !== moduleId) return m;
+            const rawX = Math.max(0, origX + lastMouse.x - startX + sl - origScrollLeft);
+            const rawY = Math.max(0, origY + lastMouse.y - startY + st - origScrollTop);
+            return { ...m, ...snapWithProximity(rawX, rawY, prev, moduleId) };
+          }));
         });
       }
 
@@ -1816,10 +1850,10 @@ export default function SynthApp() {
       if (cableRafId) { cancelAnimationFrame(cableRafId); cableRafId = 0; }
       if (dragRef.current) {
         const { moduleId } = dragRef.current;
+        // Final drop: proximity snap (same rules as live drag — free placement if out of range)
         setModules(prev => prev.map(m => {
           if (m.id !== moduleId) return m;
-          const snapped = snapToSlot(m.x, m.y, prev, moduleId);
-          return { ...m, ...snapped };
+          return { ...m, ...snapWithProximity(m.x, m.y, prev, moduleId) };
         }));
         dragRef.current = null;
       }
