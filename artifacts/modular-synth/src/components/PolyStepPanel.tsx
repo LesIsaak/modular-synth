@@ -11,9 +11,10 @@ interface Props {
   knobDefs: KnobDef[];
   onParamChange: (moduleId: string, paramId: string, value: number) => void;
   stepRef?: { value: number };
+  noteOpen?: boolean;
 }
 
-export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, stepRef }: Props) {
+export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, stepRef, noteOpen = true }: Props) {
   const [liveStep, setLiveStep] = useState(-1);
 
   useEffect(() => {
@@ -135,7 +136,10 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
         </span>
       </div>
 
-      {/* ── Column numbers ──────────────────────────────────────────────── */}
+      {/* ── Column numbers + track rows — hidden when collapsed ─────────── */}
+      <div style={{ flex: 1, flexDirection: 'column', overflow: 'hidden', display: noteOpen ? 'flex' : 'none' }}>
+
+      {/* Column numbers */}
       <div style={{
         flexShrink: 0, height: 16,
         display: 'flex', alignItems: 'center',
@@ -157,7 +161,7 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
         <div style={{ flexShrink: 0, width: 32 }} />
       </div>
 
-      {/* ── Track rows (fill remaining ≈ 476px / 8 ≈ 59.5px each) ──────── */}
+      {/* Track rows */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {Array.from({ length: 8 }, (_, t) => {
           const color  = TC[t];
@@ -252,6 +256,7 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
             </div>
           );
         })}
+      </div>
       </div>
     </div>
   );

@@ -533,6 +533,7 @@ export default function ModulePanel({
   const [showDelete, setShowDelete] = useState(false);
   const [showInfo,   setShowInfo]   = useState(false);
   const [infoAnchor, setInfoAnchor] = useState({ x: 0, y: 0 });
+  const [noteOpen,   setNoteOpen]   = useState(true);
   const [eucStep, setEucStep] = useState(0);
   const [audioTrigLabel, setAudioTrigLabel] = useState('—');
   const [audioTrigDevices, setAudioTrigDevices] = useState<{ deviceId: string; label: string }[]>([]);
@@ -565,7 +566,7 @@ export default function ModulePanel({
   const isEuc      = module.typeId === 'euclidean_trig';
   const isPolyStep = module.typeId === 'poly_step';
   const isSampler  = module.typeId === 'sampler';
-  const panelH   = typeDef.height ?? PANEL_H;
+  const panelH   = isPolyStep && !noteOpen ? PANEL_H : (typeDef.height ?? PANEL_H);
   const bodyH    = panelH - RAIL_H * 2;
 
   const canConnectPort = (portId: string, portType: PortType): boolean => {
@@ -645,6 +646,24 @@ export default function ModulePanel({
         }}>
           {typeDef.name}
         </span>
+        {/* Grid collapse toggle — poly_step only */}
+        {isPolyStep && (
+          <button
+            title={noteOpen ? 'Collapse grid' : 'Expand grid'}
+            onMouseDown={e => e.stopPropagation()}
+            onClick={e => { e.stopPropagation(); setNoteOpen(v => !v); }}
+            style={{
+              width: 14, height: 14, fontSize: 9, lineHeight: 1,
+              cursor: 'pointer', borderRadius: 2, padding: 0,
+              border: `1px solid ${noteOpen ? accent : '#484848'}`,
+              background: noteOpen ? `${accent}30` : '#252525',
+              color: noteOpen ? accent : '#909090',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0, marginRight: 2,
+              transition: 'color 0.1s, background 0.1s, border-color 0.1s',
+            }}
+          >{noteOpen ? '▾' : '▸'}</button>
+        )}
         {/* Info button — always visible */}
         <button
           style={{
@@ -770,6 +789,7 @@ export default function ModulePanel({
                 knobDefs={typeDef.knobs}
                 onParamChange={onParamChange}
                 stepRef={moduleStepRef}
+                noteOpen={noteOpen}
               />
             </div>
 
