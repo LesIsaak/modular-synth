@@ -1398,7 +1398,7 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   seq_cv:      '8-step sequencer with freely tunable CV values (not quantized). Use for any modulation target — filter cutoff, LFO rate, reverb mix.',
   seq_gate:    'Gate pattern sequencer — outputs a sustained gate per step. Use to rhythmically open a VCA or trigger an ADSR in a pattern.',
   arpeggiator: 'Plays keyboard notes in arpeggiation patterns. SWING delays odd beats; CHANCE randomly skips steps; ACCENT emphasizes every Nth trigger.',
-  poly_step:   'Polyphonic step sequencer with per-step note, gate, velocity, and CV lanes. Large module — the full studio sequencer.',
+  poly_step:   '8-track step sequencer — per-track gates, velocity CV, and global clock/beat/EOC/position outputs.',
   drum_machine:'Pattern-based drum machine with multiple independent voice trigger outputs. Program beats per voice and patch each output to its own drum module.',
 
   // ── Clock ──────────────────────────────────────────────────────────
