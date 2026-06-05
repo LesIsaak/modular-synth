@@ -267,9 +267,8 @@ function PatchCables({
 
             {/* 3.5mm plug at FROM end — hold to grab/re-patch, quick tap = stack */}
             <g style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-              onPointerDown={e => { e.preventDefault(); e.stopPropagation(); startPlugHold(() => onGrabCableFromEnd(c.id)); }}
-              onPointerUp={e => { e.preventDefault(); cancelPlugHold(); if (!holdFiredRef.current) onPortClick(c.fromModuleId, c.fromPortId, getPortType(c.fromModuleId, c.fromPortId)); }}
-              onPointerLeave={() => cancelPlugHold()}>
+              onPointerDown={e => { e.preventDefault(); e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); startPlugHold(() => onGrabCableFromEnd(c.id)); }}
+              onPointerUp={e => { e.preventDefault(); e.currentTarget.releasePointerCapture(e.pointerId); cancelPlugHold(); if (!holdFiredRef.current) onPortClick(c.fromModuleId, c.fromPortId, getPortType(c.fromModuleId, c.fromPortId)); }}>
               <circle cx={from.x} cy={from.y} r={16} fill="transparent" />
               <circle cx={from.x} cy={from.y} r={13} fill="black" opacity={0.4} />
               <circle cx={from.x} cy={from.y} r={12} fill="#383838" stroke="#555" strokeWidth={0.6} />
@@ -283,9 +282,8 @@ function PatchCables({
 
             {/* 3.5mm plug at TO end — hold to grab/re-patch, quick tap = stack */}
             <g style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-              onPointerDown={e => { e.preventDefault(); e.stopPropagation(); startPlugHold(() => onGrabCableEnd(c.id)); }}
-              onPointerUp={e => { e.preventDefault(); cancelPlugHold(); if (!holdFiredRef.current) onPortClick(c.toModuleId, c.toPortId, getPortType(c.toModuleId, c.toPortId)); }}
-              onPointerLeave={() => cancelPlugHold()}>
+              onPointerDown={e => { e.preventDefault(); e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); startPlugHold(() => onGrabCableEnd(c.id)); }}
+              onPointerUp={e => { e.preventDefault(); e.currentTarget.releasePointerCapture(e.pointerId); cancelPlugHold(); if (!holdFiredRef.current) onPortClick(c.toModuleId, c.toPortId, getPortType(c.toModuleId, c.toPortId)); }}>
               <circle cx={to.x} cy={to.y} r={16} fill="transparent" />
               <circle cx={to.x} cy={to.y} r={13} fill="black" opacity={0.4} />
               <circle cx={to.x} cy={to.y} r={12} fill="#383838" stroke="#555" strokeWidth={0.6} />
