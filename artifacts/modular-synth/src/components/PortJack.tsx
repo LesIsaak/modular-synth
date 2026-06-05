@@ -19,7 +19,7 @@ interface PortJackProps {
 export const PORT_COLORS: Record<PortType, string> = {
   audio_out: '#fbbf24',
   audio_in:  '#6b7280',
-  cv_out:    '#67e8f9',
+  cv_out:    '#a78bfa',
   cv_in:     '#6b7280',
   gate_out:  '#86efac',
   gate_in:   '#6b7280',
@@ -27,7 +27,7 @@ export const PORT_COLORS: Record<PortType, string> = {
 
 const INPUT_LED: Partial<Record<PortType, string>> = {
   audio_in: '#fbbf24',
-  cv_in:    '#67e8f9',
+  cv_in:    '#a78bfa',
   gate_in:  '#86efac',
 };
 

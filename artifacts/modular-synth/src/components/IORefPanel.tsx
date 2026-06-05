@@ -153,8 +153,8 @@ function descFor(portId: string): string {
 const TYPE_DOT: Record<PortType, string> = {
   audio_in:  '#fbbf24',
   audio_out: '#fbbf24',
-  cv_in:     '#67e8f9',
-  cv_out:    '#67e8f9',
+  cv_in:     '#a78bfa',
+  cv_out:    '#a78bfa',
   gate_in:   '#86efac',
   gate_out:  '#86efac',
 };
@@ -212,7 +212,7 @@ export default function IORefPanel({ onClose }: Props) {
         </span>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           {/* Legend */}
-          {([['audio','#fbbf24'],['cv','#67e8f9'],['gate','#86efac']] as const).map(([lbl, col]) => (
+          {([['audio','#fbbf24'],['cv','#a78bfa'],['gate','#86efac']] as const).map(([lbl, col]) => (
             <div key={lbl} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <div style={{ width: 6, height: 6, borderRadius: '50%', background: col }} />
               <span style={{ fontSize: 9, color: '#555', letterSpacing: '0.08em' }}>{lbl}</span>
