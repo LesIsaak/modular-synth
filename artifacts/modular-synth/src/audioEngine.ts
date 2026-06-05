@@ -180,7 +180,9 @@ function getClockWorker(): Worker {
           // Clamp: can't schedule in the past; add 1 ms grace so tiny rounding never fires negative.
           _currentTickAudioTime = Math.max(_timingCtx.currentTime + 0.001, scheduled);
         }
-        _clockCallbacks.get(ev.data.id)?.(ev.data.beat);
+        try { _clockCallbacks.get(ev.data.id)?.(ev.data.beat); } catch (err) {
+          console.error('[Clock] tick callback threw:', err);
+        }
         _currentTickAudioTime = 0;
       }
     };
@@ -3301,22 +3303,26 @@ export function createAudioModule(
 
         if (destroyed) return;
         pollId = setInterval(() => {
-          const now = performance.now();
-          for (let i = 0; i < NUM_CH; i++) {
-            if ((p[`ch${i + 1}_on`] ?? (i < 6 ? 1 : 0)) < 0.5) continue;
-            const thresh   = p[`ch${i + 1}_thresh`] ?? 0.12;
-            const retrigMs = (p[`ch${i + 1}_retrig`] ?? 0.08) * 1000;
-            const d = dataArrays[i];
-            analysers[i].getFloatTimeDomainData(d);
-            let rms = 0;
-            for (let j = 0; j < d.length; j++) rms += d[j] * d[j];
-            rms = Math.sqrt(rms / d.length);
-            if (rms > thresh && now - lastTrigMs[i] > retrigMs) {
-              lastTrigMs[i] = now;
-              const cb = gateCbs.get(`gate${i + 1}_out`);
-              cb?.(true, 440);
-              setTimeout(() => cb?.(false, 440), 12);
+          try {
+            const now = performance.now();
+            for (let i = 0; i < NUM_CH; i++) {
+              if ((p[`ch${i + 1}_on`] ?? (i < 6 ? 1 : 0)) < 0.5) continue;
+              const thresh   = p[`ch${i + 1}_thresh`] ?? 0.12;
+              const retrigMs = (p[`ch${i + 1}_retrig`] ?? 0.08) * 1000;
+              const d = dataArrays[i];
+              analysers[i].getFloatTimeDomainData(d);
+              let rms = 0;
+              for (let j = 0; j < d.length; j++) rms += d[j] * d[j];
+              rms = Math.sqrt(rms / d.length);
+              if (rms > thresh && now - lastTrigMs[i] > retrigMs) {
+                lastTrigMs[i] = now;
+                const cb = gateCbs.get(`gate${i + 1}_out`);
+                cb?.(true, 440);
+                setTimeout(() => { try { cb?.(false, 440); } catch (_) {} }, 12);
+              }
             }
+          } catch (err) {
+            console.warn('[AudioTrig] poll error:', err);
           }
         }, 16);
       };

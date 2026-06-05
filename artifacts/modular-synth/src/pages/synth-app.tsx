@@ -898,6 +898,8 @@ function useMIDI(
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function SynthApp() {
   const [started,         setStarted]         = useState(false);
+  const [hasAutosave,     setHasAutosave]     = useState(false);
+  const autosaveJsonRef = useRef<string | null>(null);
   const [samplerBanks,    setSamplerBanks]    = useState<Map<string, boolean[]>>(new Map());
   const [saveDialogOpen,  setSaveDialogOpen]  = useState(false);
   const [saveDialogInput, setSaveDialogInput] = useState('');
@@ -1019,12 +1021,47 @@ export default function SynthApp() {
   }, []);
 
   // ─── Initialize audio ───────────────────────────────────────────────────────
-  const handleStart = useCallback(() => {
+  const handleStart = useCallback((savedJson?: string) => {
     const ctx = new AudioContext();
     ctx.resume().catch(() => {});
     audioCtxRef.current = ctx;
 
-    // All rack modules (kb1 is now part of DEFAULT_MODULES)
+    if (savedJson) {
+      try {
+        const patch = JSON.parse(savedJson) as { version?: number; modules?: ModuleInstance[]; cables?: Cable[] };
+        if (Array.isArray(patch.modules) && Array.isArray(patch.cables)) {
+          for (const mod of patch.modules) {
+            const audio = createAudioModule(ctx, mod.typeId, { ...mod.params });
+            audioModulesRef.current.set(mod.id, audio);
+            const typeDef = MODULE_TYPE_MAP.get(mod.typeId);
+            for (const sel of typeDef?.selectors ?? []) {
+              audio.setSelector?.(sel.id, mod.params[sel.id] ?? sel.default);
+            }
+          }
+          for (const cable of patch.cables) {
+            const fromTypeDef = MODULE_TYPE_MAP.get(patch.modules!.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
+            const fromPort    = fromTypeDef?.ports.find(p => p.id === cable.fromPortId);
+            if (fromPort?.type === 'gate_out') {
+              const gk = `${cable.fromModuleId}:${cable.fromPortId}`;
+              if (!gateConnRef.current.has(gk)) gateConnRef.current.set(gk, new Set());
+              gateConnRef.current.get(gk)!.add(cable.toModuleId);
+              if (!portGateMapRef.current.has(gk)) portGateMapRef.current.set(gk, new Map());
+              portGateMapRef.current.get(gk)!.set(cable.toModuleId, cable.toPortId);
+            } else {
+              const fa = audioModulesRef.current.get(cable.fromModuleId);
+              const ta = audioModulesRef.current.get(cable.toModuleId);
+              if (fa && ta) connectAudioPorts(fa, cable.fromPortId, ta, cable.toPortId);
+            }
+          }
+          setModules(patch.modules);
+          setCables(patch.cables);
+          setStarted(true);
+          return;
+        }
+      } catch (_) {}
+    }
+
+    // Default startup
     for (const mod of DEFAULT_MODULES) {
       audioModulesRef.current.set(mod.id, createAudioModule(ctx, mod.typeId, { ...mod.params }));
     }
@@ -1332,6 +1369,19 @@ export default function SynthApp() {
     setCables(patch.cables);
     setModules(patch.modules);
   }, [cables, modules, pushUndo]);
+
+  // ─── Auto-save / restore ────────────────────────────────────────────────────
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('orangecastle_autosave');
+      if (saved) { JSON.parse(saved); autosaveJsonRef.current = saved; setHasAutosave(true); }
+    } catch (_) {}
+  }, []);
+
+  useEffect(() => {
+    if (!started) return;
+    try { localStorage.setItem('orangecastle_autosave', JSON.stringify({ version: 1, modules, cables })); } catch (_) {}
+  }, [started, modules, cables]);
 
   const handleLoadClick = useCallback(() => {
     fileInputRef.current?.click();
@@ -1717,18 +1767,29 @@ export default function SynthApp() {
               Pre-loaded with VCO → VCF → VCA → Output.
               Use the keyboard panel at the bottom to play.
             </div>
-            <button
-              onClick={handleStart}
-              className="px-10 py-3 text-sm font-bold tracking-[0.2em] uppercase rounded border transition-all hover:scale-105 active:scale-95"
-              style={{
-                background: '#e87d27', color: '#000',
-                border: '1px solid #c96a1a',
-                boxShadow: '0 0 30px rgba(232,125,39,0.4)',
-              }}
-              data-testid="start-button"
-            >
-              INITIALIZE
-            </button>
+            <div className="flex flex-col items-center gap-2">
+              <button
+                onClick={() => handleStart()}
+                className="px-10 py-3 text-sm font-bold tracking-[0.2em] uppercase rounded border transition-all hover:scale-105 active:scale-95"
+                style={{
+                  background: '#e87d27', color: '#000',
+                  border: '1px solid #c96a1a',
+                  boxShadow: '0 0 30px rgba(232,125,39,0.4)',
+                }}
+                data-testid="start-button"
+              >
+                INITIALIZE
+              </button>
+              {hasAutosave && (
+                <button
+                  onClick={() => handleStart(autosaveJsonRef.current ?? undefined)}
+                  className="px-6 py-2 text-xs tracking-[0.2em] uppercase rounded border transition-all hover:scale-105 active:scale-95"
+                  style={{ background: '#1a1a1a', color: '#e87d27', border: '1px solid #e87d27' }}
+                >
+                  ↩ RESTORE LAST SESSION
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
