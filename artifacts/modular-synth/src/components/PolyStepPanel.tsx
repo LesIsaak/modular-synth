@@ -12,9 +12,10 @@ interface Props {
   onParamChange: (moduleId: string, paramId: string, value: number) => void;
   stepRef?: { value: number };
   noteOpen?: boolean;
+  cvLevels?: Map<string, () => number>;
 }
 
-export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, stepRef, noteOpen = true }: Props) {
+export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, stepRef, noteOpen = true, cvLevels }: Props) {
   const [liveStep, setLiveStep] = useState(-1);
 
   useEffect(() => {
@@ -46,7 +47,8 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
   };
   const clearTrack = (t: number) => { set(`t${t+1}`, 0); set(`t${t+1}_acc`, 0); };
 
-  const bpmDef = knobDefs.find(k => k.id === 'bpm');
+  const bpmDef   = knobDefs.find(k => k.id === 'bpm');
+  const swingDef = knobDefs.find(k => k.id === 'swing');
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -88,7 +90,13 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
         <div style={{ width: 1, height: 28, background: '#252525', flexShrink: 0 }} />
 
         {bpmDef && (
-          <Knob def={bpmDef} value={p.bpm ?? 120} onChange={v => set('bpm', v)} size="sm" />
+          <Knob def={bpmDef} value={p.bpm ?? 120} onChange={v => set('bpm', v)} size="sm"
+            cvGetLevel={cvLevels?.get('bpm')} />
+        )}
+
+        {swingDef && (
+          <Knob def={swingDef} value={p.swing ?? 0} onChange={v => set('swing', v)} size="sm"
+            cvGetLevel={cvLevels?.get('swing')} />
         )}
 
         <div style={{ width: 1, height: 28, background: '#252525', flexShrink: 0 }} />

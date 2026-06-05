@@ -790,6 +790,7 @@ export default function ModulePanel({
                 onParamChange={onParamChange}
                 stepRef={moduleStepRef}
                 noteOpen={noteOpen}
+                cvLevels={cvLevels}
               />
             </div>
 
