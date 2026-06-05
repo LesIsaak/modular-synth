@@ -57,7 +57,7 @@ export default function PortJack({
       if (ref.current) {
         const v = Math.min(1, Math.max(0, getInputLevel()));
         ref.current.style.boxShadow = v > 0.04
-          ? `0 0 ${(5 + v * 9).toFixed(1)}px ${(1 + v * 4).toFixed(1)}px ${color}88`
+          ? `0 0 ${(2 + v * 4).toFixed(1)}px ${(v * 2).toFixed(1)}px ${color}99`
           : '';
       }
       rafRef.current = requestAnimationFrame(tick);
