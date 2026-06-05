@@ -717,25 +717,26 @@ function FixedKeyboardPanel({
             onClick={toggleHold}
             data-testid="hold-button"
             style={{
-              height: 16, padding: '0 7px', fontSize: 7, letterSpacing: '0.16em',
-              borderRadius: 2, cursor: 'pointer', fontWeight: 700, textTransform: 'uppercase',
-              border: `1px solid ${hold ? '#d97706' : '#2a2a2a'}`,
-              background: hold ? '#1c1000' : '#181818',
-              color: hold ? '#d97706' : '#444',
-              boxShadow: hold ? '0 0 6px rgba(217,119,6,0.4)' : 'none',
+              height: 18, padding: '0 9px', fontSize: 8, letterSpacing: '0.16em',
+              borderRadius: 3, cursor: 'pointer', fontWeight: 700, textTransform: 'uppercase',
+              border: `1px solid ${hold ? '#f59e0b' : '#92400e'}`,
+              background: hold ? '#451a00' : '#1c1200',
+              color: hold ? '#fbbf24' : '#b45309',
+              boxShadow: hold ? '0 0 8px rgba(251,191,36,0.5)' : 'none',
               transition: 'all 0.1s',
             }}
           >HOLD</button>
-          {/* Shortcuts button */}
+          {/* I/O Reference button */}
           <button
             onClick={() => setShowShortcuts(s => !s)}
             title="Module I/O Reference"
             style={{
-              height: 16, padding: '0 7px', fontSize: 7, letterSpacing: '0.14em',
-              borderRadius: 2, cursor: 'pointer', fontWeight: 700,
-              border: `1px solid ${showShortcuts ? '#4b5563' : '#2a2a2a'}`,
-              background: showShortcuts ? '#1a1a1a' : '#181818',
-              color: showShortcuts ? '#9ca3af' : '#444',
+              height: 18, padding: '0 9px', fontSize: 8, letterSpacing: '0.14em',
+              borderRadius: 3, cursor: 'pointer', fontWeight: 700,
+              border: `1px solid ${showShortcuts ? '#6b7280' : '#374151'}`,
+              background: showShortcuts ? '#1f2937' : '#161e26',
+              color: showShortcuts ? '#e5e7eb' : '#6b7280',
+              boxShadow: showShortcuts ? '0 0 6px rgba(107,114,128,0.35)' : 'none',
               transition: 'all 0.1s',
             }}
           >I/O</button>
