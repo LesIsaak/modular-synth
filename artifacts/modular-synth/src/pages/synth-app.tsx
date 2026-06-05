@@ -191,39 +191,17 @@ function ModuleBrowser({ onAdd }: { onAdd: (typeId: string) => void }) {
 
 // ─── Patch cables SVG ─────────────────────────────────────────────────────────
 function PatchCables({
-  cables, modules, pendingCable, mousePos, getPortCenter, onRemoveCable, onGrabCableEnd, onGrabCableFromEnd, onPortClick, cableOpacity,
+  cables, pendingCable, mousePos, getPortCenter, onRemoveCable, cableOpacity,
 }: {
   cables: Cable[];
-  modules: ModuleInstance[];
   pendingCable: PendingCable | null;
   mousePos: { x: number; y: number };
   getPortCenter: (modId: string, portId: string) => { x: number; y: number } | null;
   onRemoveCable: (id: string) => void;
-  onGrabCableEnd: (cableId: string) => void;
-  onGrabCableFromEnd: (cableId: string) => void;
-  onPortClick: (moduleId: string, portId: string, portType: PortType) => void;
   cableOpacity: number;
 }) {
-  // Hold-to-grab: quick tap → delegate to port (stack); 400ms hold → grab/re-patch
-  const holdTimerRef = useRef<number>(0);
-  const holdFiredRef = useRef<boolean>(false);
-
-  const startPlugHold = (grabFn: () => void) => {
-    holdFiredRef.current = false;
-    holdTimerRef.current = window.setTimeout(() => {
-      holdFiredRef.current = true;
-      grabFn();
-    }, 400);
-  };
-
-  const cancelPlugHold = () => window.clearTimeout(holdTimerRef.current);
-
-  const getPortType = (moduleId: string, portId: string): PortType => {
-    const mod = modules.find(m => m.id === moduleId);
-    const td  = mod ? MODULE_TYPE_MAP.get(mod.typeId) : undefined;
-    return (td?.ports.find(p => p.id === portId)?.type ?? 'audio_in') as PortType;
-  };
-
+  // Plugs are purely visual — pointer events pass through to port jacks underneath,
+  // which handle click (stack), double-click (erase) and hold (re-patch) natively.
   const makePath = (x1: number, y1: number, x2: number, y2: number) => {
     const dy = Math.abs(y2 - y1);
     const sag = Math.min(80 + dy * 0.4, 200);
@@ -265,10 +243,8 @@ function PatchCables({
               <path d={d} fill="none" stroke="white" strokeWidth={1.2} strokeLinecap="round" opacity={0.12} />
             </g>
 
-            {/* 3.5mm plug at FROM end — hold to grab/re-patch, quick tap = stack */}
-            <g style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-              onPointerDown={e => { e.preventDefault(); e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); startPlugHold(() => onGrabCableFromEnd(c.id)); }}
-              onPointerUp={e => { e.preventDefault(); e.currentTarget.releasePointerCapture(e.pointerId); cancelPlugHold(); if (!holdFiredRef.current) onPortClick(c.fromModuleId, c.fromPortId, getPortType(c.fromModuleId, c.fromPortId)); }}>
+            {/* 3.5mm plug at FROM end — visual only, pointer-events:none so clicks reach port jack */}
+            <g style={{ pointerEvents: 'none' }}>
               <circle cx={from.x} cy={from.y} r={16} fill="transparent" />
               <circle cx={from.x} cy={from.y} r={13} fill="black" opacity={0.4} />
               <circle cx={from.x} cy={from.y} r={12} fill="#383838" stroke="#555" strokeWidth={0.6} />
@@ -280,10 +256,8 @@ function PatchCables({
               <circle cx={from.x} cy={from.y} r={12} fill="none" stroke={c.color} strokeWidth={1} opacity={0.7} />
             </g>
 
-            {/* 3.5mm plug at TO end — hold to grab/re-patch, quick tap = stack */}
-            <g style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-              onPointerDown={e => { e.preventDefault(); e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); startPlugHold(() => onGrabCableEnd(c.id)); }}
-              onPointerUp={e => { e.preventDefault(); e.currentTarget.releasePointerCapture(e.pointerId); cancelPlugHold(); if (!holdFiredRef.current) onPortClick(c.toModuleId, c.toPortId, getPortType(c.toModuleId, c.toPortId)); }}>
+            {/* 3.5mm plug at TO end — visual only, pointer-events:none so clicks reach port jack */}
+            <g style={{ pointerEvents: 'none' }}>
               <circle cx={to.x} cy={to.y} r={16} fill="transparent" />
               <circle cx={to.x} cy={to.y} r={13} fill="black" opacity={0.4} />
               <circle cx={to.x} cy={to.y} r={12} fill="#383838" stroke="#555" strokeWidth={0.6} />
@@ -1968,14 +1942,10 @@ export default function SynthApp() {
         <div className="relative" style={{ width: CONTENT_W, height: CONTENT_H }}>
           <PatchCables
             cables={cables}
-            modules={modules}
             pendingCable={pendingCable}
             mousePos={mousePos}
             getPortCenter={getPortCenter}
             onRemoveCable={handleRemoveCable}
-            onGrabCableEnd={handleGrabCableEnd}
-            onGrabCableFromEnd={handleGrabCableFromEnd}
-            onPortClick={handlePortClick}
             cableOpacity={cableOpacity}
           />
 
