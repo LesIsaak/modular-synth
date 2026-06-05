@@ -473,6 +473,7 @@ function FixedKeyboardPanel({
   const [octave,     setOctave]     = useState(4);
   const [activeNote, setActiveNote] = useState<number | null>(null);
   const [hold,       setHold]       = useState(false);
+  const [kbZoom,     setKbZoom]     = useState(1);
   const pitchRef    = useRef(0);    // current pitch bend -1..1
   const heldFreqRef = useRef(0);    // base freq of held note
   const heldMidiRef = useRef<number | null>(null);
@@ -649,6 +650,18 @@ function FixedKeyboardPanel({
               style={{ width: 52, height: 4, cursor: 'pointer', accentColor: '#555' }}
             />
           </div>
+          {/* Keyboard zoom slider */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ fontSize: 7, color: '#6b7280', letterSpacing: '0.12em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+              KB
+            </span>
+            <input
+              type="range" min={0.5} max={2.5} step={0.01}
+              value={kbZoom}
+              onChange={e => setKbZoom(parseFloat(e.target.value))}
+              style={{ width: 52, height: 4, cursor: 'pointer', accentColor: '#555' }}
+            />
+          </div>
           {/* SAVE button */}
           <button
             onClick={onSave}
@@ -747,12 +760,14 @@ function FixedKeyboardPanel({
         {/* Vertical divider */}
         <div style={{ width: 1, background: '#202020', flexShrink: 0 }} />
 
-        {/* Piano — 2 octaves side-by-side */}
-        <div style={{ flex: 1, display: 'flex', gap: 6, minWidth: 0 }}>
-          {renderOctave(0)}
-          {/* Octave seam */}
-          <div style={{ width: 2, background: '#1a1a1a', flexShrink: 0, borderRadius: 1 }} />
-          {renderOctave(1)}
+        {/* Piano — 2 octaves side-by-side, zoomable via kbZoom */}
+        <div style={{ flex: 1, overflow: 'hidden', minWidth: 0 }}>
+          <div style={{ display: 'flex', gap: 6, height: '100%', transform: `scaleX(${kbZoom})`, transformOrigin: 'left center' }}>
+            {renderOctave(0)}
+            {/* Octave seam */}
+            <div style={{ width: 2, background: '#1a1a1a', flexShrink: 0, borderRadius: 1 }} />
+            {renderOctave(1)}
+          </div>
         </div>
       </div>
     </div>
