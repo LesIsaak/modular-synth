@@ -1426,7 +1426,11 @@ export default function SynthApp() {
   // ─── Port click — cable patching ────────────────────────────────────────────
   const handlePortClick = useCallback((moduleId: string, portId: string, portType: PortType) => {
     if (!pendingCable) {
-      // Start a cable from any port — output OR input
+      // Start a cable from any port — output OR input.
+      // Seed mousePos to the port center so the free end starts there instead of
+      // jumping from a stale position on the first mousemove.
+      const center = getPortCenter(moduleId, portId);
+      if (center) setMousePos(center);
       setPendingCable({ fromModuleId: moduleId, fromPortId: portId, fromPortType: portType });
       return;
     }
@@ -1553,7 +1557,7 @@ export default function SynthApp() {
 
     setCables(prev => [...prev, newCable, ...extraCables]);
     setPendingCable(null);
-  }, [pendingCable, cables, modules]);
+  }, [pendingCable, cables, modules, getPortCenter]);
 
   // ─── Double-click occupied port → cut the LAST cable touching it ────────────
   const handlePortDoubleClick = useCallback((moduleId: string, portId: string) => {
@@ -1694,8 +1698,12 @@ export default function SynthApp() {
     setCables(prev => prev.filter(c => !touching.find(t => t.id === c.id)));
 
     const [first, ...rest] = fixedEnds;
+    // Seed mousePos to the held port center so the free end appears there
+    // immediately instead of jumping from a stale position.
+    const center = getPortCenter(moduleId, portId);
+    if (center) setMousePos(center);
     setPendingCable({ ...first, extra: rest.length > 0 ? rest : undefined });
-  }, [cables, modules]);
+  }, [cables, modules, getPortCenter]);
 
   // ─── Drag (snap on release) ─────────────────────────────────────────────────
   const handleDragStart = useCallback((moduleId: string, e: React.MouseEvent) => {
