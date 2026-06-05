@@ -712,39 +712,49 @@ export function createAudioModule(
       const out = ctx.createGain(); out.gain.value = 1;
       const morph = p.morph ?? 0;
       lpG.gain.value = 1 - morph; hpG.gain.value = morph;
-      [lp, hp].forEach(f => { f.frequency.value = p.cutoff ?? 1000; f.Q.value = p.res ?? 1; });
 
       // audio_in splitter — feeds both lp and hp so the full morph range works
       const inSplit = ctx.createGain(); inSplit.gain.value = 1;
       inSplit.connect(lp); inSplit.connect(hp);
       lp.connect(lpG); hp.connect(hpG); lpG.connect(out); hpG.connect(out);
 
-      // cutoff CV splitter — modulates frequency on both filters simultaneously
-      const cutoffCvSplit = ctx.createGain(); cutoffCvSplit.gain.value = 1;
-      cutoffCvSplit.connect(lp.frequency); cutoffCvSplit.connect(hp.frequency);
+      // ConstantSource drives BOTH filter frequencies from one param.
+      // Setting filter.frequency.value = 0 means all cutoff comes from cutoffCs.
+      // CV cables connect to cutoffCs.offset (AudioParam) — same path as every other filter,
+      // and the signal fans out to lp.frequency + hp.frequency automatically.
+      const cutoffCs = ctx.createConstantSource();
+      cutoffCs.offset.value = p.cutoff ?? 1000;
+      cutoffCs.start();
+      lp.frequency.value = 0; hp.frequency.value = 0;
+      cutoffCs.connect(lp.frequency); cutoffCs.connect(hp.frequency);
 
-      // res CV splitter — modulates Q on both filters simultaneously
-      const resCvSplit = ctx.createGain(); resCvSplit.gain.value = 1;
-      resCvSplit.connect(lp.Q); resCvSplit.connect(hp.Q);
+      // Same pattern for resonance
+      const resCs = ctx.createConstantSource();
+      resCs.offset.value = p.res ?? 1;
+      resCs.start();
+      lp.Q.value = 0; hp.Q.value = 0;
+      resCs.connect(lp.Q); resCs.connect(hp.Q);
 
       const morphCs = ctx.createConstantSource(); morphCs.offset.value = morph; morphCs.start();
       return {
         outputs: new Map([['out', out]]),
         inputs: new Map([
           ['audio_in',  { node: inSplit }],
-          ['cutoff_cv', { node: cutoffCvSplit }],
-          ['res_cv',    { node: resCvSplit }],
-          ['morph_cv',  { node: morphCs, param: morphCs.offset }],
+          ['cutoff_cv', { node: cutoffCs, param: cutoffCs.offset }],
+          ['res_cv',    { node: resCs,    param: resCs.offset    }],
+          ['morph_cv',  { node: morphCs,  param: morphCs.offset  }],
         ]),
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'cutoff') { lp.frequency.value = val; hp.frequency.value = val; }
-          if (id === 'res') { lp.Q.value = val; hp.Q.value = val; }
+          if (id === 'cutoff') cutoffCs.offset.value = val;
+          if (id === 'res')    resCs.offset.value = val;
           if (id === 'morph') { lpG.gain.value = 1 - val; hpG.gain.value = val; }
         },
         destroy: () => {
-          morphCs.stop(); morphCs.disconnect();
-          [lp, hp, lpG, hpG, out, inSplit, cutoffCvSplit, resCvSplit].forEach(n => n.disconnect());
+          cutoffCs.stop(); cutoffCs.disconnect();
+          resCs.stop();    resCs.disconnect();
+          morphCs.stop();  morphCs.disconnect();
+          [lp, hp, lpG, hpG, out, inSplit].forEach(n => n.disconnect());
         },
       };
     }
