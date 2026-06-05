@@ -7,6 +7,7 @@ import {
 } from '../moduleDefinitions';
 import { createAudioModule, connectAudioPorts, disconnectAudioPorts, getCurrentTickAudioTime } from '../audioEngine';
 import ModulePanel from '../components/ModulePanel';
+import IORefPanel from '../components/IORefPanel';
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 const SLOT_W  = 220;   // rack slot width (snap grid)
@@ -439,57 +440,6 @@ const NOTE_NAMES  = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 
 function midiToHz(midi: number) { return 440 * Math.pow(2, (midi - 69) / 12); }
 
-const KB_SHORTCUTS = [
-  { keys: ['Esc'],           desc: 'Cancel cable in progress' },
-  { keys: ['Ctrl', 'Z'],     desc: 'Undo last action' },
-  { keys: ['Ctrl', 'S'],     desc: 'Save patch' },
-  { keys: ['Ctrl', 'O'],     desc: 'Load patch' },
-  { keys: ['Click port'],    desc: 'Start / finish a cable' },
-  { keys: ['Dbl-click cable'], desc: 'Remove cable' },
-  { keys: ['Hold port 0.5s'], desc: 'Shift cable to new port' },
-  { keys: ['Right-click mod'], desc: 'Add module to rack' },
-];
-
-function ShortcutsPanel({ onClose }: { onClose: () => void }) {
-  return (
-    <div
-      style={{
-        position: 'absolute', bottom: '100%', right: 14, marginBottom: 6,
-        background: '#111', border: '1px solid #2a2a2a', borderRadius: 4,
-        boxShadow: '0 -6px 24px rgba(0,0,0,0.85)',
-        padding: '10px 14px 10px',
-        zIndex: 200, minWidth: 240,
-      }}
-      onMouseDown={e => e.stopPropagation()}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <span style={{ fontSize: 7, letterSpacing: '0.2em', color: '#555', textTransform: 'uppercase' }}>
-          Keyboard shortcuts
-        </span>
-        <button
-          onClick={onClose}
-          style={{ background: 'none', border: 'none', color: '#444', cursor: 'pointer', fontSize: 12, lineHeight: 1, padding: 0 }}
-        >✕</button>
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-        {KB_SHORTCUTS.map(({ keys, desc }, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ display: 'flex', gap: 3, flexShrink: 0, minWidth: 110, justifyContent: 'flex-end' }}>
-              {keys.map((k, j) => (
-                <span key={j} style={{
-                  fontSize: 7, fontFamily: 'monospace', letterSpacing: '0.06em',
-                  background: '#1c1c1c', border: '1px solid #333', borderBottom: '2px solid #222',
-                  borderRadius: 3, padding: '1px 4px', color: '#9ca3af', whiteSpace: 'nowrap',
-                }}>{k}</span>
-              ))}
-            </div>
-            <span style={{ fontSize: 7, color: '#606878', letterSpacing: '0.08em' }}>{desc}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function FixedKeyboardPanel({
   started,
@@ -668,7 +618,7 @@ function FixedKeyboardPanel({
         borderBottom: '1px solid #0e0e0e',
         position: 'relative',
       }}>
-        {showShortcuts && <ShortcutsPanel onClose={() => setShowShortcuts(false)} />}
+        {showShortcuts && <IORefPanel onClose={() => setShowShortcuts(false)} />}
         <span style={{ fontSize: 7, letterSpacing: '0.22em', color: '#3a3a3a', textTransform: 'uppercase' }}>
           KEYBOARD CONTROLLER
         </span>
@@ -779,16 +729,16 @@ function FixedKeyboardPanel({
           {/* Shortcuts button */}
           <button
             onClick={() => setShowShortcuts(s => !s)}
-            title="Keyboard shortcuts"
+            title="Module I/O Reference"
             style={{
-              height: 16, padding: '0 7px', fontSize: 8, letterSpacing: '0.1em',
+              height: 16, padding: '0 7px', fontSize: 7, letterSpacing: '0.14em',
               borderRadius: 2, cursor: 'pointer', fontWeight: 700,
               border: `1px solid ${showShortcuts ? '#4b5563' : '#2a2a2a'}`,
               background: showShortcuts ? '#1a1a1a' : '#181818',
               color: showShortcuts ? '#9ca3af' : '#444',
               transition: 'all 0.1s',
             }}
-          >⌨</button>
+          >I/O</button>
           {/* Octave controls */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ fontSize: 7, color: '#6b7280', letterSpacing: '0.1em', textTransform: 'uppercase' }}>OCT</span>
