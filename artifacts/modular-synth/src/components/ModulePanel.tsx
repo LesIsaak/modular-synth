@@ -27,6 +27,8 @@ interface ModulePanelProps {
   getLevelFn?: () => number;
   /** Map of paramId → getLevel fn for knobs that have a live CV signal patched in */
   cvLevels?: Map<string, () => number>;
+  /** Map of portId → getLevel fn for input ports that are receiving a signal */
+  portLevels?: Map<string, () => number>;
   /** Sampler: called when user picks a file; bankIndex = currently selected bank */
   onLoadSample?: (file: File, bankIndex: number) => void;
   /** Sampler: which of the 8 banks have a sample loaded */
@@ -388,7 +390,7 @@ function Screw() {
 }
 
 function PortWithLabel({
-  moduleId, port, isConnected, isPendingSource, canConnect, onPortClick, onPortDoubleClick, onRegisterRef,
+  moduleId, port, isConnected, isPendingSource, canConnect, onPortClick, onPortDoubleClick, onRegisterRef, getLevelFn,
 }: {
   moduleId: string;
   port: { id: string; name: string; type: PortType };
@@ -398,6 +400,7 @@ function PortWithLabel({
   onPortClick: (moduleId: string, portId: string, type: PortType) => void;
   onPortDoubleClick: (moduleId: string, portId: string) => void;
   onRegisterRef: (key: string, el: HTMLDivElement | null) => void;
+  getLevelFn?: () => number;
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, width: 28, flexShrink: 0 }}>
@@ -410,6 +413,7 @@ function PortWithLabel({
         onPortClick={onPortClick}
         onPortDoubleClick={onPortDoubleClick}
         onRegisterRef={onRegisterRef}
+        getInputLevel={getLevelFn}
       />
       <span style={{
         fontSize: 6, color: '#909090', textTransform: 'uppercase',
@@ -475,7 +479,7 @@ function PianoKeyboard({ octave, onKeyPress }: {
 export default function ModulePanel({
   module, connectedPorts, pendingCable, onPortClick, onPortDoubleClick, onParamChange,
   onSelectorChange, onDragStart, onDelete, onRegisterPortRef, onKeyPress,
-  analyser, midiMonitorData, isMidiTarget, moduleStepRef, getLevelFn, cvLevels,
+  analyser, midiMonitorData, isMidiTarget, moduleStepRef, getLevelFn, cvLevels, portLevels,
   onLoadSample, samplerBanksFilled,
   midiClockInfo, onToggleMidiClockLock,
   onFreezeKill,
@@ -557,6 +561,7 @@ export default function ModulePanel({
     onPortClick,
     onPortDoubleClick,
     onRegisterRef: onRegisterPortRef,
+    getLevelFn: port.type.endsWith('_in') ? portLevels?.get(port.id) : undefined,
   });
 
   const accent = typeDef.accentColor;

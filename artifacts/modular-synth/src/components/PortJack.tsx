@@ -10,6 +10,8 @@ interface PortJackProps {
   onPortClick: (moduleId: string, portId: string, type: PortType) => void;
   onPortDoubleClick?: (moduleId: string, portId: string) => void;
   onRegisterRef: (key: string, el: HTMLDivElement | null) => void;
+  /** For input ports: polls the incoming signal level (0–1) at ~60 fps */
+  getInputLevel?: () => number;
 }
 
 export const PORT_COLORS: Record<PortType, string> = {
@@ -21,6 +23,13 @@ export const PORT_COLORS: Record<PortType, string> = {
   gate_in:   '#6b7280',
 };
 
+// Map input port type → glow color matching the output signal color
+const INPUT_GLOW: Partial<Record<PortType, string>> = {
+  audio_in: '#fbbf24',
+  cv_in:    '#67e8f9',
+  gate_in:  '#86efac',
+};
+
 export default function PortJack({
   moduleId,
   portDef,
@@ -30,8 +39,11 @@ export default function PortJack({
   onPortClick,
   onPortDoubleClick,
   onRegisterRef,
+  getInputLevel,
 }: PortJackProps) {
-  const ref = useRef<HTMLDivElement>(null);
+  const ref     = useRef<HTMLDivElement>(null);
+  const glowRef = useRef<SVGCircleElement>(null);
+  const rafRef  = useRef<number>(0);
   const key = `${moduleId}-${portDef.id}`;
 
   useEffect(() => {
@@ -39,9 +51,24 @@ export default function PortJack({
     return () => onRegisterRef(key, null);
   }, [key, onRegisterRef]);
 
+  // Animate receive glow for connected input ports
+  useEffect(() => {
+    if (!getInputLevel || !glowRef.current) return;
+    const tick = () => {
+      if (glowRef.current) {
+        const v = Math.min(1, Math.max(0, getInputLevel()));
+        glowRef.current.style.opacity = String(v * 0.72);
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [getInputLevel]);
+
   const isOut    = portDef.type.endsWith('_out');
   const active   = isConnected || isPendingSource;
   const ringColor = active ? PORT_COLORS[portDef.type] : (isOut ? PORT_COLORS[portDef.type] : '#4b5563');
+  const glowColor = INPUT_GLOW[portDef.type];
 
   const rimId    = `rim-${key}`;
   const holeId   = `hole-${key}`;
@@ -95,6 +122,14 @@ export default function PortJack({
 
           {/* Socket bore */}
           <circle cx="13" cy="13" r="6" fill={`url(#${holeId})`} />
+
+          {/* Input receive glow — animated via RAF when signal arrives */}
+          {glowColor && (
+            <circle ref={glowRef} cx="13" cy="13" r="5.5"
+              fill={glowColor} opacity={0}
+              style={{ filter: `drop-shadow(0 0 3px ${glowColor})` }}
+            />
+          )}
 
           {/* Center contact (TRS tip) */}
           <circle cx="13" cy="13" r="2.2"

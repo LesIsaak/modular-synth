@@ -1776,6 +1776,21 @@ export default function SynthApp() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cables, modules, started]); // `started` gates audioModulesRef population
 
+  // ─── Input-port receive level map ────────────────────────────────────────────
+  // Maps moduleId → (portId → getLevel fn) for every connected input port.
+  // Uses the source module's getLevel so the glow tracks the actual signal arriving.
+  const portLevelMap = useMemo(() => {
+    const map = new Map<string, Map<string, () => number>>();
+    for (const cable of cables) {
+      const srcGetLevel = audioModulesRef.current.get(cable.fromModuleId)?.getLevel;
+      if (!srcGetLevel) continue;
+      if (!map.has(cable.toModuleId)) map.set(cable.toModuleId, new Map());
+      map.get(cable.toModuleId)!.set(cable.toPortId, srcGetLevel);
+    }
+    return map;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cables, modules, started]);
+
   for (const c of cables) {
     connectedPortsSet.add(`${c.fromModuleId}-${c.fromPortId}`);
     connectedPortsSet.add(`${c.toModuleId}-${c.toPortId}`);
@@ -1889,6 +1904,7 @@ export default function SynthApp() {
                   : undefined}
                 getLevelFn={audioModulesRef.current.get(mod.id)?.getLevel}
                 cvLevels={cvLevelMap.get(mod.id)}
+                portLevels={portLevelMap.get(mod.id)}
                 onLoadSample={mod.typeId === 'sampler' ? (file, bank) => handleLoadSample(mod.id, file, bank) : undefined}
                 samplerBanksFilled={mod.typeId === 'sampler' ? samplerBanks.get(mod.id) : undefined}
                 midiClockInfo={mod.typeId === 'midi_clock_in' ? midiClockInfo : undefined}
