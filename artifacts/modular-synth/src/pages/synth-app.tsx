@@ -1932,15 +1932,26 @@ export default function SynthApp() {
   const cvLevelMap = useMemo(() => {
     const map = new Map<string, Map<string, () => number>>();
     for (const cable of cables) {
-      if (!cable.toPortId.endsWith('_cv')) continue;
-      const paramId   = cable.toPortId.slice(0, -3); // strip "_cv"
       const toMod     = modules.find(m => m.id === cable.toModuleId);
       const toTypeDef = toMod ? MODULE_TYPE_MAP.get(toMod.typeId) : undefined;
-      if (!toTypeDef?.knobs.find(k => k.id === paramId)) continue;
+      if (!toTypeDef) continue;
+
+      // Resolve which knob this incoming cable is modulating.
+      // Matching priority (first match wins):
+      //  1. Explicit cvPortId on the knob definition  (e.g. cv_in → gain on VCA)
+      //  2. portId = knobId + "_cv"  (most common convention — cutoff_cv → cutoff)
+      //  3. portId = knobId + "_in"  (e.g. morph_in → morph on wavetable VCO)
+      const matchedKnob = toTypeDef.knobs.find(k =>
+        k.cvPortId === cable.toPortId ||
+        cable.toPortId === `${k.id}_cv` ||
+        cable.toPortId === `${k.id}_in`,
+      );
+      if (!matchedKnob) continue;
+
       const srcGetLevel = audioModulesRef.current.get(cable.fromModuleId)?.getLevel;
       if (!srcGetLevel) continue;
       if (!map.has(cable.toModuleId)) map.set(cable.toModuleId, new Map());
-      map.get(cable.toModuleId)!.set(paramId, srcGetLevel);
+      map.get(cable.toModuleId)!.set(matchedKnob.id, srcGetLevel);
     }
     return map;
   // eslint-disable-next-line react-hooks/exhaustive-deps

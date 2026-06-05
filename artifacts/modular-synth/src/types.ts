@@ -20,6 +20,9 @@ export interface KnobDef {
   log?: boolean;
   unit?: string;
   step?: number;
+  /** Explicit CV input port that modulates this knob, for cases where the port
+   *  ID doesn't follow the standard `${knobId}_cv` naming convention. */
+  cvPortId?: string;
 }
 
 export interface SelectorDef {

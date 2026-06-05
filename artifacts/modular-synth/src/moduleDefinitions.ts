@@ -289,7 +289,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
   // ─── Amplifiers ────────────────────────────────────────────────────
   {
     id: 'vca', name: 'Linear VCA', category: 'amplifier', accentColor: AMP, width: 180,
-    knobs: [{ id: 'gain', name: 'GAIN', min: 0, max: 1, default: 0 }],
+    knobs: [{ id: 'gain', name: 'GAIN', min: 0, max: 1, default: 0, cvPortId: 'cv_in' }],
     ports: [
       audioIn,
       { id: 'cv_in',     name: 'CV',     type: 'cv_in' },
@@ -299,7 +299,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
   },
   {
     id: 'vca_expo', name: 'Expo VCA', category: 'amplifier', accentColor: AMP, width: 180,
-    knobs: [{ id: 'gain', name: 'GAIN', min: 0, max: 1, default: 0 }],
+    knobs: [{ id: 'gain', name: 'GAIN', min: 0, max: 1, default: 0, cvPortId: 'cv_in' }],
     ports: [
       audioIn,
       { id: 'cv_in',     name: 'CV',     type: 'cv_in' },
@@ -310,8 +310,8 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
   {
     id: 'vca_dual', name: 'Dual VCA', category: 'amplifier', accentColor: AMP, width: 220,
     knobs: [
-      { id: 'gain1', name: 'GAIN A', min: 0, max: 1, default: 0.8 },
-      { id: 'gain2', name: 'GAIN B', min: 0, max: 1, default: 0.8 },
+      { id: 'gain1', name: 'GAIN A', min: 0, max: 1, default: 0.8, cvPortId: 'cv1' },
+      { id: 'gain2', name: 'GAIN B', min: 0, max: 1, default: 0.8, cvPortId: 'cv2' },
     ],
     ports: [
       { id: 'in1',  name: 'IN A',  type: 'audio_in'  },
