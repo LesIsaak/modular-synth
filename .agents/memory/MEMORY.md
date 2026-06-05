@@ -1,0 +1,3 @@
+- [Modulation CV doubling bug](modulation-cv-pattern.md) — rateCv.offset must start at 0 (not p.rate) when connected to lfo.frequency; depthCv must connect to lfoGain.gain.
+- [Distortion CV pattern](distortion-cv-pattern.md) — WaveShaper.curve is not an AudioParam; use AnalyserNode polling (setInterval 32ms) for drive/fold/bits/factor CV inputs.
+- [poly_step port completeness](poly-step-ports.md) — engine fires beat_out, eoc_out, t{n}_eoc, t{n}_acc, t{n}_vel, run_in, fill_in, bpm_cv, swing_cv — all must be in moduleDefinitions.ts ports array.

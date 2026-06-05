@@ -1865,22 +1865,29 @@ export function createAudioModule(
       // Shimmer = reverb + pitched feedback oscillator
       const pitch = ctx.createOscillator(); pitch.type = 'sine';
       pitch.frequency.value = 880;
-      const pitchGain = ctx.createGain(); pitchGain.gain.value = (p.shimmer ?? 0.5) * 0.15;
+      const pitchGain = ctx.createGain(); pitchGain.gain.value = 0;
       pitch.connect(pitchGain); pitchGain.connect(conv); pitch.start();
       const input = ctx.createGain(); input.gain.value = 1;
       const { out, dryG, wetG } = wetDry(ctx, input, conv, p.mix ?? 0.4);
       input.connect(conv);
+      // shimmer_cv drives pitchGain.gain directly (shimmer_cv is an AudioParam target)
+      const shimmerCv = ctx.createConstantSource(); shimmerCv.offset.value = (p.shimmer ?? 0.5) * 0.15; shimmerCv.start();
+      shimmerCv.connect(pitchGain.gain);
       return {
         outputs: new Map([['out', out]]),
-        inputs: new Map([['audio_in', { node: input }]]),
+        inputs: new Map([
+          ['audio_in', { node: input }],
+          ['shimmer_cv', { node: shimmerCv, param: shimmerCv.offset }],
+        ]),
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'size') conv.buffer = makeHallIR(ctx, val);
-          if (id === 'shimmer') pitchGain.gain.value = val * 0.15;
+          if (id === 'shimmer') shimmerCv.offset.value = val * 0.15;
           if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
         },
         destroy: () => {
           try { pitch.stop(); } catch(_){} pitch.disconnect();
+          try { shimmerCv.stop(); } catch(_){} shimmerCv.disconnect();
           [input, conv, pitchGain, out, dryG, wetG].forEach(n => { try { n.disconnect(); } catch(_){} });
         },
       };
@@ -1897,15 +1904,18 @@ export function createAudioModule(
       for (let i = 0; i < voices; i++) {
         const d = ctx.createDelay(0.1); d.delayTime.value = 0.01 + i * 0.007;
         const lfo = ctx.createOscillator(); lfo.frequency.value = (p.rate ?? 1.5) * (1 + i * 0.15);
-        const lg = ctx.createGain(); lg.gain.value = (p.depth ?? 0.5) * 0.006;
+        const lg = ctx.createGain(); lg.gain.value = 0;
         lfo.connect(lg); lg.connect(d.delayTime); lfo.start();
         input.connect(d); d.connect(wetSum);
         delays.push(d); lfos.push(lfo); lfoGains.push(lg);
       }
       const { out, dryG, wetG } = wetDry(ctx, input, wetSum, p.mix ?? 0.5);
-      const rateCv = ctx.createConstantSource(); rateCv.offset.value = p.rate ?? 1.5; rateCv.start();
-      lfos.forEach((l, i) => rateCv.connect(l.frequency));
-      const depthCv = ctx.createConstantSource(); depthCv.offset.value = p.depth ?? 0.5; depthCv.start();
+      // rateCv.offset = 0 so external CV adds to the base lfo.frequency.value without doubling
+      const rateCv = ctx.createConstantSource(); rateCv.offset.value = 0; rateCv.start();
+      lfos.forEach((l) => rateCv.connect(l.frequency));
+      // depthCv drives lfoGain directly; initial offset = scaled depth
+      const depthCv = ctx.createConstantSource(); depthCv.offset.value = (p.depth ?? 0.5) * 0.006; depthCv.start();
+      lfoGains.forEach(lg => depthCv.connect(lg.gain));
       return {
         outputs: new Map([['out', out]]),
         inputs: new Map([
@@ -1916,7 +1926,7 @@ export function createAudioModule(
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'rate') lfos.forEach((l, i) => { l.frequency.value = val * (1 + i * 0.15); });
-          if (id === 'depth') lfoGains.forEach(lg => { lg.gain.value = val * 0.006; });
+          if (id === 'depth') depthCv.offset.value = val * 0.006;
           if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
         },
         destroy: () => {
@@ -1932,13 +1942,16 @@ export function createAudioModule(
       const delay = ctx.createDelay(0.1); delay.delayTime.value = 0.005;
       const fb = ctx.createGain(); fb.gain.value = p.feedback ?? 0.5;
       const lfo = ctx.createOscillator(); lfo.frequency.value = p.rate ?? 0.5;
-      const lfoGain = ctx.createGain(); lfoGain.gain.value = (p.depth ?? 0.7) * 0.004;
+      const lfoGain = ctx.createGain(); lfoGain.gain.value = 0;
       lfo.connect(lfoGain); lfoGain.connect(delay.delayTime); lfo.start();
       input.connect(delay); delay.connect(fb); fb.connect(delay);
       const { out, dryG, wetG } = wetDry(ctx, input, delay, p.mix ?? 0.5);
-      const rateCv = ctx.createConstantSource(); rateCv.offset.value = p.rate ?? 0.5; rateCv.start();
+      // rateCv.offset = 0 so CV adds to lfo.frequency.value without doubling
+      const rateCv = ctx.createConstantSource(); rateCv.offset.value = 0; rateCv.start();
       rateCv.connect(lfo.frequency);
-      const depthCv = ctx.createConstantSource(); depthCv.offset.value = p.depth ?? 0.7; depthCv.start();
+      // depthCv drives lfoGain.gain directly
+      const depthCv = ctx.createConstantSource(); depthCv.offset.value = (p.depth ?? 0.7) * 0.004; depthCv.start();
+      depthCv.connect(lfoGain.gain);
       return {
         outputs: new Map([['out', out]]),
         inputs: new Map([
@@ -1950,7 +1963,7 @@ export function createAudioModule(
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'rate') lfo.frequency.value = val;
-          if (id === 'depth') lfoGain.gain.value = val * 0.004;
+          if (id === 'depth') depthCv.offset.value = val * 0.004;
           if (id === 'feedback') fb.gain.value = val;
           if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
         },
@@ -1972,7 +1985,7 @@ export function createAudioModule(
       for (let i = 0; i < numStages - 1; i++) allpasses[i].connect(allpasses[i + 1]);
       input.connect(allpasses[0]);
       const lfo = ctx.createOscillator(); lfo.frequency.value = p.rate ?? 0.5;
-      const lfoGain = ctx.createGain(); lfoGain.gain.value = (p.depth ?? 0.8) * 900;
+      const lfoGain = ctx.createGain(); lfoGain.gain.value = 0;
       const lfoOffset = ctx.createConstantSource(); lfoOffset.offset.value = 1000; lfoOffset.start();
       lfo.connect(lfoGain);
       allpasses.forEach(ap => { lfoGain.connect(ap.frequency); lfoOffset.connect(ap.frequency); });
@@ -1980,9 +1993,12 @@ export function createAudioModule(
       const fb = ctx.createGain(); fb.gain.value = p.feedback ?? 0.4;
       allpasses[numStages - 1].connect(fb); fb.connect(allpasses[0]);
       const { out, dryG, wetG } = wetDry(ctx, input, allpasses[numStages - 1], p.mix ?? 0.5);
-      const rateCv = ctx.createConstantSource(); rateCv.offset.value = p.rate ?? 0.5; rateCv.start();
+      // rateCv.offset = 0 so CV adds to lfo.frequency.value without doubling
+      const rateCv = ctx.createConstantSource(); rateCv.offset.value = 0; rateCv.start();
       rateCv.connect(lfo.frequency);
-      const depthCv = ctx.createConstantSource(); depthCv.offset.value = p.depth ?? 0.8; depthCv.start();
+      // depthCv drives lfoGain.gain directly
+      const depthCv = ctx.createConstantSource(); depthCv.offset.value = (p.depth ?? 0.8) * 900; depthCv.start();
+      depthCv.connect(lfoGain.gain);
       return {
         outputs: new Map([['out', out]]),
         inputs: new Map([
@@ -1993,7 +2009,7 @@ export function createAudioModule(
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'rate') lfo.frequency.value = val;
-          if (id === 'depth') lfoGain.gain.value = val * 900;
+          if (id === 'depth') depthCv.offset.value = val * 900;
           if (id === 'feedback') fb.gain.value = val;
           if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
         },
@@ -2009,12 +2025,15 @@ export function createAudioModule(
       const input = ctx.createGain(); input.gain.value = 1;
       const delay = ctx.createDelay(0.05); delay.delayTime.value = 0.005;
       const lfo = ctx.createOscillator(); lfo.frequency.value = p.rate ?? 5;
-      const lfoG = ctx.createGain(); lfoG.gain.value = (p.depth ?? 0.3) * 0.003;
+      const lfoG = ctx.createGain(); lfoG.gain.value = 0;
       lfo.connect(lfoG); lfoG.connect(delay.delayTime); lfo.start();
       input.connect(delay);
-      const rateCv = ctx.createConstantSource(); rateCv.offset.value = p.rate ?? 5; rateCv.start();
+      // rateCv.offset = 0 so CV adds to lfo.frequency.value without doubling
+      const rateCv = ctx.createConstantSource(); rateCv.offset.value = 0; rateCv.start();
       rateCv.connect(lfo.frequency);
-      const depthCv = ctx.createConstantSource(); depthCv.offset.value = p.depth ?? 0.3; depthCv.start();
+      // depthCv drives lfoG.gain directly
+      const depthCv = ctx.createConstantSource(); depthCv.offset.value = (p.depth ?? 0.3) * 0.003; depthCv.start();
+      depthCv.connect(lfoG.gain);
       return {
         outputs: new Map([['out', delay]]),
         inputs: new Map([
@@ -2025,7 +2044,7 @@ export function createAudioModule(
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'rate') lfo.frequency.value = val;
-          if (id === 'depth') lfoG.gain.value = val * 0.003;
+          if (id === 'depth') depthCv.offset.value = val * 0.003;
         },
         destroy: () => {
           try { rateCv.stop(); } catch(_){} rateCv.disconnect(); try { depthCv.stop(); } catch(_){} depthCv.disconnect();
@@ -2042,13 +2061,16 @@ export function createAudioModule(
       const lfo = ctx.createOscillator();
       lfo.type = waveMap[Math.round(p.wave ?? 0)] ?? 'sine';
       lfo.frequency.value = p.rate ?? 5;
-      const lfoG = ctx.createGain(); lfoG.gain.value = (p.depth ?? 0.6) * 0.5;
+      const lfoG = ctx.createGain(); lfoG.gain.value = 0;
       const dc = ctx.createConstantSource(); dc.offset.value = 1 - (p.depth ?? 0.6) * 0.5; dc.start();
       dc.connect(amp.gain); lfo.connect(lfoG); lfoG.connect(amp.gain); lfo.start();
       input.connect(amp);
-      const rateCv = ctx.createConstantSource(); rateCv.offset.value = p.rate ?? 5; rateCv.start();
+      // rateCv.offset = 0 so CV adds to lfo.frequency.value without doubling
+      const rateCv = ctx.createConstantSource(); rateCv.offset.value = 0; rateCv.start();
       rateCv.connect(lfo.frequency);
-      const depthCv = ctx.createConstantSource(); depthCv.offset.value = p.depth ?? 0.6; depthCv.start();
+      // depthCv drives lfoG.gain directly; knob also updates dc bias
+      const depthCv = ctx.createConstantSource(); depthCv.offset.value = (p.depth ?? 0.6) * 0.5; depthCv.start();
+      depthCv.connect(lfoG.gain);
       return {
         outputs: new Map([['out', amp]]),
         inputs: new Map([
@@ -2059,7 +2081,7 @@ export function createAudioModule(
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'rate') lfo.frequency.value = val;
-          if (id === 'depth') { lfoG.gain.value = val * 0.5; dc.offset.value = 1 - val * 0.5; }
+          if (id === 'depth') { depthCv.offset.value = val * 0.5; dc.offset.value = 1 - val * 0.5; }
         },
         setSelector: (id, val) => {
           if (id === 'wave') lfo.type = waveMap[Math.round(val)] ?? 'sine';
@@ -2122,16 +2144,33 @@ export function createAudioModule(
       const input = ctx.createGain(); input.gain.value = 1;
       const { out, dryG, wetG } = wetDry(ctx, input, tone, p.mix ?? 1);
       input.connect(shaper); shaper.connect(tone); tone.connect(wetG);
+      // CV tap for drive — WaveShaper.curve isn't an AudioParam so we poll at 32 ms
+      const driveCvIn = ctx.createGain(); driveCvIn.gain.value = 1;
+      const driveTap = ctx.createAnalyser(); driveTap.fftSize = 32;
+      driveCvIn.connect(driveTap);
+      const _dBuf = new Float32Array(1);
+      const pollId = setInterval(() => {
+        driveTap.getFloatTimeDomainData(_dBuf);
+        const cv = _dBuf[0];
+        if (Math.abs(cv) > 0.001) shaper.curve = softClip(Math.max(1, (p.drive ?? 20) + cv * 20));
+      }, 32);
       return {
         outputs: new Map([['out', out]]),
-        inputs: new Map([['audio_in', { node: input }]]),
+        inputs: new Map([
+          ['audio_in', { node: input }],
+          ['drive_cv', { node: driveCvIn }],
+        ]),
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'drive') shaper.curve = softClip(val);
           if (id === 'tone') tone.frequency.value = val;
           if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
         },
-        destroy: () => { [input, shaper, tone, out, dryG, wetG].forEach(n => n.disconnect()); },
+        destroy: () => {
+          clearInterval(pollId);
+          try { driveCvIn.disconnect(); } catch(_){} try { driveTap.disconnect(); } catch(_){}
+          [input, shaper, tone, out, dryG, wetG].forEach(n => { try { n.disconnect(); } catch(_){} });
+        },
       };
     }
 
@@ -2142,16 +2181,32 @@ export function createAudioModule(
       const input = ctx.createGain(); input.gain.value = 1;
       const { out, dryG, wetG } = wetDry(ctx, input, tone, p.mix ?? 1);
       input.connect(shaper); shaper.connect(tone); tone.connect(wetG);
+      const fuzzCvIn = ctx.createGain(); fuzzCvIn.gain.value = 1;
+      const fuzzTap = ctx.createAnalyser(); fuzzTap.fftSize = 32;
+      fuzzCvIn.connect(fuzzTap);
+      const _fBuf = new Float32Array(1);
+      const pollId = setInterval(() => {
+        fuzzTap.getFloatTimeDomainData(_fBuf);
+        const cv = _fBuf[0];
+        if (Math.abs(cv) > 0.001) shaper.curve = hardClip(Math.max(1, (p.fuzz ?? 80) + cv * 80));
+      }, 32);
       return {
         outputs: new Map([['out', out]]),
-        inputs: new Map([['audio_in', { node: input }]]),
+        inputs: new Map([
+          ['audio_in', { node: input }],
+          ['fuzz_cv', { node: fuzzCvIn }],
+        ]),
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'fuzz') shaper.curve = hardClip(val);
           if (id === 'tone') tone.frequency.value = val;
           if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
         },
-        destroy: () => { [input, shaper, tone, out, dryG, wetG].forEach(n => n.disconnect()); },
+        destroy: () => {
+          clearInterval(pollId);
+          try { fuzzCvIn.disconnect(); } catch(_){} try { fuzzTap.disconnect(); } catch(_){}
+          [input, shaper, tone, out, dryG, wetG].forEach(n => { try { n.disconnect(); } catch(_){} });
+        },
       };
     }
 
@@ -2160,15 +2215,31 @@ export function createAudioModule(
       const input = ctx.createGain(); input.gain.value = 1;
       const { out, dryG, wetG } = wetDry(ctx, input, shaper, p.mix ?? 1);
       input.connect(shaper);
+      const foldCvIn = ctx.createGain(); foldCvIn.gain.value = 1;
+      const foldTap = ctx.createAnalyser(); foldTap.fftSize = 32;
+      foldCvIn.connect(foldTap);
+      const _flBuf = new Float32Array(1);
+      const pollId = setInterval(() => {
+        foldTap.getFloatTimeDomainData(_flBuf);
+        const cv = _flBuf[0];
+        if (Math.abs(cv) > 0.001) shaper.curve = foldCurve(Math.max(1, (p.fold ?? 3) + cv * 4));
+      }, 32);
       return {
         outputs: new Map([['out', out]]),
-        inputs: new Map([['audio_in', { node: input }]]),
+        inputs: new Map([
+          ['audio_in', { node: input }],
+          ['fold_cv', { node: foldCvIn }],
+        ]),
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'fold') shaper.curve = foldCurve(val);
           if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
         },
-        destroy: () => { [input, shaper, out, dryG, wetG].forEach(n => n.disconnect()); },
+        destroy: () => {
+          clearInterval(pollId);
+          try { foldCvIn.disconnect(); } catch(_){} try { foldTap.disconnect(); } catch(_){}
+          [input, shaper, out, dryG, wetG].forEach(n => { try { n.disconnect(); } catch(_){} });
+        },
       };
     }
 
@@ -2177,15 +2248,31 @@ export function createAudioModule(
       const input = ctx.createGain(); input.gain.value = 1;
       const { out, dryG, wetG } = wetDry(ctx, input, shaper, p.mix ?? 1);
       input.connect(shaper);
+      const bitsCvIn = ctx.createGain(); bitsCvIn.gain.value = 1;
+      const bitsTap = ctx.createAnalyser(); bitsTap.fftSize = 32;
+      bitsCvIn.connect(bitsTap);
+      const _btBuf = new Float32Array(1);
+      const pollId = setInterval(() => {
+        bitsTap.getFloatTimeDomainData(_btBuf);
+        const cv = _btBuf[0];
+        if (Math.abs(cv) > 0.001) shaper.curve = bitcrushCurve(Math.max(1, Math.min(16, (p.bits ?? 8) + cv * 8)));
+      }, 32);
       return {
         outputs: new Map([['out', out]]),
-        inputs: new Map([['audio_in', { node: input }]]),
+        inputs: new Map([
+          ['audio_in', { node: input }],
+          ['bits_cv', { node: bitsCvIn }],
+        ]),
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'bits') shaper.curve = bitcrushCurve(val);
           if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
         },
-        destroy: () => { [input, shaper, out, dryG, wetG].forEach(n => n.disconnect()); },
+        destroy: () => {
+          clearInterval(pollId);
+          try { bitsCvIn.disconnect(); } catch(_){} try { bitsTap.disconnect(); } catch(_){}
+          [input, shaper, out, dryG, wetG].forEach(n => { try { n.disconnect(); } catch(_){} });
+        },
       };
     }
 
@@ -2194,15 +2281,31 @@ export function createAudioModule(
       const input = ctx.createGain(); input.gain.value = 1;
       const { out, dryG, wetG } = wetDry(ctx, input, shaper, p.mix ?? 1);
       input.connect(shaper);
+      const factorCvIn = ctx.createGain(); factorCvIn.gain.value = 1;
+      const factorTap = ctx.createAnalyser(); factorTap.fftSize = 32;
+      factorCvIn.connect(factorTap);
+      const _srBuf = new Float32Array(1);
+      const pollId = setInterval(() => {
+        factorTap.getFloatTimeDomainData(_srBuf);
+        const cv = _srBuf[0];
+        if (Math.abs(cv) > 0.001) shaper.curve = srReduceCurve(Math.max(1, Math.min(32, (p.factor ?? 8) + cv * 16)));
+      }, 32);
       return {
         outputs: new Map([['out', out]]),
-        inputs: new Map([['audio_in', { node: input }]]),
+        inputs: new Map([
+          ['audio_in', { node: input }],
+          ['factor_cv', { node: factorCvIn }],
+        ]),
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'factor') shaper.curve = srReduceCurve(val);
           if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
         },
-        destroy: () => { [input, shaper, out, dryG, wetG].forEach(n => n.disconnect()); },
+        destroy: () => {
+          clearInterval(pollId);
+          try { factorCvIn.disconnect(); } catch(_){} try { factorTap.disconnect(); } catch(_){}
+          [input, shaper, out, dryG, wetG].forEach(n => { try { n.disconnect(); } catch(_){} });
+        },
       };
     }
 
@@ -2211,15 +2314,31 @@ export function createAudioModule(
       const input = ctx.createGain(); input.gain.value = 1;
       const { out, dryG, wetG } = wetDry(ctx, input, shaper, p.mix ?? 1);
       input.connect(shaper);
+      const satDriveCvIn = ctx.createGain(); satDriveCvIn.gain.value = 1;
+      const satDriveTap = ctx.createAnalyser(); satDriveTap.fftSize = 32;
+      satDriveCvIn.connect(satDriveTap);
+      const _satBuf = new Float32Array(1);
+      const pollId = setInterval(() => {
+        satDriveTap.getFloatTimeDomainData(_satBuf);
+        const cv = _satBuf[0];
+        if (Math.abs(cv) > 0.001) shaper.curve = tanhCurve(Math.max(1, (p.drive ?? 5) + cv * 10));
+      }, 32);
       return {
         outputs: new Map([['out', out]]),
-        inputs: new Map([['audio_in', { node: input }]]),
+        inputs: new Map([
+          ['audio_in', { node: input }],
+          ['drive_cv', { node: satDriveCvIn }],
+        ]),
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'drive') shaper.curve = tanhCurve(val);
           if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
         },
-        destroy: () => { [input, shaper, out, dryG, wetG].forEach(n => n.disconnect()); },
+        destroy: () => {
+          clearInterval(pollId);
+          try { satDriveCvIn.disconnect(); } catch(_){} try { satDriveTap.disconnect(); } catch(_){}
+          [input, shaper, out, dryG, wetG].forEach(n => { try { n.disconnect(); } catch(_){} });
+        },
       };
     }
 
@@ -2300,9 +2419,15 @@ export function createAudioModule(
       const input = ctx.createGain(); input.gain.value = 1;
       const { out, dryG, wetG } = wetDry(ctx, input, ring, p.mix ?? 1);
       input.connect(ring);
+      // shift_cv adds to carrier.frequency (carrier.frequency is an AudioParam)
+      const shiftCv = ctx.createConstantSource(); shiftCv.offset.value = 0; shiftCv.start();
+      shiftCv.connect(carrier.frequency);
       return {
         outputs: new Map([['out', out]]),
-        inputs: new Map([['audio_in', { node: input }]]),
+        inputs: new Map([
+          ['audio_in', { node: input }],
+          ['shift_cv', { node: shiftCv, param: shiftCv.offset }],
+        ]),
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'shift') carrier.frequency.value = Math.abs(val);
@@ -2310,7 +2435,8 @@ export function createAudioModule(
         },
         destroy: () => {
           carrier.stop(); carrier.disconnect();
-          [input, ring, out, dryG, wetG].forEach(n => n.disconnect());
+          try { shiftCv.stop(); } catch(_){} shiftCv.disconnect();
+          [input, ring, out, dryG, wetG].forEach(n => { try { n.disconnect(); } catch(_){} });
         },
       };
     }
@@ -2329,16 +2455,25 @@ export function createAudioModule(
       }
       const dry = ctx.createGain(); dry.gain.value = 1 - (p.mix ?? 0.7);
       input.connect(dry); dry.connect(out);
+      // q_cv adds to each band's Q (BiquadFilter.Q is an AudioParam)
+      const qCv = ctx.createConstantSource(); qCv.offset.value = 0; qCv.start();
+      bands.forEach(b => qCv.connect(b.Q));
       return {
         outputs: new Map([['out', out]]),
-        inputs: new Map([['audio_in', { node: input }]]),
+        inputs: new Map([
+          ['audio_in', { node: input }],
+          ['q_cv', { node: qCv, param: qCv.offset }],
+        ]),
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'freq') bands.forEach((b, i) => { b.frequency.value = val * (i + 1); });
           if (id === 'q') bands.forEach(b => { b.Q.value = val; });
           if (id === 'mix') dry.gain.value = 1 - val;
         },
-        destroy: () => { [input, out, dry, ...bands].forEach(n => n.disconnect()); },
+        destroy: () => {
+          try { qCv.stop(); } catch(_){} qCv.disconnect();
+          [input, out, dry, ...bands].forEach(n => { try { n.disconnect(); } catch(_){} });
+        },
       };
     }
 
@@ -2395,9 +2530,17 @@ export function createAudioModule(
       focus.Q.value = 3; focus.gain.value = (p.focus ?? 0.5) * 6;
       const { out, dryG, wetG } = wetDry(ctx, input, focus, p.mix ?? 1);
       input.connect(lowShelf); lowShelf.connect(highShelf); highShelf.connect(focus);
+      // tilt_cv modulates highShelf.gain (positive CV tilts up highs); lowShelf is inverted via negation gain
+      const tiltCv = ctx.createConstantSource(); tiltCv.offset.value = 0; tiltCv.start();
+      const tiltNeg = ctx.createGain(); tiltNeg.gain.value = -1;
+      tiltCv.connect(highShelf.gain);
+      tiltCv.connect(tiltNeg); tiltNeg.connect(lowShelf.gain);
       return {
         outputs: new Map([['out', out]]),
-        inputs: new Map([['audio_in', { node: input }]]),
+        inputs: new Map([
+          ['audio_in', { node: input }],
+          ['tilt_cv', { node: tiltCv, param: tiltCv.offset }],
+        ]),
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'tilt') { lowShelf.gain.value = -val; highShelf.gain.value = val; }
@@ -2407,7 +2550,10 @@ export function createAudioModule(
           }
           if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
         },
-        destroy: () => { [input, lowShelf, highShelf, focus, out, dryG, wetG].forEach(n => n.disconnect()); },
+        destroy: () => {
+          try { tiltCv.stop(); } catch(_){} tiltCv.disconnect(); tiltNeg.disconnect();
+          [input, lowShelf, highShelf, focus, out, dryG, wetG].forEach(n => { try { n.disconnect(); } catch(_){} });
+        },
       };
     }
 
@@ -2479,6 +2625,12 @@ export function createAudioModule(
       const fb = ctx.createGain(); fb.gain.value = 0; // 0 = live, 0.98 = frozen
       const { out, dryG, wetG } = wetDry(ctx, input, delay, p.mix ?? 1);
       input.connect(delay); delay.connect(fb); fb.connect(delay);
+      let frozen = false;
+      const doFreeze = (on: boolean) => {
+        frozen = on;
+        fb.gain.value = on ? 0.98 : 0;
+        dryG.gain.value = on ? 0 : 1 - (p.mix ?? 1);
+      };
       return {
         outputs: new Map([['out', out]]),
         inputs: new Map([['audio_in', { node: input }]]),
@@ -2488,12 +2640,12 @@ export function createAudioModule(
           if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
         },
         setSelector: (id, val) => {
-          if (id === 'freeze') {
-            // FREEZE on: high feedback = frozen loop; off = normal pass-through
-            fb.gain.value = val > 0.5 ? 0.98 : 0;
-            dryG.gain.value = val > 0.5 ? 0 : 1 - (p.mix ?? 1);
-          }
+          if (id === 'freeze') doFreeze(val > 0.5);
         },
+        // freeze_in gate port: each gate-high toggles freeze on/off
+        portNoteOn: new Map([
+          ['freeze_in', () => { doFreeze(!frozen); }],
+        ]),
         kill: () => {
           // Instantly silence the frozen loop: zero feedback + mute wet
           fb.gain.setTargetAtTime(0, delay.context.currentTime, 0.01);
@@ -2505,7 +2657,7 @@ export function createAudioModule(
             dryG.gain.value = 1 - (p.mix ?? 1);
           }, 200);
         },
-        destroy: () => { [input, delay, fb, out, dryG, wetG].forEach(n => n.disconnect()); },
+        destroy: () => { [input, delay, fb, out, dryG, wetG].forEach(n => { try { n.disconnect(); } catch(_){} }); },
       };
     }
 
@@ -2741,6 +2893,7 @@ export function createAudioModule(
       const pitchSource = ctx.createConstantSource(); pitchSource.offset.value = 0;   pitchSource.start();
       const modSource   = ctx.createConstantSource(); modSource.offset.value   = 0;   modSource.start();
       let lastGateMs = 0;
+      let gateCb: ((on: boolean, freq: number) => void) | null = null;
       return {
         outputs: new Map<string, AudioNode>([
           ['voct_out',  freqSource],
@@ -2748,7 +2901,17 @@ export function createAudioModule(
           ['mod_out',   modSource],
         ]),
         inputs: new Map(),
-        noteOn:  (_time, freq) => { freqSource.offset.value = freq; lastGateMs = performance.now(); },
+        noteOn:  (_time, freq) => {
+          freqSource.offset.value = freq;
+          lastGateMs = performance.now();
+          if (gateCb) gateCb(true, freq);
+        },
+        noteOff: (_time, freq = 440) => {
+          if (gateCb) gateCb(false, freq);
+        },
+        setPortGateTrigger: (portId, fn) => {
+          if (portId === 'gate_out') gateCb = fn;
+        },
         setParam: () => {},
         getLevel: () => Math.max(0, 1 - (performance.now() - lastGateMs) / 200),
         destroy: () => {
@@ -3472,6 +3635,13 @@ export function createAudioModule(
           for (const cb of gateCbs.values()) cb(false, 0);
         },
         setPortGateTrigger: (portId, fn) => { gateCbs.set(portId, fn); },
+        // gate_in port: a gate signal patched here fires all downstream gate callbacks
+        portNoteOn: new Map([
+          ['gate_in', (_t: number, freq: number = 440) => {
+            for (const cb of gateCbs.values()) cb(true, freq);
+            setTimeout(() => { for (const cb of gateCbs.values()) cb(false, freq); }, 20);
+          }],
+        ]),
         destroy: () => {
           try { cvIn.disconnect(); } catch (_) {}
           cvOuts.forEach(g => { try { g.disconnect(); } catch (_) {} });

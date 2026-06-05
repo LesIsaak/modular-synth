@@ -1220,10 +1220,15 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
       { id: 't8_mute', name: 'T8 MUTE', min: 0, max: 1, default: 0, step: 1 },
     ],
     ports: [
-      // Inputs
-      { id: 'clk_in', name: 'CLK', type: 'gate_in' },
-      { id: 'rst_in', name: 'RST', type: 'gate_in' },
-      // Gate outputs — one trigger per instrument
+      // Clock / transport inputs
+      { id: 'clk_in',  name: 'CLK',   type: 'gate_in' },
+      { id: 'rst_in',  name: 'RST',   type: 'gate_in' },
+      { id: 'run_in',  name: 'RUN',   type: 'gate_in' },
+      { id: 'fill_in', name: 'FILL',  type: 'gate_in' },
+      // CV modulation inputs
+      { id: 'bpm_cv',   name: 'BPM',   type: 'cv_in' },
+      { id: 'swing_cv', name: 'SWING', type: 'cv_in' },
+      // Per-track gate outputs
       { id: 't1_gate', name: 'KICK', type: 'gate_out' },
       { id: 't2_gate', name: 'SNR',  type: 'gate_out' },
       { id: 't3_gate', name: 'HH·C', type: 'gate_out' },
@@ -1232,8 +1237,37 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
       { id: 't6_gate', name: 'PERC', type: 'gate_out' },
       { id: 't7_gate', name: 'BASS', type: 'gate_out' },
       { id: 't8_gate', name: 'AUX',  type: 'gate_out' },
-      // Utility outputs
+      // Per-track accent gate outputs
+      { id: 't1_acc', name: 'ACC1', type: 'gate_out' },
+      { id: 't2_acc', name: 'ACC2', type: 'gate_out' },
+      { id: 't3_acc', name: 'ACC3', type: 'gate_out' },
+      { id: 't4_acc', name: 'ACC4', type: 'gate_out' },
+      { id: 't5_acc', name: 'ACC5', type: 'gate_out' },
+      { id: 't6_acc', name: 'ACC6', type: 'gate_out' },
+      { id: 't7_acc', name: 'ACC7', type: 'gate_out' },
+      { id: 't8_acc', name: 'ACC8', type: 'gate_out' },
+      // Per-track end-of-cycle gate outputs
+      { id: 't1_eoc', name: 'EOC1', type: 'gate_out' },
+      { id: 't2_eoc', name: 'EOC2', type: 'gate_out' },
+      { id: 't3_eoc', name: 'EOC3', type: 'gate_out' },
+      { id: 't4_eoc', name: 'EOC4', type: 'gate_out' },
+      { id: 't5_eoc', name: 'EOC5', type: 'gate_out' },
+      { id: 't6_eoc', name: 'EOC6', type: 'gate_out' },
+      { id: 't7_eoc', name: 'EOC7', type: 'gate_out' },
+      { id: 't8_eoc', name: 'EOC8', type: 'gate_out' },
+      // Per-track velocity CV outputs
+      { id: 't1_vel', name: 'VEL1', type: 'cv_out' },
+      { id: 't2_vel', name: 'VEL2', type: 'cv_out' },
+      { id: 't3_vel', name: 'VEL3', type: 'cv_out' },
+      { id: 't4_vel', name: 'VEL4', type: 'cv_out' },
+      { id: 't5_vel', name: 'VEL5', type: 'cv_out' },
+      { id: 't6_vel', name: 'VEL6', type: 'cv_out' },
+      { id: 't7_vel', name: 'VEL7', type: 'cv_out' },
+      { id: 't8_vel', name: 'VEL8', type: 'cv_out' },
+      // Global utility outputs
       { id: 'clk_out',  name: 'CLK',  type: 'gate_out' },
+      { id: 'beat_out', name: 'BEAT', type: 'gate_out' },
+      { id: 'eoc_out',  name: 'EOC',  type: 'gate_out' },
       { id: 'pos_cv',   name: 'POS',  type: 'cv_out'   },
       { id: 'step_cv',  name: 'STEP', type: 'cv_out'   },
     ],
