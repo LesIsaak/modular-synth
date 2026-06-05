@@ -1113,6 +1113,26 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
     ],
   },
   {
+    id: 'cv_gate_mult', name: 'CV/GT ×6', category: 'utility', accentColor: UTL, width: 160,
+    knobs: [],
+    ports: [
+      { id: 'cv_in',     name: 'CV IN',  type: 'audio_in' },
+      { id: 'gate_in',   name: 'GT IN',  type: 'gate_in'  },
+      { id: 'cv1_out',   name: 'CV 1',   type: 'audio_out' },
+      { id: 'gate1_out', name: 'GT 1',   type: 'gate_out'  },
+      { id: 'cv2_out',   name: 'CV 2',   type: 'audio_out' },
+      { id: 'gate2_out', name: 'GT 2',   type: 'gate_out'  },
+      { id: 'cv3_out',   name: 'CV 3',   type: 'audio_out' },
+      { id: 'gate3_out', name: 'GT 3',   type: 'gate_out'  },
+      { id: 'cv4_out',   name: 'CV 4',   type: 'audio_out' },
+      { id: 'gate4_out', name: 'GT 4',   type: 'gate_out'  },
+      { id: 'cv5_out',   name: 'CV 5',   type: 'audio_out' },
+      { id: 'gate5_out', name: 'GT 5',   type: 'gate_out'  },
+      { id: 'cv6_out',   name: 'CV 6',   type: 'audio_out' },
+      { id: 'gate6_out', name: 'GT 6',   type: 'gate_out'  },
+    ],
+  },
+  {
     id: 'keyboard', name: 'KB OUT', category: 'utility', accentColor: UTL, width: 200,
     knobs: [
       { id: 'glide', name: 'GLIDE', min: 0, max: 2, default: 0, step: 0.01 },

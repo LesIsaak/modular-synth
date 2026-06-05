@@ -3363,6 +3363,43 @@ export function createAudioModule(
       };
     }
 
+    // ── CV / Gate ×6 Multiplier ───────────────────────────────────────
+    case 'cv_gate_mult': {
+      // CV path: one input gain fans out to 6 unity-gain output nodes
+      const cvIn = ctx.createGain(); cvIn.gain.value = 1;
+      const cvOuts: GainNode[] = [];
+      for (let i = 0; i < 6; i++) {
+        const g = ctx.createGain(); g.gain.value = 1;
+        cvIn.connect(g);
+        cvOuts.push(g);
+      }
+
+      // Gate path: callbacks stored per output port
+      const gateCbs = new Map<string, (on: boolean, freq: number) => void>();
+
+      const outputs = new Map<string, AudioNode>();
+      const inputs  = new Map<string, { node: AudioNode; param?: AudioParam }>();
+      inputs.set('cv_in', { node: cvIn });
+      for (let i = 0; i < 6; i++) outputs.set(`cv${i + 1}_out`, cvOuts[i]);
+
+      return {
+        outputs,
+        inputs,
+        setParam: () => {},
+        noteOn: (_t, freq) => {
+          for (const cb of gateCbs.values()) cb(true, freq);
+        },
+        noteOff: () => {
+          for (const cb of gateCbs.values()) cb(false, 0);
+        },
+        setPortGateTrigger: (portId, fn) => { gateCbs.set(portId, fn); },
+        destroy: () => {
+          try { cvIn.disconnect(); } catch (_) {}
+          cvOuts.forEach(g => { try { g.disconnect(); } catch (_) {} });
+        },
+      };
+    }
+
     default:
       console.warn(`Unknown module type: ${typeId}`);
       return {
