@@ -1318,6 +1318,14 @@ export function createAudioModule(
       const voct = ctx.createConstantSource(); voct.offset.value = 0; voct.start();
       const heldNotes: number[] = [];   // freqs in play order
       let lastNoteFreq = 0;
+
+      // V/OCT tap — samples the incoming V/OCT cable at gate time.
+      // Follows the same pattern used by euclidean_trig for CV sampling.
+      const voctMix = ctx.createGain(); voctMix.gain.value = 1;
+      const voctTap = ctx.createAnalyser(); voctTap.fftSize = 32;
+      voctMix.connect(voctTap);
+      const voctBuf = new Float32Array(1);
+      const readVoct = () => { voctTap.getFloatTimeDomainData(voctBuf); return voctBuf[0]; };
       let stepIdx = 0;
       let gateCb:    ((on: boolean, freq: number) => void) | null = null;
       let accentCb:  ((on: boolean, freq: number) => void) | null = null;
@@ -1466,14 +1474,32 @@ export function createAudioModule(
 
       let timer = makeClockTimer(getStepMs, tick);
 
+      // gate_in handler: when triggered by a gate cable, use the V/OCT tap
+      // value if a cable is connected (cv > 10 Hz means real pitch data), otherwise
+      // fall back to the freq carried by the gate signal itself (keyboard path).
+      const addNote = (freq: number) => {
+        if (!heldNotes.includes(freq)) heldNotes.push(freq);
+        lastNoteFreq = freq;
+      };
+      const removeLastNote = () => {
+        const idx = heldNotes.indexOf(lastNoteFreq);
+        if (idx >= 0) { heldNotes.splice(idx, 1); if (stepIdx >= Math.max(1, heldNotes.length)) stepIdx = 0; }
+      };
+
       return {
         outputs: new Map([['voct_out', voct]]),
-        inputs: new Map(),
-        noteOn: (_t, freq) => { if (!heldNotes.includes(freq)) heldNotes.push(freq); lastNoteFreq = freq; },
-        noteOff: (_t) => {
-          const idx = heldNotes.indexOf(lastNoteFreq);
-          if (idx >= 0) { heldNotes.splice(idx, 1); if (stepIdx >= Math.max(1, heldNotes.length)) stepIdx = 0; }
-        },
+        inputs: new Map([
+          ['voct_in', { node: voctMix as AudioNode }],
+        ]),
+        noteOn:  (_t, freq) => addNote(freq),
+        noteOff: (_t)       => removeLastNote(),
+        portNoteOn: new Map([
+          ['gate_in', (_t: number, freq?: number) => {
+            // Prefer V/OCT tap if a cable is patched (reads >10 Hz = real pitch)
+            const cv = readVoct();
+            addNote(cv > 10 ? cv : (freq ?? 440));
+          }],
+        ]),
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'bpm') { timer.updateInterval(); }
@@ -1482,7 +1508,11 @@ export function createAudioModule(
         setSelector: (id, val) => { p[id] = val; resetModeState(); globalBeat = 0; accentBeat = 0; },
         setGateTrigger: fn => { gateCb = fn; },
         setPortGateTrigger: (portId, fn) => { if (portId === 'accent_out') accentCb = fn; else gateCb = fn; },
-        destroy: () => { timer.destroy(); gateCb = null; accentCb = null; try { voct.stop(); } catch(_){} voct.disconnect(); },
+        destroy: () => {
+          timer.destroy(); gateCb = null; accentCb = null;
+          try { voct.stop(); } catch(_){} voct.disconnect();
+          voctMix.disconnect(); voctTap.disconnect();
+        },
       };
     }
 
