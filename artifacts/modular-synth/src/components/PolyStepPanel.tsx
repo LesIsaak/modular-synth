@@ -4,7 +4,7 @@ import { KnobDef, ModuleInstance } from '../types';
 
 const TC = ['#f97316','#eab308','#22d3ee','#60a5fa','#a855f7','#ec4899','#4ade80','#94a3b8'];
 const TL = ['KICK','SNR','HH·C','HH·O','CLAP','PERC','BASS','AUX'];
-const LEN_OPTS = [4, 8, 12, 16] as const;
+const LEN_OPTS = [4, 8, 12, 16, 32] as const;
 
 interface Props {
   module: ModuleInstance;
@@ -22,7 +22,7 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
     if (!stepRef) return;
     let last = -1;
     const id = setInterval(() => {
-      const next = (stepRef.value) & 0xF;
+      const next = stepRef.value;
       if (next !== last) { last = next; setLiveStep(next); }
     }, 33);
     return () => clearInterval(id);
@@ -31,13 +31,13 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
   const p   = mod.params;
   const set = (id: string, val: number) => onParamChange(mod.id, id, val);
 
-  const lenIdx = Math.max(0, Math.min(3, Math.round(p.global_len ?? 3)));
+  const lenIdx = Math.max(0, Math.min(4, Math.round(p.global_len ?? 3)));
   const len    = LEN_OPTS[lenIdx];
 
   const toggle     = (t: number, s: number) =>
-    set(`t${t+1}`, (Math.round(p[`t${t+1}`] ?? 0) ^ (1 << s)) & 0xFFFF);
+    set(`t${t+1}`, (Math.round(p[`t${t+1}`] ?? 0) ^ (1 << s)) | 0);
   const toggleAcc  = (t: number, s: number) =>
-    set(`t${t+1}_acc`, (Math.round(p[`t${t+1}_acc`] ?? 0) ^ (1 << s)) & 0xFFFF);
+    set(`t${t+1}_acc`, (Math.round(p[`t${t+1}_acc`] ?? 0) ^ (1 << s)) | 0);
   const toggleMute = (t: number) =>
     set(`t${t+1}_mute`, (p[`t${t+1}_mute`] ?? 0) > 0.5 ? 0 : 1);
   const randomize  = (t: number) => {

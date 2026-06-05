@@ -3027,7 +3027,7 @@ export function createAudioModule(
     // ── POLY STEP — 8-track polyrhythmic drum sequencer ─────────────────────────
     case 'poly_step': {
       const NTRACKS = 8;
-      const LEN_MAP = [4, 8, 12, 16] as const;
+      const LEN_MAP = [4, 8, 12, 16, 32] as const;
 
       // CV input taps — sampled at each tick
       const makeCVTap = () => {
@@ -3077,12 +3077,10 @@ export function createAudioModule(
         // Clock passthrough — every tick
         fire('clk_out', dur);
 
-        // Pack 8×4-bit track positions into stepRef for UI polling.
+        // Store track-1 step position in stepRef for UI polling.
         // Delay the visual update to match when the audio actually plays so the
         // step indicator stays in sync even with lookahead scheduling.
-        let packed = 0;
-        for (let t = 0; t < NTRACKS; t++) packed |= (trackPos[t] << (t * 4));
-        const _p = packed;
+        const _p = trackPos[0];
         const _visualDelay = _currentTickAudioTime
           ? Math.max(0, (_currentTickAudioTime - ctx.currentTime) * 1000 - 10)
           : 0;
@@ -3090,7 +3088,7 @@ export function createAudioModule(
         else stepRef.value = _p;
 
         // Master position CV — all tracks share global_len
-        const masterLenIdx = Math.max(0, Math.min(3, Math.round(p.global_len ?? 3)));
+        const masterLenIdx = Math.max(0, Math.min(4, Math.round(p.global_len ?? 3)));
         const masterLen    = LEN_MAP[masterLenIdx];
         const masterStep   = trackPos[0];
         posNode.offset.value  = masterLen > 1 ? masterStep / (masterLen - 1) : 0;
@@ -3103,8 +3101,8 @@ export function createAudioModule(
         for (let t = 0; t < NTRACKS; t++) {
           const tn  = t + 1;
           const len = masterLen;
-          const mask  = Math.round(p[`t${tn}`]     ?? 0) & 0xFFFF;
-          const acc   = Math.round(p[`t${tn}_acc`] ?? 0) & 0xFFFF;
+          const mask  = Math.round(p[`t${tn}`]     ?? 0) | 0;
+          const acc   = Math.round(p[`t${tn}_acc`] ?? 0) | 0;
           const prob  = Math.min(1, Math.max(0, p[`t${tn}_prob`] ?? 1));
           const muted = (p[`t${tn}_mute`] ?? 0) > 0.5;
           const vel   = Math.min(1, Math.max(0.01, p[`t${tn}_vel`] ?? 0.8));
