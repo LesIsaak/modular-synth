@@ -760,13 +760,15 @@ function FixedKeyboardPanel({
         {/* Vertical divider */}
         <div style={{ width: 1, background: '#202020', flexShrink: 0 }} />
 
-        {/* Piano — 2 octaves side-by-side, zoomable via kbZoom */}
+        {/* Piano — 5 octaves, zoomable via kbZoom.
+            width:250% makes 2 octaves visible at 1×; zoom out to reveal up to 5. */}
         <div style={{ flex: 1, overflow: 'hidden', minWidth: 0 }}>
-          <div style={{ display: 'flex', gap: 6, height: '100%', transform: `scaleX(${kbZoom})`, transformOrigin: 'left center' }}>
-            {renderOctave(0)}
-            {/* Octave seam */}
-            <div style={{ width: 2, background: '#1a1a1a', flexShrink: 0, borderRadius: 1 }} />
-            {renderOctave(1)}
+          <div style={{ width: '250%', display: 'flex', gap: 0, height: '100%', transform: `scaleX(${kbZoom})`, transformOrigin: 'left center' }}>
+            {[0, 1, 2, 3, 4].map((octOff, i) => (
+              <div key={octOff} style={{ flex: 1, display: 'flex', minWidth: 0, paddingLeft: i > 0 ? 5 : 0, borderLeft: i > 0 ? '2px solid #1a1a1a' : 'none' }}>
+                {renderOctave(octOff)}
+              </div>
+            ))}
           </div>
         </div>
       </div>
