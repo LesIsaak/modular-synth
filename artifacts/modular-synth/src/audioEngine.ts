@@ -17,6 +17,8 @@ export interface AudioModuleNodes {
   stepRef?: { value: number };
   /** Returns a 0–1 activity level; polled by the UI at ~60 fps for indicator LEDs */
   getLevel?: () => number;
+  /** Per-port variant of getLevel — use when the module has multiple outputs at different rates */
+  getPortLevel?: (portId: string) => number;
   /** Per-port gate handlers (e.g. individual drum voice triggers) */
   portNoteOn?: Map<string, (time: number, freq?: number) => void>;
   /** Sampler only: decode and store an ArrayBuffer into the given bank slot */
@@ -1456,27 +1458,38 @@ export function createAudioModule(
 
     // ── Clock ────────────────────────────────────────────────────────
     case 'clock_gen': {
-      let gateCb: ((on: boolean, freq: number) => void) | null = null;
       let beat = 0;
-      let lastGateMs = 0;
+      const portCbs = new Map<string, (on: boolean, freq: number) => void>();
+      const DIV: Record<string, number> = { gate_out: 1, div2_out: 2, div4_out: 4, div8_out: 8 };
+      const lastMs: Record<string, number> = {};
       const getMs = () => 60000 / (p.bpm ?? 120);
       let timer = makeClockTimer(getMs, (i) => {
         beat = i;
         const ms = getMs();
         const swingOffset = (beat % 2 === 1) ? ms * (p.swing ?? 0) : 0;
         setTimeout(() => {
-          lastGateMs = performance.now();
-          gateCb?.(true, 440);
-          setTimeout(() => gateCb?.(false, 440), ms * 0.45);
+          for (const [portId, cb] of portCbs) {
+            const div = DIV[portId] ?? 1;
+            if (beat % div === 0) {
+              lastMs[portId] = performance.now();
+              cb(true, 440);
+              setTimeout(() => cb(false, 440), ms * 0.45);
+            }
+          }
         }, swingOffset);
       });
       return {
         outputs: new Map(),
         inputs: new Map(),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
-        setGateTrigger: fn => { gateCb = fn; },
-        getLevel: () => Math.max(0, 1 - (performance.now() - lastGateMs) / 120),
-        destroy: () => { timer.destroy(); gateCb = null; },
+        setGateTrigger: fn => {
+          if (fn) portCbs.set('gate_out', fn);
+          else portCbs.delete('gate_out');
+        },
+        setPortGateTrigger: (portId, fn) => { portCbs.set(portId, fn); },
+        getLevel:     () => Math.max(0, 1 - (performance.now() - (lastMs['gate_out'] ?? 0)) / 120),
+        getPortLevel: (portId: string) => Math.max(0, 1 - (performance.now() - (lastMs[portId] ?? 0)) / 120),
+        destroy: () => { timer.destroy(); portCbs.clear(); },
       };
     }
 

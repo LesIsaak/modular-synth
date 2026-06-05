@@ -1782,10 +1782,15 @@ export default function SynthApp() {
   const portLevelMap = useMemo(() => {
     const map = new Map<string, Map<string, () => number>>();
     for (const cable of cables) {
-      const srcGetLevel = audioModulesRef.current.get(cable.fromModuleId)?.getLevel;
-      if (!srcGetLevel) continue;
+      const src = audioModulesRef.current.get(cable.fromModuleId);
+      if (!src) continue;
+      const fromPortId = cable.fromPortId;
+      const getLevelFn: (() => number) | undefined = src.getPortLevel
+        ? () => src.getPortLevel!(fromPortId)
+        : src.getLevel;
+      if (!getLevelFn) continue;
       if (!map.has(cable.toModuleId)) map.set(cable.toModuleId, new Map());
-      map.get(cable.toModuleId)!.set(cable.toPortId, srcGetLevel);
+      map.get(cable.toModuleId)!.set(cable.toPortId, getLevelFn);
     }
     return map;
   // eslint-disable-next-line react-hooks/exhaustive-deps
