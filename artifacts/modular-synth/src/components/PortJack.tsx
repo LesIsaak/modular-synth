@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PortDef, PortType } from '../types';
 
 interface PortJackProps {
@@ -49,6 +49,9 @@ export default function PortJack({
   const holdFiredRef = useRef<boolean>(false);
   const key = `${moduleId}-${portDef.id}`;
 
+  const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
+
   useEffect(() => {
     onRegisterRef(key, ref.current);
     return () => onRegisterRef(key, null);
@@ -82,26 +85,38 @@ export default function PortJack({
   const holeId  = `hole-${key}`;
   const shineId = `shine-${key}`;
 
+  const scale = pressed ? 0.95 : hovered ? 1.1 : 1;
+
   return (
     <div className="flex flex-col items-center gap-0.5" data-testid={`port-${moduleId}-${portDef.id}`}>
+      {/*
+        The ref div has NO transform/animation — a CSS transform creates a new stacking
+        context which would trap the hit-area's zIndex:35 locally, ranking it below the
+        cable SVG at global zIndex:30 and blocking clicks at port centre.
+        Scale animation lives on an inner pointer-events:none wrapper instead, driven
+        by JS state set from the hit area's mouse events.
+      */}
       <div
         ref={ref}
-        className="hover:scale-110 active:scale-95 transition-transform"
         style={{ position: 'relative', width: 26, height: 26, borderRadius: '50%' }}
       >
-        {/* Expanded transparent hit-area */}
+        {/* Expanded transparent hit-area — zIndex:35 is in the global stacking context
+            because the ref div above has no z-index / transform of its own. */}
         <div
           style={{ position: 'absolute', inset: -9, cursor: 'pointer', zIndex: 35 }}
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => { setHovered(false); setPressed(false); }}
           onPointerDown={e => {
             e.stopPropagation();
+            setPressed(true);
             holdFiredRef.current = false;
             holdTimerRef.current = window.setTimeout(() => {
               holdFiredRef.current = true;
               onPortHold?.(moduleId, portDef.id);
             }, 500);
           }}
-          onPointerUp={() => window.clearTimeout(holdTimerRef.current)}
-          onPointerLeave={() => window.clearTimeout(holdTimerRef.current)}
+          onPointerUp={() => { setPressed(false); window.clearTimeout(holdTimerRef.current); }}
+          onPointerLeave={() => { setPressed(false); window.clearTimeout(holdTimerRef.current); }}
           onClick={e => {
             e.stopPropagation();
             if (holdFiredRef.current) { holdFiredRef.current = false; return; }
@@ -113,75 +128,84 @@ export default function PortJack({
             onPortDoubleClick?.(moduleId, portDef.id);
           }}
         />
-        <svg width={26} height={26} viewBox="0 0 26 26" style={{ display: 'block' }}>
-          <defs>
-            <radialGradient id={rimId} cx="38%" cy="32%" r="60%">
-              <stop offset="0%"   stopColor="#909090" />
-              <stop offset="45%"  stopColor="#606060" />
-              <stop offset="100%" stopColor="#282828" />
-            </radialGradient>
-            <radialGradient id={holeId} cx="50%" cy="50%" r="50%">
-              <stop offset="0%"   stopColor={active ? ringColor : '#1c1c1c'} stopOpacity={active ? 0.35 : 1} />
-              <stop offset="100%" stopColor="#040404" />
-            </radialGradient>
-            <radialGradient id={shineId} cx="35%" cy="28%" r="55%">
-              <stop offset="0%"   stopColor="white" stopOpacity="0.15" />
-              <stop offset="100%" stopColor="white" stopOpacity="0" />
-            </radialGradient>
-          </defs>
 
-          {/* Drop shadow base */}
-          <circle cx="13" cy="14" r="11.5" fill="black" opacity="0.55" />
+        {/* Visual wrapper — pointer-events:none so all interactions go to the hit area.
+            Transform here is safe: this div is not a containing block for the hit area. */}
+        <div style={{
+          pointerEvents: 'none',
+          transform: `scale(${scale})`,
+          transition: 'transform 0.15s',
+        }}>
+          <svg width={26} height={26} viewBox="0 0 26 26" style={{ display: 'block' }}>
+            <defs>
+              <radialGradient id={rimId} cx="38%" cy="32%" r="60%">
+                <stop offset="0%"   stopColor="#909090" />
+                <stop offset="45%"  stopColor="#606060" />
+                <stop offset="100%" stopColor="#282828" />
+              </radialGradient>
+              <radialGradient id={holeId} cx="50%" cy="50%" r="50%">
+                <stop offset="0%"   stopColor={active ? ringColor : '#1c1c1c'} stopOpacity={active ? 0.35 : 1} />
+                <stop offset="100%" stopColor="#040404" />
+              </radialGradient>
+              <radialGradient id={shineId} cx="35%" cy="28%" r="55%">
+                <stop offset="0%"   stopColor="white" stopOpacity="0.15" />
+                <stop offset="100%" stopColor="white" stopOpacity="0" />
+              </radialGradient>
+            </defs>
 
-          {/* Outer metal collar */}
-          <circle cx="13" cy="13" r="11.5" fill={`url(#${rimId})`} />
+            {/* Drop shadow base */}
+            <circle cx="13" cy="14" r="11.5" fill="black" opacity="0.55" />
 
-          {/* Collar groove / dark ring */}
-          <circle cx="13" cy="13" r="8.5"  fill="#111" />
+            {/* Outer metal collar */}
+            <circle cx="13" cy="13" r="11.5" fill={`url(#${rimId})`} />
 
-          {/* Inner socket wall */}
-          <circle cx="13" cy="13" r="7.5"
-            fill="#242424"
-            stroke="#383838"
-            strokeWidth="0.6"
-          />
+            {/* Collar groove / dark ring */}
+            <circle cx="13" cy="13" r="8.5"  fill="#111" />
 
-          {/* Socket bore */}
-          <circle cx="13" cy="13" r="6" fill={`url(#${holeId})`} />
-
-          {/* Center contact (TRS tip) */}
-          <circle cx="13" cy="13" r="2.2"
-            fill={active ? ringColor : '#2e2e2e'}
-            stroke={active ? 'none' : '#1a1a1a'}
-            strokeWidth="0.5"
-            style={{ filter: active ? `drop-shadow(0 0 3px ${ringColor})` : 'none' }}
-          />
-
-          {/* Metal sheen highlight */}
-          <circle cx="13" cy="13" r="11.5" fill={`url(#${shineId})`} />
-
-          {/* Colored ring when active */}
-          {active && (
-            <circle cx="13" cy="13" r="11.5"
-              fill="none"
-              stroke={ringColor}
-              strokeWidth="1.2"
-              opacity="0.65"
-              style={{ filter: `drop-shadow(0 0 4px ${ringColor})` }}
+            {/* Inner socket wall */}
+            <circle cx="13" cy="13" r="7.5"
+              fill="#242424"
+              stroke="#383838"
+              strokeWidth="0.6"
             />
-          )}
 
-          {/* Pulse ring when connectable */}
-          {canConnect && (
-            <circle cx="13" cy="13" r="11.5"
-              fill="none"
-              stroke="white"
-              strokeWidth="1.5"
-              opacity="0.7"
-              className="animate-pulse"
+            {/* Socket bore */}
+            <circle cx="13" cy="13" r="6" fill={`url(#${holeId})`} />
+
+            {/* Center contact (TRS tip) */}
+            <circle cx="13" cy="13" r="2.2"
+              fill={active ? ringColor : '#2e2e2e'}
+              stroke={active ? 'none' : '#1a1a1a'}
+              strokeWidth="0.5"
+              style={{ filter: active ? `drop-shadow(0 0 3px ${ringColor})` : 'none' }}
             />
-          )}
-        </svg>
+
+            {/* Metal sheen highlight */}
+            <circle cx="13" cy="13" r="11.5" fill={`url(#${shineId})`} />
+
+            {/* Colored ring when active */}
+            {active && (
+              <circle cx="13" cy="13" r="11.5"
+                fill="none"
+                stroke={ringColor}
+                strokeWidth="1.2"
+                opacity="0.65"
+                style={{ filter: `drop-shadow(0 0 4px ${ringColor})` }}
+              />
+            )}
+
+            {/* Pulse ring when connectable */}
+            {canConnect && (
+              <circle cx="13" cy="13" r="11.5"
+                fill="none"
+                stroke="white"
+                strokeWidth="1.5"
+                opacity="0.7"
+                className="animate-pulse"
+              />
+            )}
+          </svg>
+        </div>
       </div>
       <span
         className="text-[8px] uppercase tracking-wider"
