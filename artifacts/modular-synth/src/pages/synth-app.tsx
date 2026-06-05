@@ -231,15 +231,14 @@ function PatchCables({
         if (!from || !to) return null;
         const d = makePath(from.x, from.y, to.x, to.y);
         return (
-          <g key={c.id} className="pointer-events-auto">
-            {/* Hit area — always present for interaction */}
-            <path d={d} fill="none" stroke="transparent" strokeWidth={14} style={{ cursor: 'pointer' }}
-              onContextMenu={e => { e.preventDefault(); onRemoveCable(c.id); }} />
-            {/* Cable lines — opacity controlled by slider */}
+          <g key={c.id}>
+            {/* Cable lines — right-click colored body to remove; everything else passes through */}
             <g opacity={cableOpacity}>
               <path d={d} fill="none" stroke="#000" strokeWidth={6} strokeLinecap="round" opacity={0.45} />
               <path d={d} fill="none" stroke={c.color} strokeWidth={4} strokeLinecap="round"
-                filter={`url(#glow-${c.id})`} />
+                filter={`url(#glow-${c.id})`}
+                style={{ pointerEvents: 'auto', cursor: 'context-menu' }}
+                onContextMenu={e => { e.preventDefault(); onRemoveCable(c.id); }} />
               <path d={d} fill="none" stroke="white" strokeWidth={1.2} strokeLinecap="round" opacity={0.12} />
             </g>
 
