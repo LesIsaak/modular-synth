@@ -268,6 +268,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
       { id: 'cutoff', name: 'CUTOFF', min: 20, max: 20000, default: 1000, log: true, unit: 'Hz' },
       { id: 'morph',  name: 'MORPH',  min: 0, max: 1, default: 0 },
       { id: 'res',    name: 'RES',    min: 0.0001, max: 20, default: 1 },
+      { id: 'cv_amt', name: 'CV AMT', min: 0, max: 20, default: 1 },
     ],
     ports: [
       audioIn, cutoffCv,

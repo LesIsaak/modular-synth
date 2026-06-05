@@ -720,13 +720,17 @@ export function createAudioModule(
 
       // ConstantSource drives BOTH filter frequencies from one param.
       // Setting filter.frequency.value = 0 means all cutoff comes from cutoffCs.
-      // CV cables connect to cutoffCs.offset (AudioParam) — same path as every other filter,
-      // and the signal fans out to lp.frequency + hp.frequency automatically.
       const cutoffCs = ctx.createConstantSource();
       cutoffCs.offset.value = p.cutoff ?? 1000;
       cutoffCs.start();
       lp.frequency.value = 0; hp.frequency.value = 0;
       cutoffCs.connect(lp.frequency); cutoffCs.connect(hp.frequency);
+
+      // CV AMT: scales incoming CV before it adds to cutoffCs.offset.
+      // gain = cv_amt knob value (0–20×). Default 1 = same as raw CV depth.
+      const cvAmtGain = ctx.createGain();
+      cvAmtGain.gain.value = p.cv_amt ?? 1;
+      cvAmtGain.connect(cutoffCs.offset);
 
       // Same pattern for resonance
       const resCs = ctx.createConstantSource();
@@ -740,21 +744,22 @@ export function createAudioModule(
         outputs: new Map([['out', out]]),
         inputs: new Map([
           ['audio_in',  { node: inSplit }],
-          ['cutoff_cv', { node: cutoffCs, param: cutoffCs.offset }],
-          ['res_cv',    { node: resCs,    param: resCs.offset    }],
-          ['morph_cv',  { node: morphCs,  param: morphCs.offset  }],
+          ['cutoff_cv', { node: cvAmtGain }],
+          ['res_cv',    { node: resCs,   param: resCs.offset   }],
+          ['morph_cv',  { node: morphCs, param: morphCs.offset }],
         ]),
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'cutoff') cutoffCs.offset.value = val;
           if (id === 'res')    resCs.offset.value = val;
-          if (id === 'morph') { lpG.gain.value = 1 - val; hpG.gain.value = val; }
+          if (id === 'morph')  { lpG.gain.value = 1 - val; hpG.gain.value = val; }
+          if (id === 'cv_amt') cvAmtGain.gain.value = val;
         },
         destroy: () => {
           cutoffCs.stop(); cutoffCs.disconnect();
           resCs.stop();    resCs.disconnect();
           morphCs.stop();  morphCs.disconnect();
-          [lp, hp, lpG, hpG, out, inSplit].forEach(n => n.disconnect());
+          [lp, hp, lpG, hpG, out, inSplit, cvAmtGain].forEach(n => n.disconnect());
         },
       };
     }
