@@ -172,7 +172,7 @@ interface Props { onClose: () => void }
 
 export default function IORefPanel({ onClose }: Props) {
   const [search, setSearch] = useState('');
-  const [openCats, setOpenCats] = useState<Set<string>>(new Set(['oscillator', 'envelope', 'utility']));
+  const [openCats, setOpenCats] = useState<Set<string>>(new Set());
 
   const q = search.toLowerCase().trim();
 
