@@ -1095,6 +1095,30 @@ export default function SynthApp() {
     };
   }, []);
 
+  // ─── Gate callback factory (shared by live-connect and patch restore) ───────
+  const makeGateCb = useCallback(
+    (key: string) => (on: boolean, freq: number) => {
+      const ctx = audioCtxRef.current;
+      if (!ctx) return;
+      for (const id of gateConnRef.current.get(key) ?? []) {
+        const m = audioModulesRef.current.get(id);
+        if (!m) continue;
+        const toPortId    = portGateMapRef.current.get(key)?.get(id);
+        const portHandler = toPortId ? m.portNoteOn?.get(toPortId) : undefined;
+        try {
+          if (portHandler) {
+            if (on) portHandler(getCurrentTickAudioTime() || ctx.currentTime, freq);
+          } else {
+            if (on) m.noteOn?.(getCurrentTickAudioTime() || ctx.currentTime, freq);
+            else    m.noteOff?.(getCurrentTickAudioTime() || ctx.currentTime);
+          }
+        } catch (_) {}
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   // ─── Initialize audio ───────────────────────────────────────────────────────
   const handleStart = useCallback((savedJson?: string) => {
     const ctx = new AudioContext();
@@ -1126,6 +1150,17 @@ export default function SynthApp() {
               const fa = audioModulesRef.current.get(cable.fromModuleId);
               const ta = audioModulesRef.current.get(cable.toModuleId);
               if (fa && ta) connectAudioPorts(fa, cable.fromPortId, ta, cable.toPortId);
+            }
+          }
+          // Wire up gate callbacks for every unique source port that was restored.
+          // Without this, modules like poly_step fire gates with no listener.
+          for (const [gk] of gateConnRef.current) {
+            const [fromModuleId, fromPortId] = gk.split(':');
+            const fromAudio = audioModulesRef.current.get(fromModuleId);
+            if (fromAudio?.setPortGateTrigger) {
+              fromAudio.setPortGateTrigger(fromPortId, makeGateCb(gk));
+            } else if (fromAudio?.setGateTrigger) {
+              fromAudio.setGateTrigger(makeGateCb(gk));
             }
           }
           setModules(patch.modules);
@@ -1537,24 +1572,6 @@ export default function SynthApp() {
       if (!portGateMapRef.current.has(gk)) portGateMapRef.current.set(gk, new Map());
       portGateMapRef.current.get(gk)!.set(finalToModuleId, finalToPortId);
       const fromAudio = audioModulesRef.current.get(finalFromModuleId);
-      const makeGateCb = (key: string) => (on: boolean, freq: number) => {
-        const ctx = audioCtxRef.current;
-        if (!ctx) return;
-        for (const id of gateConnRef.current.get(key) ?? []) {
-          const m = audioModulesRef.current.get(id);
-          if (!m) continue;
-          const toPortId    = portGateMapRef.current.get(key)?.get(id);
-          const portHandler = toPortId ? m.portNoteOn?.get(toPortId) : undefined;
-          try {
-            if (portHandler) {
-              if (on) portHandler(getCurrentTickAudioTime() || ctx.currentTime, freq);
-            } else {
-              if (on) m.noteOn?.(getCurrentTickAudioTime() || ctx.currentTime, freq);
-              else    m.noteOff?.(getCurrentTickAudioTime() || ctx.currentTime);
-            }
-          } catch (_) {}
-        }
-      };
       if (fromAudio?.setPortGateTrigger) {
         fromAudio.setPortGateTrigger(finalFromPortId, makeGateCb(gk));
       } else if (fromAudio?.setGateTrigger) {
