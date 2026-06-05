@@ -237,7 +237,7 @@ function PatchCables({
               <path d={d} fill="none" stroke="#000" strokeWidth={6} strokeLinecap="round" opacity={0.45} />
               <path d={d} fill="none" stroke={c.color} strokeWidth={4} strokeLinecap="round"
                 filter={`url(#glow-${c.id})`}
-                style={{ pointerEvents: 'auto', cursor: 'context-menu' }}
+                style={{ pointerEvents: 'auto', cursor: 'pointer' }}
                 onContextMenu={e => { e.preventDefault(); onRemoveCable(c.id); }} />
               <path d={d} fill="none" stroke="white" strokeWidth={1.2} strokeLinecap="round" opacity={0.12} />
             </g>
