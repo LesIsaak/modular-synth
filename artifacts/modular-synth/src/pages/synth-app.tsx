@@ -53,9 +53,13 @@ function snapWithProximity(
   rawX: number, rawY: number,
   modules: ModuleInstance[], draggingId: string,
 ): { x: number; y: number } {
-  // Y: snap to nearest row boundary if close enough, else keep raw
-  const nearestRowY = Math.round(rawY / SLOT_H) * SLOT_H;
-  const finalY = Math.max(0, Math.abs(nearestRowY - rawY) <= SNAP_DIST ? nearestRowY : rawY);
+  // Y: ALWAYS snap to nearest row — no free vertical movement between rows
+  const finalY = Math.max(0, Math.round(rawY / SLOT_H) * SLOT_H);
+
+  // Width of the module being dragged (needed for right-edge snap points)
+  const draggedW = MODULE_TYPE_MAP.get(
+    modules.find(m => m.id === draggingId)?.typeId ?? ''
+  )?.width ?? SLOT_W;
 
   // X snap points relative to the target row
   const targetRow = Math.round(finalY / SLOT_H);
@@ -64,11 +68,12 @@ function snapWithProximity(
     if (m.id === draggingId) continue;
     if (Math.round(m.y / SLOT_H) !== targetRow) continue;
     const w = MODULE_TYPE_MAP.get(m.typeId)?.width ?? SLOT_W;
-    snapXs.push(m.x + w);   // butt left edge of dragged against right edge of neighbour
-    snapXs.push(m.x);        // align left edges
+    snapXs.push(m.x + w);         // dragged left  → neighbour right (pack from left)
+    snapXs.push(m.x - draggedW);  // dragged right → neighbour left  (pack from right)
+    snapXs.push(m.x);              // align left edges
   }
 
-  // Snap X only if closest point is within threshold
+  // Snap X only if the closest point is within the proximity threshold
   let bestX = rawX;
   let bestDist = SNAP_DIST;
   for (const sx of snapXs) {
