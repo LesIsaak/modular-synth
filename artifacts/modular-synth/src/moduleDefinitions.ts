@@ -567,8 +567,8 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
       { id: 'accent', name: 'ACCENT', options: ['OFF','÷2','÷3','÷4','÷6','÷8'], default: 0 },
     ],
     ports: [
-      { id: 'voct_in',    name: 'V/OCT',  type: 'cv_in'    },
-      { id: 'gate_in',    name: 'GATE IN', type: 'gate_in'  },
+      { id: 'voct_in',    name: 'V/OCT', type: 'cv_in'   },
+      { id: 'gate_in',    name: 'GATE',  type: 'gate_in' },
       { id: 'voct_out',   name: 'V/OCT',  type: 'cv_out'   },
       { id: 'gate_out',   name: 'GATE',   type: 'gate_out' },
       { id: 'accent_out', name: 'ACCENT', type: 'gate_out' },
