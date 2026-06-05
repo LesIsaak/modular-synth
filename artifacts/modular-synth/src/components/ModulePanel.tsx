@@ -12,6 +12,7 @@ interface ModulePanelProps {
   pendingCable: PendingCable | null;
   onPortClick: (moduleId: string, portId: string, type: PortType) => void;
   onPortDoubleClick: (moduleId: string, portId: string) => void;
+  onPortHold: (moduleId: string, portId: string) => void;
   onParamChange: (moduleId: string, paramId: string, value: number) => void;
   onSelectorChange: (moduleId: string, selectorId: string, value: number) => void;
   onDragStart: (moduleId: string, e: React.MouseEvent) => void;
@@ -390,7 +391,7 @@ function Screw() {
 }
 
 function PortWithLabel({
-  moduleId, port, isConnected, isPendingSource, canConnect, onPortClick, onPortDoubleClick, onRegisterRef, getLevelFn,
+  moduleId, port, isConnected, isPendingSource, canConnect, onPortClick, onPortDoubleClick, onPortHold, onRegisterRef, getLevelFn,
 }: {
   moduleId: string;
   port: { id: string; name: string; type: PortType };
@@ -399,6 +400,7 @@ function PortWithLabel({
   canConnect: boolean;
   onPortClick: (moduleId: string, portId: string, type: PortType) => void;
   onPortDoubleClick: (moduleId: string, portId: string) => void;
+  onPortHold: (moduleId: string, portId: string) => void;
   onRegisterRef: (key: string, el: HTMLDivElement | null) => void;
   getLevelFn?: () => number;
 }) {
@@ -412,6 +414,7 @@ function PortWithLabel({
         canConnect={canConnect}
         onPortClick={onPortClick}
         onPortDoubleClick={onPortDoubleClick}
+        onPortHold={onPortHold}
         onRegisterRef={onRegisterRef}
         getInputLevel={getLevelFn}
       />
@@ -477,7 +480,7 @@ function PianoKeyboard({ octave, onKeyPress }: {
 }
 
 export default function ModulePanel({
-  module, connectedPorts, pendingCable, onPortClick, onPortDoubleClick, onParamChange,
+  module, connectedPorts, pendingCable, onPortClick, onPortDoubleClick, onPortHold, onParamChange,
   onSelectorChange, onDragStart, onDelete, onRegisterPortRef, onKeyPress,
   analyser, midiMonitorData, isMidiTarget, moduleStepRef, getLevelFn, cvLevels, portLevels,
   onLoadSample, samplerBanksFilled,
@@ -560,6 +563,7 @@ export default function ModulePanel({
     canConnect: canConnectPort(port.id, port.type),
     onPortClick,
     onPortDoubleClick,
+    onPortHold,
     onRegisterRef: onRegisterPortRef,
     getLevelFn: port.type.endsWith('_in') ? portLevels?.get(port.id) : undefined,
   });

@@ -1489,34 +1489,62 @@ export default function SynthApp() {
       if (fromAudio && toAudio) connectAudioPorts(fromAudio, finalFromPortId, toAudio, finalToPortId);
     }
 
-    setCables(prev => [...prev, newCable]);
+    // Handle extra cables carried from a stacked-port shift
+    const extraCables: Cable[] = [];
+    for (const ex of pendingCable.extra ?? []) {
+      const exIsOut = ex.fromPortType.endsWith('_out');
+      const exFinalFromModuleId = exIsOut ? ex.fromModuleId : finalFromModuleId;
+      const exFinalFromPortId   = exIsOut ? ex.fromPortId   : finalFromPortId;
+      const exFinalToModuleId   = exIsOut ? finalToModuleId : ex.fromModuleId;
+      const exFinalToPortId     = exIsOut ? finalToPortId   : ex.fromPortId;
+      // Skip if it would be an exact duplicate of main cable
+      if (exFinalFromModuleId === finalFromModuleId && exFinalFromPortId === finalFromPortId &&
+          exFinalToModuleId   === finalToModuleId   && exFinalToPortId   === finalToPortId) continue;
+      const exCable: Cable = {
+        id: `cable_${Date.now()}_ex${extraCables.length}`,
+        fromModuleId: exFinalFromModuleId, fromPortId: exFinalFromPortId,
+        toModuleId:   exFinalToModuleId,   toPortId:   exFinalToPortId,
+        color: ex.color,
+      };
+      if (fromSig === 'gate') {
+        const gkEx = `${exFinalFromModuleId}:${exFinalFromPortId}`;
+        if (!gateConnRef.current.has(gkEx)) gateConnRef.current.set(gkEx, new Set());
+        gateConnRef.current.get(gkEx)!.add(exFinalToModuleId);
+        if (!portGateMapRef.current.has(gkEx)) portGateMapRef.current.set(gkEx, new Map());
+        portGateMapRef.current.get(gkEx)!.set(exFinalToModuleId, exFinalToPortId);
+      } else {
+        const fa = audioModulesRef.current.get(exFinalFromModuleId);
+        const ta = audioModulesRef.current.get(exFinalToModuleId);
+        if (fa && ta) connectAudioPorts(fa, exFinalFromPortId, ta, exFinalToPortId);
+      }
+      extraCables.push(exCable);
+    }
+
+    setCables(prev => [...prev, newCable, ...extraCables]);
     setPendingCable(null);
   }, [pendingCable, cables, modules]);
 
-  // ─── Double-click any port → cut all cables touching it ─────────────────────
+  // ─── Double-click occupied port → cut the LAST cable touching it ────────────
   const handlePortDoubleClick = useCallback((moduleId: string, portId: string) => {
-    pushUndo(cables, modules);
     setCables(prev => {
-      const toRemove = prev.filter(c =>
+      const touching = prev.filter(c =>
         (c.fromModuleId === moduleId && c.fromPortId === portId) ||
         (c.toModuleId   === moduleId && c.toPortId   === portId)
       );
-      toRemove.forEach(cable => {
-        const fromTypeDef = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
-        const fromPort    = fromTypeDef?.ports.find(p => p.id === cable.fromPortId);
-        if (fromPort?.type === 'gate_out') {
-          gateConnRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
-          portGateMapRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
-        } else {
-          const fromAudio = audioModulesRef.current.get(cable.fromModuleId);
-          const toAudio   = audioModulesRef.current.get(cable.toModuleId);
-          if (fromAudio && toAudio) disconnectAudioPorts(fromAudio, cable.fromPortId, toAudio, cable.toPortId);
-        }
-      });
-      return prev.filter(c =>
-        !(c.fromModuleId === moduleId && c.fromPortId === portId) &&
-        !(c.toModuleId   === moduleId && c.toPortId   === portId)
-      );
+      if (touching.length === 0) return prev;
+      pushUndo(prev, modules);
+      const cable = touching[touching.length - 1];
+      const fromTypeDef = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
+      const fromPort    = fromTypeDef?.ports.find(p => p.id === cable.fromPortId);
+      if (fromPort?.type === 'gate_out') {
+        gateConnRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
+        portGateMapRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
+      } else {
+        const fromAudio = audioModulesRef.current.get(cable.fromModuleId);
+        const toAudio   = audioModulesRef.current.get(cable.toModuleId);
+        if (fromAudio && toAudio) disconnectAudioPorts(fromAudio, cable.fromPortId, toAudio, cable.toPortId);
+      }
+      return prev.filter(c => c.id !== cable.id);
     });
     setPendingCable(null);
   }, [modules]);
@@ -1590,6 +1618,52 @@ export default function SynthApp() {
       fromPortType: (toPort?.type ?? 'audio_in') as import('../types').PortType,
       color: cable.color,
     });
+  }, [cables, modules]);
+
+  // ─── Hold on occupied port → lift cable(s) for re-patching ─────────────────
+  const handlePortHold = useCallback((moduleId: string, portId: string) => {
+    const touching = cables.filter(c =>
+      (c.fromModuleId === moduleId && c.fromPortId === portId) ||
+      (c.toModuleId   === moduleId && c.toPortId   === portId)
+    );
+    if (touching.length === 0) return;
+    pushUndo(cables, modules);
+
+    // Build the "fixed end" descriptor for each cable (opposite side from held port)
+    const fixedEnds = touching.map(cable => {
+      const isFromEnd = cable.fromModuleId === moduleId && cable.fromPortId === portId;
+      if (isFromEnd) {
+        // Held port is the output — fixed end is the input destination
+        const td = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.toModuleId)?.typeId ?? '');
+        const tp = td?.ports.find(p => p.id === cable.toPortId);
+        return { fromModuleId: cable.toModuleId, fromPortId: cable.toPortId,
+                 fromPortType: (tp?.type ?? 'audio_in') as import('../types').PortType, color: cable.color };
+      } else {
+        // Held port is the input — fixed end is the output source
+        const td = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
+        const fp = td?.ports.find(p => p.id === cable.fromPortId);
+        return { fromModuleId: cable.fromModuleId, fromPortId: cable.fromPortId,
+                 fromPortType: (fp?.type ?? 'audio_out') as import('../types').PortType, color: cable.color };
+      }
+    });
+
+    // Disconnect all touching cables
+    for (const cable of touching) {
+      const td = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
+      const fp = td?.ports.find(p => p.id === cable.fromPortId);
+      if (fp?.type === 'gate_out') {
+        gateConnRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
+        portGateMapRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
+      } else {
+        const fa = audioModulesRef.current.get(cable.fromModuleId);
+        const ta = audioModulesRef.current.get(cable.toModuleId);
+        if (fa && ta) disconnectAudioPorts(fa, cable.fromPortId, ta, cable.toPortId);
+      }
+    }
+    setCables(prev => prev.filter(c => !touching.find(t => t.id === c.id)));
+
+    const [first, ...rest] = fixedEnds;
+    setPendingCable({ ...first, extra: rest.length > 0 ? rest : undefined });
   }, [cables, modules]);
 
   // ─── Drag (snap on release) ─────────────────────────────────────────────────
@@ -1895,6 +1969,7 @@ export default function SynthApp() {
                 pendingCable={pendingCable}
                 onPortClick={handlePortClick}
                 onPortDoubleClick={handlePortDoubleClick}
+                onPortHold={handlePortHold}
                 onParamChange={handleParamChange}
                 onSelectorChange={handleSelectorChange}
                 midiMonitorData={mod.typeId === 'midi_monitor' ? midiMonData : undefined}

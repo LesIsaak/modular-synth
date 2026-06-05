@@ -9,6 +9,8 @@ interface PortJackProps {
   canConnect: boolean;
   onPortClick: (moduleId: string, portId: string, type: PortType) => void;
   onPortDoubleClick?: (moduleId: string, portId: string) => void;
+  /** Called after a 500 ms press on an occupied port — triggers cable shift */
+  onPortHold?: (moduleId: string, portId: string) => void;
   onRegisterRef: (key: string, el: HTMLDivElement | null) => void;
   /** For input ports: polls the incoming signal level (0–1) at ~60 fps */
   getInputLevel?: () => number;
@@ -37,11 +39,14 @@ export default function PortJack({
   canConnect,
   onPortClick,
   onPortDoubleClick,
+  onPortHold,
   onRegisterRef,
   getInputLevel,
 }: PortJackProps) {
-  const ref    = useRef<HTMLDivElement>(null);
-  const rafRef = useRef<number>(0);
+  const ref          = useRef<HTMLDivElement>(null);
+  const rafRef       = useRef<number>(0);
+  const holdTimerRef = useRef<number>(0);
+  const holdFiredRef = useRef<boolean>(false);
   const key = `${moduleId}-${portDef.id}`;
 
   useEffect(() => {
@@ -84,11 +89,29 @@ export default function PortJack({
         className="hover:scale-110 active:scale-95 transition-transform"
         style={{ position: 'relative', width: 26, height: 26, borderRadius: '50%' }}
       >
-        {/* Expanded transparent hit-area so the full socket face is clickable */}
+        {/* Expanded transparent hit-area */}
         <div
           style={{ position: 'absolute', inset: -9, cursor: 'pointer', zIndex: 1 }}
-          onClick={e => { e.stopPropagation(); onPortClick(moduleId, portDef.id, portDef.type); }}
-          onDoubleClick={e => { e.stopPropagation(); onPortDoubleClick?.(moduleId, portDef.id); }}
+          onPointerDown={e => {
+            e.stopPropagation();
+            holdFiredRef.current = false;
+            holdTimerRef.current = window.setTimeout(() => {
+              holdFiredRef.current = true;
+              onPortHold?.(moduleId, portDef.id);
+            }, 500);
+          }}
+          onPointerUp={() => window.clearTimeout(holdTimerRef.current)}
+          onPointerLeave={() => window.clearTimeout(holdTimerRef.current)}
+          onClick={e => {
+            e.stopPropagation();
+            if (holdFiredRef.current) { holdFiredRef.current = false; return; }
+            onPortClick(moduleId, portDef.id, portDef.type);
+          }}
+          onDoubleClick={e => {
+            e.stopPropagation();
+            window.clearTimeout(holdTimerRef.current);
+            onPortDoubleClick?.(moduleId, portDef.id);
+          }}
         />
         <svg width={26} height={26} viewBox="0 0 26 26" style={{ display: 'block' }}>
           <defs>

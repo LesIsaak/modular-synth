@@ -63,6 +63,8 @@ export interface PendingCable {
   fromPortId: string;
   fromPortType: PortType;
   color?: string;
+  /** Extra fixed ends carried when shifting a stacked port — all get wired to the same new destination */
+  extra?: Array<{ fromModuleId: string; fromPortId: string; fromPortType: PortType; color: string }>;
 }
 
 export interface MidiMonitorData {
