@@ -679,7 +679,6 @@ export default function ModulePanel({
         background: 'linear-gradient(180deg, #171717 0%, #1a1a1a 100%)',
         borderLeft: '1px solid #242424',
         borderRight: '1px solid #242424',
-        overflow: 'hidden',
       }}>
         {/* ── Drum machine: trigger input strip → voice panels → output strip ── */}
         {isDrum ? (
