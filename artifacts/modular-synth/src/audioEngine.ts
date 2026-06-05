@@ -3058,7 +3058,6 @@ export function createAudioModule(
       const trackPos = new Int32Array(NTRACKS);
       const stepRef  = { value: 0 };
       let running    = true;
-      let fillActive = false;
       let clkStep    = 0;
 
       const getMs      = () => Math.max(5, 15000 / Math.max(1, (p.bpm ?? 120) + bpmCv.read() * 120));
@@ -3115,20 +3114,15 @@ export function createAudioModule(
           const isAcc = (acc  & bit) !== 0;
           const isEOC = step === len - 1;
 
-          // End-of-cycle outputs
-          if (isEOC) {
-            fire(`t${tn}_eoc`, dur);
-            if (t === 0) fire('eoc_out', dur); // track 1 = master EOC
-          }
+          // Global EOC on track 1 wrap
+          if (isEOC && t === 0) fire('eoc_out', dur);
 
           // Velocity CV — non-zero only when step fires
           velNodes[t].offset.value = isOn ? vel * (isAcc ? 1.0 : 0.6) : 0;
 
-          // Gate + accent — gated by mute and probability
+          // Gate — gated by mute and probability
           if (!muted && isOn && Math.random() < prob) {
-            const freq = isAcc ? 880 : 440;
-            fire(`t${tn}_gate`, dur, freq);
-            if (isAcc || fillActive) fire(`t${tn}_acc`, dur, freq);
+            fire(`t${tn}_gate`, dur, isAcc ? 880 : 440);
           }
 
           // Advance track step (wraps at track length)
@@ -3184,8 +3178,6 @@ export function createAudioModule(
           }],
           // Toggle run/stop
           ['run_in',  () => { running = !running; }],
-          // Toggle fill (all accent outputs fire on active steps)
-          ['fill_in', () => { fillActive = !fillActive; }],
         ]),
         setPortGateTrigger: (portId, fn) => { gateCbs.set(portId, fn); },
         setParam: (id, val) => {
