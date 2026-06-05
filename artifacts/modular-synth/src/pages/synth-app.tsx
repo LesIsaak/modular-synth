@@ -191,7 +191,7 @@ function ModuleBrowser({ onAdd }: { onAdd: (typeId: string) => void }) {
 
 // ─── Patch cables SVG ─────────────────────────────────────────────────────────
 function PatchCables({
-  cables, modules, pendingCable, mousePos, getPortCenter, onRemoveCable, onGrabCableEnd, cableOpacity,
+  cables, modules, pendingCable, mousePos, getPortCenter, onRemoveCable, onGrabCableEnd, onGrabCableFromEnd, cableOpacity,
 }: {
   cables: Cable[];
   modules: ModuleInstance[];
@@ -200,6 +200,7 @@ function PatchCables({
   getPortCenter: (modId: string, portId: string) => { x: number; y: number } | null;
   onRemoveCable: (id: string) => void;
   onGrabCableEnd: (cableId: string) => void;
+  onGrabCableFromEnd: (cableId: string) => void;
   cableOpacity: number;
 }) {
   const makePath = (x1: number, y1: number, x2: number, y2: number) => {
@@ -243,8 +244,9 @@ function PatchCables({
               <path d={d} fill="none" stroke="white" strokeWidth={1.2} strokeLinecap="round" opacity={0.12} />
             </g>
 
-            {/* 3.5mm plug at FROM end — visual only, click falls through to port jack */}
-            <g style={{ pointerEvents: 'none' }}>
+            {/* 3.5mm plug at FROM end — grab to re-patch from the input side */}
+            <g style={{ pointerEvents: 'auto', cursor: 'grab' }}
+              onMouseDown={e => { e.preventDefault(); e.stopPropagation(); onGrabCableFromEnd(c.id); }}>
               <circle cx={from.x} cy={from.y} r={16} fill="transparent" />
               <circle cx={from.x} cy={from.y} r={13} fill="black" opacity={0.4} />
               <circle cx={from.x} cy={from.y} r={12} fill="#383838" stroke="#555" strokeWidth={0.6} />
@@ -1393,35 +1395,49 @@ export default function SynthApp() {
   // ─── Port click — cable patching ────────────────────────────────────────────
   const handlePortClick = useCallback((moduleId: string, portId: string, portType: PortType) => {
     if (!pendingCable) {
-      if (portType.endsWith('_out')) {
-        setPendingCable({ fromModuleId: moduleId, fromPortId: portId, fromPortType: portType });
-      }
+      // Start a cable from any port — output OR input
+      setPendingCable({ fromModuleId: moduleId, fromPortId: portId, fromPortType: portType });
       return;
     }
 
     const { fromModuleId, fromPortId, fromPortType } = pendingCable;
     if (fromModuleId === moduleId && fromPortId === portId) { setPendingCable(null); return; }
-    if (!portType.endsWith('_in')) { setPendingCable(null); return; }
 
-    const fromSig = fromPortType.replace('_out', '');
-    const toSig   = portType.replace('_in', '');
+    const pendingIsOut = fromPortType.endsWith('_out');
+    const clickedIsOut = portType.endsWith('_out');
+    const clickedIsIn  = portType.endsWith('_in');
+
+    // Both same direction → incompatible
+    if (pendingIsOut && clickedIsOut) { setPendingCable(null); return; }
+    if (!pendingIsOut && clickedIsIn)  { setPendingCable(null); return; }
+
+    // Normalize so finalFrom = output end, finalTo = input end (regardless of click order)
+    const finalFromModuleId = pendingIsOut ? fromModuleId : moduleId;
+    const finalFromPortId   = pendingIsOut ? fromPortId   : portId;
+    const finalFromPortType = (pendingIsOut ? fromPortType : portType) as PortType;
+    const finalToModuleId   = pendingIsOut ? moduleId     : fromModuleId;
+    const finalToPortId     = pendingIsOut ? portId       : fromPortId;
+    const finalToPortType   = (pendingIsOut ? portType    : fromPortType) as PortType;
+
+    const fromSig = finalFromPortType.replace('_out', '');
+    const toSig   = finalToPortType.replace('_in', '');
     if ((fromSig === 'gate') !== (toSig === 'gate')) { setPendingCable(null); return; }
 
     const exists = cables.find(c =>
-      c.fromModuleId === fromModuleId && c.fromPortId === fromPortId &&
-      c.toModuleId   === moduleId     && c.toPortId   === portId
+      c.fromModuleId === finalFromModuleId && c.fromPortId === finalFromPortId &&
+      c.toModuleId   === finalToModuleId   && c.toPortId   === finalToPortId
     );
     if (exists) {
-      // Second click on the other end of an existing cable → cut it
-      const fromTypeDef = MODULE_TYPE_MAP.get(modules.find(m => m.id === fromModuleId)?.typeId ?? '');
-      const fromPort    = fromTypeDef?.ports.find(p => p.id === fromPortId);
+      // Click the other end of an existing cable → cut it
+      const fromTypeDef = MODULE_TYPE_MAP.get(modules.find(m => m.id === finalFromModuleId)?.typeId ?? '');
+      const fromPort    = fromTypeDef?.ports.find(p => p.id === finalFromPortId);
       if (fromPort?.type === 'gate_out') {
-        gateConnRef.current.get(`${fromModuleId}:${fromPortId}`)?.delete(moduleId);
-        portGateMapRef.current.get(`${fromModuleId}:${fromPortId}`)?.delete(moduleId);
+        gateConnRef.current.get(`${finalFromModuleId}:${finalFromPortId}`)?.delete(finalToModuleId);
+        portGateMapRef.current.get(`${finalFromModuleId}:${finalFromPortId}`)?.delete(finalToModuleId);
       } else {
-        const fromAudio = audioModulesRef.current.get(fromModuleId);
-        const toAudio   = audioModulesRef.current.get(moduleId);
-        if (fromAudio && toAudio) disconnectAudioPorts(fromAudio, fromPortId, toAudio, portId);
+        const fromAudio = audioModulesRef.current.get(finalFromModuleId);
+        const toAudio   = audioModulesRef.current.get(finalToModuleId);
+        if (fromAudio && toAudio) disconnectAudioPorts(fromAudio, finalFromPortId, toAudio, finalToPortId);
       }
       setCables(prev => prev.filter(c => c.id !== exists.id));
       setPendingCable(null);
@@ -1429,20 +1445,21 @@ export default function SynthApp() {
     }
 
     pushUndo(cables, modules);
-    const color    = CABLE_COLORS[cables.length % CABLE_COLORS.length];
+    const color = pendingCable.color ?? CABLE_COLORS[cables.length % CABLE_COLORS.length];
     const newCable: Cable = {
-      id: `cable_${Date.now()}`, fromModuleId, fromPortId, toModuleId: moduleId, toPortId: portId, color,
+      id: `cable_${Date.now()}`,
+      fromModuleId: finalFromModuleId, fromPortId: finalFromPortId,
+      toModuleId:   finalToModuleId,   toPortId:   finalToPortId,
+      color,
     };
 
     if (fromSig === 'gate') {
-      const gk = `${fromModuleId}:${fromPortId}`;
+      const gk = `${finalFromModuleId}:${finalFromPortId}`;
       if (!gateConnRef.current.has(gk)) gateConnRef.current.set(gk, new Set());
-      gateConnRef.current.get(gk)!.add(moduleId);
-      // Track which port on the destination is connected (for per-port drum dispatch)
+      gateConnRef.current.get(gk)!.add(finalToModuleId);
       if (!portGateMapRef.current.has(gk)) portGateMapRef.current.set(gk, new Map());
-      portGateMapRef.current.get(gk)!.set(moduleId, portId);
-      // For self-clocking modules register a per-port trigger callback
-      const fromAudio = audioModulesRef.current.get(fromModuleId);
+      portGateMapRef.current.get(gk)!.set(finalToModuleId, finalToPortId);
+      const fromAudio = audioModulesRef.current.get(finalFromModuleId);
       const makeGateCb = (key: string) => (on: boolean, freq: number) => {
         const ctx = audioCtxRef.current;
         if (!ctx) return;
@@ -1462,14 +1479,14 @@ export default function SynthApp() {
         }
       };
       if (fromAudio?.setPortGateTrigger) {
-        fromAudio.setPortGateTrigger(fromPortId, makeGateCb(gk));
+        fromAudio.setPortGateTrigger(finalFromPortId, makeGateCb(gk));
       } else if (fromAudio?.setGateTrigger) {
         fromAudio.setGateTrigger(makeGateCb(gk));
       }
     } else {
-      const fromAudio = audioModulesRef.current.get(fromModuleId);
-      const toAudio   = audioModulesRef.current.get(moduleId);
-      if (fromAudio && toAudio) connectAudioPorts(fromAudio, fromPortId, toAudio, portId);
+      const fromAudio = audioModulesRef.current.get(finalFromModuleId);
+      const toAudio   = audioModulesRef.current.get(finalToModuleId);
+      if (fromAudio && toAudio) connectAudioPorts(fromAudio, finalFromPortId, toAudio, finalToPortId);
     }
 
     setCables(prev => [...prev, newCable]);
@@ -1544,6 +1561,33 @@ export default function SynthApp() {
       fromModuleId: cable.fromModuleId,
       fromPortId:   cable.fromPortId,
       fromPortType: (fromPort?.type ?? 'audio_out') as import('../types').PortType,
+      color: cable.color,
+    });
+  }, [cables, modules]);
+
+  // ─── Grab FROM (output) end → disconnect + become pending from input ──────────
+  const handleGrabCableFromEnd = useCallback((cableId: string) => {
+    const cable = cables.find(c => c.id === cableId);
+    if (!cable) return;
+    pushUndo(cables, modules);
+    const fromTypeDef = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
+    const fromPort    = fromTypeDef?.ports.find(p => p.id === cable.fromPortId);
+    const toTypeDef   = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.toModuleId)?.typeId ?? '');
+    const toPort      = toTypeDef?.ports.find(p => p.id === cable.toPortId);
+    if (fromPort?.type === 'gate_out') {
+      gateConnRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
+      portGateMapRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
+    } else {
+      const fromAudio = audioModulesRef.current.get(cable.fromModuleId);
+      const toAudio   = audioModulesRef.current.get(cable.toModuleId);
+      if (fromAudio && toAudio) disconnectAudioPorts(fromAudio, cable.fromPortId, toAudio, cable.toPortId);
+    }
+    setCables(prev => prev.filter(c => c.id !== cableId));
+    // Pending starts from the TO (input) end — user picks a new output to connect it to
+    setPendingCable({
+      fromModuleId: cable.toModuleId,
+      fromPortId:   cable.toPortId,
+      fromPortType: (toPort?.type ?? 'audio_in') as import('../types').PortType,
       color: cable.color,
     });
   }, [cables, modules]);
@@ -1813,6 +1857,7 @@ export default function SynthApp() {
             getPortCenter={getPortCenter}
             onRemoveCable={handleRemoveCable}
             onGrabCableEnd={handleGrabCableEnd}
+            onGrabCableFromEnd={handleGrabCableFromEnd}
             cableOpacity={cableOpacity}
           />
 

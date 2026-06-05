@@ -523,14 +523,26 @@ export default function ModulePanel({
   const canConnectPort = (portId: string, portType: PortType): boolean => {
     if (!pendingCable) return false;
     if (pendingCable.fromModuleId === module.id && pendingCable.fromPortId === portId) return false;
-    const fromIsOut = pendingCable.fromPortType.endsWith('_out');
-    const toIsIn = portType.endsWith('_in');
-    if (!fromIsOut || !toIsIn) return false;
-    const fromSignal = pendingCable.fromPortType.replace('_out', '');
-    const toSignal = portType.replace('_in', '');
-    if (fromSignal === 'gate' && toSignal !== 'gate') return false;
-    if (toSignal === 'gate' && fromSignal !== 'gate') return false;
-    return true;
+    const pendingIsOut = pendingCable.fromPortType.endsWith('_out');
+    const thisIsOut    = portType.endsWith('_out');
+    const thisIsIn     = portType.endsWith('_in');
+    // Standard: pending from output → highlight compatible inputs
+    if (pendingIsOut && thisIsIn) {
+      const fromSignal = pendingCable.fromPortType.replace('_out', '');
+      const toSignal   = portType.replace('_in', '');
+      if (fromSignal === 'gate' && toSignal !== 'gate') return false;
+      if (toSignal   === 'gate' && fromSignal !== 'gate') return false;
+      return true;
+    }
+    // Reversed: pending from input → highlight compatible outputs
+    if (!pendingIsOut && thisIsOut) {
+      const pendingSignal = pendingCable.fromPortType.replace('_in', '');
+      const thisSignal    = portType.replace('_out', '');
+      if (pendingSignal === 'gate' && thisSignal !== 'gate') return false;
+      if (thisSignal    === 'gate' && pendingSignal !== 'gate') return false;
+      return true;
+    }
+    return false;
   };
 
   const inPorts = typeDef.ports.filter(p => p.type.endsWith('_in'));
