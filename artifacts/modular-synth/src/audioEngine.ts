@@ -1301,6 +1301,19 @@ export function createAudioModule(
 
     case 'seq_cv': {
       const cvNode = ctx.createConstantSource(); cvNode.offset.value = 0; cvNode.start();
+
+      // depth GainNode scales the output by the DEPTH knob (0–1)
+      const depthGain = ctx.createGain(); depthGain.gain.value = p.depth ?? 1;
+      cvNode.connect(depthGain);
+
+      // depth_cv tap: AnalyserNode so the UI indicator can read the incoming signal
+      const depthMix = ctx.createGain(); depthMix.gain.value = 1;
+      const depthTap = ctx.createAnalyser(); depthTap.fftSize = 32;
+      depthMix.connect(depthTap);
+      depthMix.connect(depthGain.gain);  // additive CV on top of the knob value
+      const depthBuf = new Float32Array(1);
+      const readDepth = () => { depthTap.getFloatTimeDomainData(depthBuf); return depthBuf[0]; };
+
       let step = 0;
       const stepRef = { value: 0 };
       let lastExtClkMs = -Infinity;
@@ -1315,15 +1328,33 @@ export function createAudioModule(
         doStep();
       });
       return {
-        outputs: new Map([['cv_out', cvNode]]),
-        inputs: new Map(),
+        outputs: new Map([['cv_out', depthGain]]),
+        inputs: new Map([
+          ['depth_cv', { node: depthMix as AudioNode }],
+        ]),
         stepRef,
         portNoteOn: new Map([
           ['clock_in',  () => { lastExtClkMs = performance.now(); queueMicrotask(() => doStep()); }],
           ['reset_in',  () => { step = 0; stepRef.value = 0; cvNode.offset.value = (p['v1'] ?? 0) * 500; }],
         ]),
-        setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
-        destroy: () => { timer.destroy(); try { cvNode.stop(); } catch(_){} cvNode.disconnect(); },
+        // getLevel: current step value as 0–1, so downstream knob indicators light up
+        getLevel: () => Math.max(0, Math.min(1, cvNode.offset.value / 500)),
+        getPortLevel: (portId: string) => {
+          if (portId === 'depth_cv') return Math.max(0, Math.min(1, (readDepth() + 1) / 2));
+          return 0;
+        },
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'bpm')   timer.updateInterval();
+          if (id === 'depth') depthGain.gain.value = val;
+        },
+        destroy: () => {
+          timer.destroy();
+          try { cvNode.stop(); } catch(_){} cvNode.disconnect();
+          depthGain.disconnect();
+          depthMix.disconnect();
+          depthTap.disconnect();
+        },
       };
     }
 

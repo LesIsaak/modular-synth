@@ -520,6 +520,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
     knobs: [
       { id: 'bpm',   name: 'BPM',   min: 20, max: 300, default: 120, step: 1 },
       { id: 'steps', name: 'STEPS', min: 1,  max: 8,   default: 8,   step: 1 },
+      { id: 'depth', name: 'DEPTH', min: 0,  max: 1,   default: 1                },
       { id: 'v1',  name: 'V1',  min: 0, max: 1, default: 0.0  },
       { id: 'v2',  name: 'V2',  min: 0, max: 1, default: 0.25 },
       { id: 'v3',  name: 'V3',  min: 0, max: 1, default: 0.5  },
@@ -531,7 +532,8 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
     ],
     ports: [
       clockIn, resetIn,
-      { id: 'cv_out', name: 'CV', type: 'cv_out' },
+      { id: 'depth_cv', name: 'DEPTH', type: 'cv_in'  },
+      { id: 'cv_out',   name: 'CV',    type: 'cv_out' },
     ],
   },
   {
