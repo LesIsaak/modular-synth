@@ -1295,7 +1295,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
 
   // ─── Drum Machine (Erica Synths Techno System inspired) ──────────────────────
   {
-    id: 'drum_machine', name: 'TECHNO DRUM', category: 'sequencer', accentColor: DRM,
+    id: 'drum_machine', name: 'TECHNO DRUM', category: 'percussion', accentColor: DRM,
     width: 960,
     knobs: [
       // ── BASS DRUM ──
