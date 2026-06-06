@@ -1235,10 +1235,12 @@ export function createAudioModule(
       const freqNode = ctx.createConstantSource();
       freqNode.offset.value = 0; freqNode.start();
       let step = 0;
+      const stepRef = { value: 0 };
       let gateCb: ((on: boolean, freq: number) => void) | null = null;
       const getMs = () => 60000 / (p.bpm ?? 120);
       let timer = makeClockTimer(getMs, (i) => {
         step = i % 8;
+        stepRef.value = step;
         const midi = Math.round(p[`s${step + 1}`] ?? (60 + step));
         const freq = midiToHz(midi);
         freqNode.offset.value = freq;
@@ -1248,6 +1250,7 @@ export function createAudioModule(
       return {
         outputs: new Map([['voct_out', freqNode]]),
         inputs: new Map(),
+        stepRef,
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
         destroy: () => { timer.destroy(); gateCb = null; try { freqNode.stop(); } catch(_){} freqNode.disconnect(); },
@@ -1256,10 +1259,12 @@ export function createAudioModule(
 
     case 'seq_trigger': {
       let step = 0;
+      const stepRef = { value: 0 };
       let gateCb: ((on: boolean, freq: number) => void) | null = null;
       const getMs = () => 60000 / (p.bpm ?? 120);
       let timer = makeClockTimer(getMs, (i) => {
         step = i % 8;
+        stepRef.value = step;
         const active = (p[`t${step + 1}`] ?? 0) > 0.5;
         if (active) {
           gateCb?.(true, 440);
@@ -1269,6 +1274,7 @@ export function createAudioModule(
       return {
         outputs: new Map(),
         inputs: new Map(),
+        stepRef,
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
         destroy: () => { timer.destroy(); gateCb = null; },
@@ -1278,14 +1284,17 @@ export function createAudioModule(
     case 'seq_cv': {
       const cvNode = ctx.createConstantSource(); cvNode.offset.value = 0; cvNode.start();
       let step = 0;
+      const stepRef = { value: 0 };
       const getMs = () => 60000 / (p.bpm ?? 120);
       let timer = makeClockTimer(getMs, (i) => {
         step = i % 8;
+        stepRef.value = step;
         cvNode.offset.value = (p[`v${step + 1}`] ?? 0) * 500;
       });
       return {
         outputs: new Map([['cv_out', cvNode]]),
         inputs: new Map(),
+        stepRef,
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         destroy: () => { timer.destroy(); try { cvNode.stop(); } catch(_){} cvNode.disconnect(); },
       };
@@ -1293,10 +1302,12 @@ export function createAudioModule(
 
     case 'seq_gate': {
       let step = 0;
+      const stepRef = { value: 0 };
       let gateCb: ((on: boolean, freq: number) => void) | null = null;
       const getMs = () => 60000 / (p.bpm ?? 120);
       let timer = makeClockTimer(getMs, (i) => {
         step = i % 8;
+        stepRef.value = step;
         const active = (p[`g${step + 1}`] ?? 0) > 0.5;
         if (active) {
           const len = getMs() * (p.gate_len ?? 0.5);
@@ -1307,6 +1318,7 @@ export function createAudioModule(
       return {
         outputs: new Map(),
         inputs: new Map(),
+        stepRef,
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
         destroy: () => { timer.destroy(); gateCb = null; },

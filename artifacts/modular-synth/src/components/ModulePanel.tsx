@@ -534,7 +534,8 @@ export default function ModulePanel({
   const [showInfo,   setShowInfo]   = useState(false);
   const [infoAnchor, setInfoAnchor] = useState({ x: 0, y: 0 });
   const [noteOpen,   setNoteOpen]   = useState(true);
-  const [eucStep, setEucStep] = useState(0);
+  const [eucStep,  setEucStep]  = useState(0);
+  const [seqStep,  setSeqStep]  = useState(-1);
   const [audioTrigLabel, setAudioTrigLabel] = useState('—');
   const [audioTrigDevices, setAudioTrigDevices] = useState<{ deviceId: string; label: string }[]>([]);
   const [audioTrigSelectedId, setAudioTrigSelectedId] = useState('');
@@ -559,13 +560,21 @@ export default function ModulePanel({
     return () => clearInterval(id);
   }, [module.typeId, moduleStepRef]);
 
+  const isSeqModule = ['seq_step', 'seq_trigger', 'seq_cv', 'seq_gate'].includes(module.typeId);
+
+  useEffect(() => {
+    if (!isSeqModule || !moduleStepRef) return;
+    const id = setInterval(() => setSeqStep(moduleStepRef.value), 33);
+    return () => clearInterval(id);
+  }, [isSeqModule, moduleStepRef]);
+
   if (!typeDef) return null;
 
-  const isOutput   = module.typeId === 'output';
-  const isDrum     = module.typeId === 'drum_machine';
-  const isEuc      = module.typeId === 'euclidean_trig';
-  const isPolyStep = module.typeId === 'poly_step';
-  const isSampler  = module.typeId === 'sampler';
+  const isOutput    = module.typeId === 'output';
+  const isDrum      = module.typeId === 'drum_machine';
+  const isEuc       = module.typeId === 'euclidean_trig';
+  const isPolyStep  = module.typeId === 'poly_step';
+  const isSampler   = module.typeId === 'sampler';
   const panelH   = isPolyStep && !noteOpen ? PANEL_H : (typeDef.height ?? PANEL_H);
   const bodyH    = panelH - RAIL_H * 2;
 
@@ -973,6 +982,45 @@ export default function ModulePanel({
               /* ── Standard controls ── */
               <div style={{ flex: 1, padding: '6px 5px', display: 'flex', flexDirection: 'column', gap: 6, overflow: 'hidden' }}>
                 {typeDef.knobs.filter(k => !/^ch\d+_/.test(k.id)).length > 0 && (
+                  isSeqModule ? (() => {
+                    const stepKnobs = typeDef.knobs.filter(k => /^[stgv]\d+$/.test(k.id));
+                    const ctrlKnobs = typeDef.knobs.filter(k => !/^[stgv]\d+$/.test(k.id));
+                    return (
+                      <>
+                        {ctrlKnobs.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 4px', justifyContent: 'center' }}>
+                            {ctrlKnobs.map(knob => (
+                              <Knob key={knob.id} def={knob}
+                                value={module.params[knob.id] ?? knob.default}
+                                onChange={val => onParamChange(module.id, knob.id, val)}
+                                size="sm" cvGetLevel={cvLevels?.get(knob.id)} />
+                            ))}
+                          </div>
+                        )}
+                        {stepKnobs.length > 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'center', gap: 2 }}>
+                            {stepKnobs.map((knob, idx) => {
+                              const isLive = idx === seqStep;
+                              return (
+                                <div key={knob.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                                  <Knob def={knob}
+                                    value={module.params[knob.id] ?? knob.default}
+                                    onChange={val => onParamChange(module.id, knob.id, val)}
+                                    size="sm" cvGetLevel={cvLevels?.get(knob.id)} />
+                                  <div style={{
+                                    width: 5, height: 5, borderRadius: '50%',
+                                    background: isLive ? '#e2e2e2' : '#222',
+                                    boxShadow: isLive ? '0 0 6px #fff, 0 0 10px #aaa' : 'none',
+                                    transition: 'background 0.04s, box-shadow 0.04s',
+                                  }} />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })() : (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 4px', justifyContent: 'center' }}>
                     {typeDef.knobs.filter(k => !/^ch\d+_/.test(k.id)).map(knob => (
                       <Knob
@@ -985,6 +1033,7 @@ export default function ModulePanel({
                       />
                     ))}
                   </div>
+                  )
                 )}
 
                 {(typeDef.selectors ?? []).map(sel => {
