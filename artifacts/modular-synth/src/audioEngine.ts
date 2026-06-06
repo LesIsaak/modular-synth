@@ -3294,9 +3294,14 @@ export function createAudioModule(
             const now = performance.now();
             if (lastExtClkMs > -Infinity) extClkIntervalMs = now - lastExtClkMs;
             lastExtClkMs = now;
+            // Each incoming pulse = 1 quarter note = 4 16th-note steps
+            const ms    = getMs();
             const swing = getSwing();
-            if (swing > 0.005 && clkStep % 2 === 1) setTimeout(doTick, getMs() * swing);
-            else doTick();
+            for (let s = 0; s < 4; s++) {
+              const delay = s * ms + (swing > 0.005 && (clkStep + s) % 2 === 1 ? ms * swing : 0);
+              if (delay === 0) doTick();
+              else setTimeout(doTick, delay);
+            }
           }],
           // Reset all tracks to step 0
           ['rst_in',  () => {
