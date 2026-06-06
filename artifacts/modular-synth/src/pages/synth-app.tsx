@@ -1645,16 +1645,11 @@ export default function SynthApp() {
   }, []);
 
   // ─── Param / selector change ────────────────────────────────────────────────
-  const [, startTransition] = useTransition();
   const handleParamChange = useCallback((moduleId: string, paramId: string, value: number) => {
-    // Audio update is immediate (no state, no re-render)
     audioModulesRef.current.get(moduleId)?.setParam(paramId, value);
     if (paramId === 'glide') glideRef.current = value;
-    // State update is deferred — React can skip intermediate renders during rapid drag
-    startTransition(() => {
-      setModules(prev => prev.map(m => m.id === moduleId ? { ...m, params: { ...m.params, [paramId]: value } } : m));
-    });
-  }, [startTransition]);
+    setModules(prev => prev.map(m => m.id === moduleId ? { ...m, params: { ...m.params, [paramId]: value } } : m));
+  }, []);
 
   const handleSelectorChange = useCallback((moduleId: string, selId: string, value: number) => {
     setModules(prev => prev.map(m => m.id === moduleId ? { ...m, params: { ...m.params, [selId]: value } } : m));
