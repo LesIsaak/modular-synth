@@ -285,20 +285,22 @@ export function createAudioModule(
       const waveMap: OscillatorType[] = ['square', 'sawtooth', 'triangle', 'sine'];
       osc.type = waveMap[Math.round(p.wave ?? 0)] ?? 'square';
       osc.frequency.value = p.freq ?? 220;
-      const octShift = ctx.createGain();
-      octShift.gain.value = 0;
       const voct = ctx.createConstantSource();
       voct.offset.value = 0;
       voct.connect(osc.frequency);
       voct.start(); osc.start();
-      octShift.disconnect();
+      let lastNoteFreq = p.freq ?? 220;
       return {
         outputs: new Map([['out', osc]]),
         inputs: new Map([['voct', { node: voct, param: voct.offset }]]),
-        noteOn: (_t, freq) => { voct.offset.value = freq * Math.pow(2, Math.round(p.octave ?? 0)); },
+        noteOn: (_t, freq) => {
+          lastNoteFreq = freq;
+          voct.offset.value = freq * Math.pow(2, Math.round(p.octave ?? 0));
+        },
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'freq') osc.frequency.value = val;
+          if (id === 'freq') { osc.frequency.value = val; lastNoteFreq = val; }
+          if (id === 'octave') voct.offset.value = lastNoteFreq * Math.pow(2, Math.round(val));
         },
         setSelector: (id, val) => {
           if (id === 'wave') osc.type = waveMap[Math.round(val)] ?? 'square';
@@ -396,15 +398,19 @@ export function createAudioModule(
       const voct = ctx.createConstantSource();
       voct.offset.value = 0;
       voct.start();
+      const setHarmonicFreq = (freq: number) => {
+        for (let h = 0; h < oscs.length; h++) oscs[h].frequency.value = freq * (h + 1);
+      };
       return {
         outputs: new Map([['out', merge]]),
         inputs: new Map([['voct', { node: voct, param: voct.offset }]]),
-        noteOn: (_t, freq) => {
-          for (let h = 0; h < oscs.length; h++) oscs[h].frequency.value = freq * (h + 1);
-        },
+        noteOn: (_t, freq) => setHarmonicFreq(freq),
+        portNoteOn: new Map([
+          ['gate_in', (_t: number, freq?: number) => { if (freq) setHarmonicFreq(freq); }],
+        ]),
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'freq') for (let h = 0; h < oscs.length; h++) oscs[h].frequency.value = val * (h + 1);
+          if (id === 'freq') setHarmonicFreq(val);
           if (id.startsWith('h')) gains[parseInt(id[1]) - 1].gain.value = val;
         },
         destroy: () => {
@@ -459,6 +465,9 @@ export function createAudioModule(
         outputs: new Map([['out', merge]]),
         inputs: new Map(),
         noteOn: (_t, freq) => applyChord(freq),
+        portNoteOn: new Map([
+          ['gate_in', (_t: number, freq?: number) => applyChord(freq ?? lastFreq)],
+        ]),
         setParam: (id, val) => { p[id] = val; if (id === 'freq' || id === 'spread') applyChord(lastFreq); },
         setSelector: (id, val) => { p[id] = val; applyChord(lastFreq); },
         destroy: () => {
@@ -954,24 +963,26 @@ export function createAudioModule(
       const eoc = ctx.createConstantSource(); eoc.offset.value = 0; eoc.start();
       let gateOpen = false;
       let noteOnTime = 0;
+      const doAttack = (time: number) => {
+        gateOpen = true; noteOnTime = time;
+        const a = p.attack ?? 0.01, d = p.decay ?? 0.1, s = p.sustain ?? 0.7;
+        const DC = 0.003;
+        cancelAndHold(cv.offset, time);
+        cv.offset.linearRampToValueAtTime(0, time + DC);
+        cv.offset.linearRampToValueAtTime(1, time + DC + a);
+        cv.offset.linearRampToValueAtTime(s, time + DC + a + d);
+        eoc.offset.setValueAtTime(1, time + DC + a + d); eoc.offset.setValueAtTime(0, time + DC + a + d + 0.01);
+      };
       return {
         outputs: new Map([['env_out', cv], ['eoc_out', eoc]]),
         inputs: new Map([
           ['gate_in', { node: cv }],
-          ['retrig_in', { node: cv }],
         ]),
-        noteOn: (time, _freq) => {
-          try {
-            gateOpen = true; noteOnTime = time;
-            const a = p.attack ?? 0.01, d = p.decay ?? 0.1, s = p.sustain ?? 0.7;
-            const DC = 0.003;
-            cancelAndHold(cv.offset, time);
-            cv.offset.linearRampToValueAtTime(0, time + DC);
-            cv.offset.linearRampToValueAtTime(1, time + DC + a);
-            cv.offset.linearRampToValueAtTime(s, time + DC + a + d);
-            eoc.offset.setValueAtTime(1, time + DC + a + d); eoc.offset.setValueAtTime(0, time + DC + a + d + 0.01);
-          } catch (_) {}
-        },
+        portNoteOn: new Map([
+          // retrig_in: restart attack from current level without waiting for gate-off
+          ['retrig_in', (time: number) => { try { doAttack(time); } catch (_) {} }],
+        ]),
+        noteOn: (time, _freq) => { try { doAttack(time); } catch (_) {} },
         noteOff: (time) => {
           try {
             gateOpen = false;
@@ -1011,25 +1022,26 @@ export function createAudioModule(
       const eoc = ctx.createConstantSource(); eoc.offset.value = 0; eoc.start();
       let gateOpen = false;
       let noteOnTime = 0;
+      const doAttackAhdsr = (time: number) => {
+        gateOpen = true; noteOnTime = time;
+        const a = p.attack ?? 0.01, h = p.hold ?? 0.05, d = p.decay ?? 0.15, s = p.sustain ?? 0.6;
+        const DC = 0.003;
+        cancelAndHold(cv.offset, time);
+        cv.offset.linearRampToValueAtTime(0, time + DC);
+        cv.offset.linearRampToValueAtTime(1, time + DC + a);
+        cv.offset.setValueAtTime(1, time + DC + a + h);
+        cv.offset.linearRampToValueAtTime(s, time + DC + a + h + d);
+        eoc.offset.setValueAtTime(1, time + DC + a + h + d); eoc.offset.setValueAtTime(0, time + DC + a + h + d + 0.01);
+      };
       return {
         outputs: new Map([['env_out', cv], ['eoc_out', eoc]]),
         inputs: new Map([
           ['gate_in', { node: cv }],
-          ['retrig_in', { node: cv }],
         ]),
-        noteOn: (time, _freq) => {
-          try {
-            gateOpen = true; noteOnTime = time;
-            const a = p.attack ?? 0.01, h = p.hold ?? 0.05, d = p.decay ?? 0.15, s = p.sustain ?? 0.6;
-            const DC = 0.003;
-            cancelAndHold(cv.offset, time);
-            cv.offset.linearRampToValueAtTime(0, time + DC);
-            cv.offset.linearRampToValueAtTime(1, time + DC + a);
-            cv.offset.setValueAtTime(1, time + DC + a + h);
-            cv.offset.linearRampToValueAtTime(s, time + DC + a + h + d);
-            eoc.offset.setValueAtTime(1, time + DC + a + h + d); eoc.offset.setValueAtTime(0, time + DC + a + h + d + 0.01);
-          } catch (_) {}
-        },
+        portNoteOn: new Map([
+          ['retrig_in', (time: number) => { try { doAttackAhdsr(time); } catch (_) {} }],
+        ]),
+        noteOn: (time, _freq) => { try { doAttackAhdsr(time); } catch (_) {} },
         noteOff: (time) => {
           try {
             gateOpen = false;
