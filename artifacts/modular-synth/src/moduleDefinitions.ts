@@ -53,6 +53,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
     selectors: [{ id: 'wave', name: 'WAVE', options: ['SAW', 'SQR', 'TRI', 'SIN'], default: 0 }],
     ports: [
       { id: 'voct',    name: 'V/OCT', type: 'cv_in'    },
+      { id: 'gate_in', name: 'GATE',  type: 'gate_in'  },
       { id: 'pw_cv',   name: 'PW',    type: 'cv_in'    },
       { id: 'sync_in', name: 'SYNC',  type: 'cv_in'    },
       audioOut,

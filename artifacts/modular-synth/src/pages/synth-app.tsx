@@ -1304,11 +1304,14 @@ export default function SynthApp() {
       for (const id of gateConnRef.current.get(key) ?? []) {
         const m = audioModulesRef.current.get(id);
         if (!m) continue;
-        const toPortId    = portGateMapRef.current.get(key)?.get(id);
-        const portHandler = toPortId ? m.portNoteOn?.get(toPortId) : undefined;
+        const toPortId      = portGateMapRef.current.get(key)?.get(id);
+        const portOnHandler  = toPortId ? m.portNoteOn?.get(toPortId)  : undefined;
+        const portOffHandler = toPortId ? m.portNoteOff?.get(toPortId) : undefined;
         try {
-          if (portHandler) {
-            if (on) portHandler(getCurrentTickAudioTime() || ctx.currentTime, freq);
+          if (portOnHandler || portOffHandler) {
+            const t = getCurrentTickAudioTime() || ctx.currentTime;
+            if (on)  portOnHandler?.(t, freq);
+            else     portOffHandler?.(t);
           } else {
             if (on) m.noteOn?.(getCurrentTickAudioTime() || ctx.currentTime, freq);
             else    m.noteOff?.(getCurrentTickAudioTime() || ctx.currentTime);
