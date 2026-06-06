@@ -1192,6 +1192,7 @@ export default function SynthApp() {
 
   // ─── Pan mode ────────────────────────────────────────────────────────────────
   const [panMode, setPanMode]   = useState(false);
+  const [showMinimap, setShowMinimap] = useState(true);
   const panModeRef              = useRef(false);   // effective value (button OR space held)
   const panDragRef              = useRef<{
     startX: number; startY: number; origScrollLeft: number; origScrollTop: number;
@@ -1889,8 +1890,11 @@ export default function SynthApp() {
 
   // ─── Drag (snap on release) ─────────────────────────────────────────────────
   const handleRackMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!panModeRef.current) return;
     if (e.button !== 0) return;
+    // In pan mode: grab anywhere on the canvas.
+    // Otherwise: only pan when clicking truly empty space (not on a module panel).
+    const onModule = (e.target as Element).closest('[data-mod]') !== null;
+    if (!panModeRef.current && onModule) return;
     e.preventDefault();
     panDragRef.current = {
       startX: e.clientX, startY: e.clientY,
@@ -2041,6 +2045,13 @@ export default function SynthApp() {
       if (e.key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleUndo(); return; }
       if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleSavePatch(); return; }
       if (e.key === 'o' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleLoadClick(); return; }
+      if ((e.key === 'm' || e.key === 'M') && !e.ctrlKey && !e.metaKey) {
+        const t = e.target as Element | null;
+        if (!(t instanceof HTMLInputElement) && !(t instanceof HTMLTextAreaElement)) {
+          setShowMinimap(v => !v);
+          return;
+        }
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -2239,8 +2250,8 @@ export default function SynthApp() {
           PAN
         </button>
 
-        {/* Minimap */}
-        <Minimap modules={modules} rackRef={rackRef} />
+        {/* Minimap — toggle with M key */}
+        {showMinimap && <Minimap modules={modules} rackRef={rackRef} />}
 
         {/* Scrollable canvas */}
         <div
@@ -2267,6 +2278,7 @@ export default function SynthApp() {
           {modules.map(mod => (
             <div
               key={mod.id}
+              data-mod="1"
               className="absolute"
               style={{ left: mod.x, top: mod.y }}
               onMouseEnter={() => setFocusedModuleId(mod.id)}
