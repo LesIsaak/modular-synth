@@ -1259,7 +1259,7 @@ export function createAudioModule(
         inputs: new Map(),
         stepRef,
         portNoteOn: new Map([
-          ['clock_in',  () => { lastExtClkMs = performance.now(); doStep(); }],
+          ['clock_in',  () => { lastExtClkMs = performance.now(); queueMicrotask(() => doStep()); }],
           ['reset_in',  () => { step = 0; stepRef.value = 0; }],
         ]),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
@@ -1290,7 +1290,7 @@ export function createAudioModule(
         inputs: new Map(),
         stepRef,
         portNoteOn: new Map([
-          ['clock_in',  () => { lastExtClkMs = performance.now(); doStep(); }],
+          ['clock_in',  () => { lastExtClkMs = performance.now(); queueMicrotask(() => doStep()); }],
           ['reset_in',  () => { step = 0; stepRef.value = 0; }],
         ]),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
@@ -1319,7 +1319,7 @@ export function createAudioModule(
         inputs: new Map(),
         stepRef,
         portNoteOn: new Map([
-          ['clock_in',  () => { lastExtClkMs = performance.now(); doStep(); }],
+          ['clock_in',  () => { lastExtClkMs = performance.now(); queueMicrotask(() => doStep()); }],
           ['reset_in',  () => { step = 0; stepRef.value = 0; cvNode.offset.value = (p['v1'] ?? 0) * 500; }],
         ]),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
@@ -1353,7 +1353,7 @@ export function createAudioModule(
         inputs: new Map(),
         stepRef,
         portNoteOn: new Map([
-          ['clock_in',  () => { lastExtClkMs = performance.now(); doStep(); }],
+          ['clock_in',  () => { lastExtClkMs = performance.now(); queueMicrotask(() => doStep()); }],
           ['reset_in',  () => { step = 0; stepRef.value = 0; }],
         ]),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
