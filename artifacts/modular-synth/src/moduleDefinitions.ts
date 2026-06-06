@@ -1273,6 +1273,26 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
     ],
   },
 
+  // ─── Percussion voices ────────────────────────────────────────────────────────
+  {
+    id: 'bd_drum', name: 'Bass Drum', category: 'percussion', accentColor: DRM, width: 220,
+    knobs: [
+      { id: 'tune',  name: 'TUNE',  min: 20,   max: 200,  default: 60,  log: true },
+      { id: 'decay', name: 'DECAY', min: 0.05, max: 2.0,  default: 0.5, log: true },
+      { id: 'punch', name: 'PUNCH', min: 0,    max: 1,    default: 0.65           },
+      { id: 'snap',  name: 'SNAP',  min: 0,    max: 1,    default: 0.35           },
+      { id: 'drive', name: 'DRIVE', min: 0,    max: 1,    default: 0              },
+      { id: 'vol',   name: 'VOL',   min: 0,    max: 1,    default: 0.9            },
+    ],
+    ports: [
+      { id: 'trig_in',   name: 'TRIG',  type: 'gate_in'   },
+      { id: 'accent_in', name: 'ACC',   type: 'gate_in'   },
+      { id: 'tune_cv',   name: 'TUNE',  type: 'cv_in'     },
+      { id: 'decay_cv',  name: 'DECAY', type: 'cv_in'     },
+      { id: 'audio_out', name: 'OUT',   type: 'audio_out'  },
+    ],
+  },
+
   // ─── Drum Machine (Erica Synths Techno System inspired) ──────────────────────
   {
     id: 'drum_machine', name: 'TECHNO DRUM', category: 'sequencer', accentColor: DRM,
@@ -1338,21 +1358,21 @@ export const CATEGORY_ORDER: ModuleCategory[] = [
   'oscillator', 'filter', 'amplifier', 'dynamics',
   'envelope', 'lfo', 'sequencer', 'clock',
   'delay', 'reverb', 'modulation', 'distortion',
-  'spectral', 'granular', 'utility',
+  'spectral', 'granular', 'percussion', 'utility',
 ];
 
 export const CATEGORY_LABELS: Record<string, string> = {
-  oscillator: 'Oscillators', filter:     'Filters',    amplifier:  'Amplifiers', dynamics:   'Dynamics',
-  envelope:   'Envelopes',   lfo:        'LFO',         sequencer:  'Sequencers', clock:      'Clock',
-  delay:      'Delay',       reverb:     'Reverb',      modulation: 'Modulation', distortion: 'Distortion',
-  spectral:   'Spectral',    granular:   'Granular',    utility:    'Utility / I/O',
+  oscillator:  'Oscillators',   filter:     'Filters',      amplifier:  'Amplifiers', dynamics:   'Dynamics',
+  envelope:    'Envelopes',     lfo:        'LFO',           sequencer:  'Sequencers', clock:      'Clock',
+  delay:       'Delay',         reverb:     'Reverb',        modulation: 'Modulation', distortion: 'Distortion',
+  spectral:    'Spectral',      granular:   'Granular',      percussion: 'Percussion', utility:    'Utility / I/O',
 };
 
 export const CATEGORY_COLORS: Record<string, string> = {
   oscillator: '#f97316', filter:     '#14b8a6', amplifier:  '#3b82f6', dynamics:   '#0ea5e9',
   envelope:   '#a855f7', lfo:        '#ec4899', sequencer:  '#84cc16', clock:      '#eab308',
   delay:      '#22c55e', reverb:     '#10b981', modulation: '#06b6d4', distortion: '#ef4444',
-  spectral:   '#8b5cf6', granular:   '#d97706', utility:    '#94a3b8',
+  spectral:   '#8b5cf6', granular:   '#d97706', percussion: '#dc2626', utility:    '#94a3b8',
 };
 
 export const CABLE_COLORS = [

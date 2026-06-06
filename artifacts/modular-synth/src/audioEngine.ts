@@ -1259,8 +1259,8 @@ export function createAudioModule(
         inputs: new Map(),
         stepRef,
         portNoteOn: new Map([
-          ['clk_in',   () => { lastExtClkMs = performance.now(); doStep(); }],
-          ['reset_in', () => { step = 0; stepRef.value = 0; }],
+          ['clock_in',  () => { lastExtClkMs = performance.now(); doStep(); }],
+          ['reset_in',  () => { step = 0; stepRef.value = 0; }],
         ]),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
@@ -1290,8 +1290,8 @@ export function createAudioModule(
         inputs: new Map(),
         stepRef,
         portNoteOn: new Map([
-          ['clk_in',   () => { lastExtClkMs = performance.now(); doStep(); }],
-          ['reset_in', () => { step = 0; stepRef.value = 0; }],
+          ['clock_in',  () => { lastExtClkMs = performance.now(); doStep(); }],
+          ['reset_in',  () => { step = 0; stepRef.value = 0; }],
         ]),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
@@ -1319,8 +1319,8 @@ export function createAudioModule(
         inputs: new Map(),
         stepRef,
         portNoteOn: new Map([
-          ['clk_in',   () => { lastExtClkMs = performance.now(); doStep(); }],
-          ['reset_in', () => { step = 0; stepRef.value = 0; cvNode.offset.value = (p['v1'] ?? 0) * 500; }],
+          ['clock_in',  () => { lastExtClkMs = performance.now(); doStep(); }],
+          ['reset_in',  () => { step = 0; stepRef.value = 0; cvNode.offset.value = (p['v1'] ?? 0) * 500; }],
         ]),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         destroy: () => { timer.destroy(); try { cvNode.stop(); } catch(_){} cvNode.disconnect(); },
@@ -1353,8 +1353,8 @@ export function createAudioModule(
         inputs: new Map(),
         stepRef,
         portNoteOn: new Map([
-          ['clk_in',   () => { lastExtClkMs = performance.now(); doStep(); }],
-          ['reset_in', () => { step = 0; stepRef.value = 0; }],
+          ['clock_in',  () => { lastExtClkMs = performance.now(); doStep(); }],
+          ['reset_in',  () => { step = 0; stepRef.value = 0; }],
         ]),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
@@ -3274,6 +3274,97 @@ export function createAudioModule(
           try { posNode.stop(); } catch(_){} try { stepNode.stop(); } catch(_){}
           for (const n of velNodes) { try { n.stop(); } catch(_){} }
           swingCv.destroy(); bpmCv.destroy();
+        },
+      };
+    }
+
+    // ── Bass Drum ─────────────────────────────────────────────────────────────
+    case 'bd_drum': {
+      const outGain = ctx.createGain();
+      outGain.gain.value = p.vol ?? 0.9;
+
+      const mkTap = () => {
+        const mix = ctx.createGain(); mix.gain.value = 1;
+        const tap = ctx.createAnalyser(); tap.fftSize = 32;
+        mix.connect(tap);
+        const buf = new Float32Array(1);
+        return {
+          input:   { node: mix as AudioNode },
+          read:    () => { tap.getFloatTimeDomainData(buf); return buf[0]; },
+          destroy: () => { mix.disconnect(); tap.disconnect(); },
+        };
+      };
+      const tuneTap  = mkTap();
+      const decayTap = mkTap();
+
+      const fire = (accented: boolean) => {
+        const t = _currentTickAudioTime || ctx.currentTime;
+
+        const tuneHz    = Math.max(15, (p.tune  ?? 60)  + tuneTap.read()  * 100);
+        const decaySecs = Math.max(0.05, (p.decay ?? 0.5) + decayTap.read() * 0.5);
+        const punch = p.punch ?? 0.65;
+        const snap  = p.snap  ?? 0.35;
+        const drive = p.drive ?? 0;
+        const boost = accented ? 1.3 : 1.0;
+
+        // ── Sine body: pitch sweeps from startHz → endHz over first 55% of decay ──
+        const startHz = tuneHz * (1 + punch * 4.5);
+        const endHz   = Math.max(15, tuneHz * (1 - punch * 0.82));
+        const osc = ctx.createOscillator();
+        const env = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(startHz, t);
+        osc.frequency.exponentialRampToValueAtTime(endHz, t + decaySecs * 0.55);
+        env.gain.setValueAtTime(boost, t);
+        env.gain.exponentialRampToValueAtTime(0.001, t + decaySecs);
+        osc.connect(env);
+
+        if (drive > 0.02) {
+          const ws = ctx.createWaveShaper();
+          const n = 256; const k = 1 + drive * 12;
+          const curve = new Float32Array(n);
+          for (let i = 0; i < n; i++) { const x = (i * 2) / n - 1; curve[i] = Math.tanh(x * k) / Math.tanh(k); }
+          ws.curve = curve;
+          env.connect(ws); ws.connect(outGain);
+        } else {
+          env.connect(outGain);
+        }
+        osc.start(t); osc.stop(t + decaySecs + 0.05);
+
+        // ── Click / snap transient (14 ms noise burst at attack) ──
+        if (snap > 0.01) {
+          const sr  = ctx.sampleRate;
+          const dur = 0.014;
+          const nb  = ctx.createBuffer(1, Math.ceil(sr * dur), sr);
+          const nd  = nb.getChannelData(0);
+          for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+          const ns = ctx.createBufferSource(); ns.buffer = nb;
+          const ng = ctx.createGain();
+          ng.gain.setValueAtTime(snap * boost, t);
+          ng.gain.exponentialRampToValueAtTime(0.001, t + dur);
+          ns.connect(ng); ng.connect(outGain);
+          ns.start(t); ns.stop(t + dur + 0.002);
+        }
+      };
+
+      return {
+        outputs: new Map([['audio_out', outGain]]),
+        inputs: new Map([
+          ['tune_cv',  tuneTap.input],
+          ['decay_cv', decayTap.input],
+        ]),
+        portNoteOn: new Map([
+          ['trig_in',   () => fire(false)],
+          ['accent_in', () => fire(true)],
+        ]),
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'vol') outGain.gain.value = val;
+        },
+        destroy: () => {
+          outGain.disconnect();
+          tuneTap.destroy();
+          decayTap.destroy();
         },
       };
     }

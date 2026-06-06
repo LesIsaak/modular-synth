@@ -3,7 +3,7 @@ export type ModuleCategory =
   | 'oscillator' | 'filter' | 'amplifier' | 'dynamics'
   | 'envelope' | 'lfo' | 'sequencer' | 'clock'
   | 'delay' | 'reverb' | 'modulation' | 'distortion'
-  | 'spectral' | 'granular' | 'utility';
+  | 'spectral' | 'granular' | 'percussion' | 'utility';
 
 export interface PortDef {
   id: string;
