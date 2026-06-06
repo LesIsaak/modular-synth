@@ -586,7 +586,7 @@ function SamplerBankPanel({
   const bankIndex = Math.round(module.params.bank ?? 0);
 
   return (
-    <div style={{ flex: 1, padding: '4px 5px', display: 'flex', flexDirection: 'column', gap: 4, overflow: 'hidden' }}>
+    <div style={{ flex: 1, padding: '2px 5px', display: 'flex', flexDirection: 'column', gap: 2, overflow: 'hidden' }}>
       {/* Bank row */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 5,
