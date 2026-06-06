@@ -536,8 +536,9 @@ export function createAudioModule(
         ]),
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'cutoff') f.frequency.value = val;
-          if (id === 'res') f.Q.value = val;
+          const t = ctx.currentTime;
+          if (id === 'cutoff') { f.frequency.cancelScheduledValues(t); f.frequency.setTargetAtTime(val, t, 0.008); }
+          if (id === 'res')    { f.Q.cancelScheduledValues(t); f.Q.setTargetAtTime(val, t, 0.008); }
         },
         setSelector: (id, val) => {
           if (id === 'type') f.type = typeMap[Math.round(val)] ?? 'lowpass';
@@ -568,8 +569,9 @@ export function createAudioModule(
         ]),
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'cutoff') filters.forEach(f => { f.frequency.value = val; });
-          if (id === 'res') filters.forEach(f => { f.Q.value = val / stages; });
+          const t = ctx.currentTime;
+          if (id === 'cutoff') filters.forEach(f => { f.frequency.cancelScheduledValues(t); f.frequency.setTargetAtTime(val, t, 0.008); });
+          if (id === 'res')    filters.forEach(f => { f.Q.cancelScheduledValues(t); f.Q.setTargetAtTime(val / stages, t, 0.008); });
         },
         destroy: () => filters.forEach(f => f.disconnect()),
       };
@@ -595,8 +597,9 @@ export function createAudioModule(
         ]),
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'cutoff') filters.forEach(f => { f.frequency.value = val; });
-          if (id === 'res') fbGain.gain.value = Math.min(0.9, val * 0.22);
+          const t = ctx.currentTime;
+          if (id === 'cutoff') filters.forEach(f => { f.frequency.cancelScheduledValues(t); f.frequency.setTargetAtTime(val, t, 0.008); });
+          if (id === 'res')    { fbGain.gain.cancelScheduledValues(t); fbGain.gain.setTargetAtTime(Math.min(0.9, val * 0.22), t, 0.008); }
         },
         destroy: () => { filters.forEach(f => f.disconnect()); fbGain.disconnect(); },
       };
@@ -778,8 +781,9 @@ export function createAudioModule(
         ]),
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'gain') gain.gain.value = val;
-          if (id === 'offset') offsetCs.offset.value = val;
+          const t = ctx.currentTime;
+          if (id === 'gain')   { gain.gain.cancelScheduledValues(t); gain.gain.setTargetAtTime(val, t, 0.008); }
+          if (id === 'offset') { offsetCs.offset.cancelScheduledValues(t); offsetCs.offset.setTargetAtTime(val, t, 0.008); }
         },
         destroy: () => { offsetCs.stop(); offsetCs.disconnect(); gain.disconnect(); },
       };
@@ -1080,8 +1084,9 @@ export function createAudioModule(
         ]),
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'rate')  allOscs.forEach(o => { o.frequency.value = val; });
-          if (id === 'depth') allGains.forEach(g => { g.gain.value = val; });
+          const t = ctx.currentTime;
+          if (id === 'rate')  allOscs.forEach(o => { o.frequency.cancelScheduledValues(t); o.frequency.setTargetAtTime(val, t, 0.012); });
+          if (id === 'depth') allGains.forEach(g => { g.gain.cancelScheduledValues(t); g.gain.setTargetAtTime(val, t, 0.008); });
         },
         setSelector: (id, val) => {
           if (id === 'wave') {
@@ -1130,9 +1135,10 @@ export function createAudioModule(
         ]),
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'rate')  allOscs.forEach(o => { o.frequency.value = val; });
-          if (id === 'depth') allGains.forEach(g => { g.gain.value = val; });
-          if (id === 'drift') driftGain.gain.value = val * 0.3;
+          const t = ctx.currentTime;
+          if (id === 'rate')  allOscs.forEach(o => { o.frequency.cancelScheduledValues(t); o.frequency.setTargetAtTime(val, t, 0.012); });
+          if (id === 'depth') allGains.forEach(g => { g.gain.cancelScheduledValues(t); g.gain.setTargetAtTime(val, t, 0.008); });
+          if (id === 'drift') { driftGain.gain.cancelScheduledValues(t); driftGain.gain.setTargetAtTime(val * 0.3, t, 0.008); }
         },
         setSelector: (id, val) => {
           if (id === 'wave') {

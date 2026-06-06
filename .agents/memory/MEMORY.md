@@ -2,3 +2,4 @@
 - [Distortion CV pattern](distortion-cv-pattern.md) — WaveShaper.curve is not an AudioParam; use AnalyserNode polling (setInterval 32ms) for drive/fold/bits/factor CV inputs.
 - [poly_step port completeness](poly-step-ports.md) — engine fires beat_out, eoc_out, t{n}_eoc, t{n}_acc, t{n}_vel, run_in, fill_in, bpm_cv, swing_cv — all must be in moduleDefinitions.ts ports array.
 - [Patch example name & port alignment](patch-example-alignment.md) — Build-in-rack uses PATCH_MODULE_ALIASES in synth-app.tsx; Output ports are 'IN L'/'IN R'; Clock Gen has no CLK out (use GATE); KNIGHT GATE has no CLK in (use SYNC); Drum Machine uses K-TRG/S-TRG/HC-T inputs and K-OUT output.
+- [Param change performance pattern](param-change-perf.md) — Audio update is immediate (direct setParam call); React state update wraps setModules in startTransition; handleMidiMon must use modulesRef/focusedModuleIdRef (not captured state) so its deps array stays stable.

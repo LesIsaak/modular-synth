@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo, useTransition } from 'react';
 import { ModuleInstance, Cable, PendingCable, PortType, MidiMonitorData } from '../types';
 import { MidiClockInfo, getMidiClockInfo, setMidiClockLocked, emitMidiClockInfo, addMidiClockListener, removeMidiClockListener } from '../midiClock';
 import {
@@ -1140,6 +1140,8 @@ export default function SynthApp() {
   const [saveDialogOpen,  setSaveDialogOpen]  = useState(false);
   const [saveDialogInput, setSaveDialogInput] = useState('');
   const [modules,      setModules]      = useState<ModuleInstance[]>(DEFAULT_MODULES);
+  const modulesRef = useRef(modules);
+  modulesRef.current = modules;
   const [cables,       setCables]       = useState<Cable[]>(DEFAULT_CABLES);
   // Bumped after every modules commit so PatchCables re-renders once port refs are populated
   const [cableLayoutVersion, setCableLayoutVersion] = useState(0);
@@ -1150,6 +1152,8 @@ export default function SynthApp() {
   const [mousePos,     setMousePos]     = useState({ x: 0, y: 0 });
   const [cableOpacity,     setCableOpacity]     = useState(1);
   const [focusedModuleId,  setFocusedModuleId]  = useState<string | null>(null);
+  const focusedModuleIdRef = useRef<string | null>(null);
+  focusedModuleIdRef.current = focusedModuleId;
   const [midiActiveNotes,  setMidiActiveNotes]  = useState<ReadonlySet<number>>(new Set());
   const ccOrderRef = useRef<number[]>([]); // CC numbers in order of first touch
 
@@ -1641,11 +1645,16 @@ export default function SynthApp() {
   }, []);
 
   // ─── Param / selector change ────────────────────────────────────────────────
+  const [, startTransition] = useTransition();
   const handleParamChange = useCallback((moduleId: string, paramId: string, value: number) => {
-    setModules(prev => prev.map(m => m.id === moduleId ? { ...m, params: { ...m.params, [paramId]: value } } : m));
+    // Audio update is immediate (no state, no re-render)
     audioModulesRef.current.get(moduleId)?.setParam(paramId, value);
-    if (moduleId === 'kb1' && paramId === 'glide') glideRef.current = value;
-  }, []);
+    if (paramId === 'glide') glideRef.current = value;
+    // State update is deferred — React can skip intermediate renders during rapid drag
+    startTransition(() => {
+      setModules(prev => prev.map(m => m.id === moduleId ? { ...m, params: { ...m.params, [paramId]: value } } : m));
+    });
+  }, [startTransition]);
 
   const handleSelectorChange = useCallback((moduleId: string, selId: string, value: number) => {
     setModules(prev => prev.map(m => m.id === moduleId ? { ...m, params: { ...m.params, [selId]: value } } : m));
@@ -1706,12 +1715,12 @@ export default function SynthApp() {
     }
 
     // ── CC → knob auto-mapping (skip CC1 = mod wheel) ──
-    if (ev.type === 'cc' && ev.num !== 1 && focusedModuleId) {
+    if (ev.type === 'cc' && ev.num !== 1 && focusedModuleIdRef.current) {
       if (!ccOrderRef.current.includes(ev.num)) {
         ccOrderRef.current = [...ccOrderRef.current, ev.num];
       }
       const pos = ccOrderRef.current.indexOf(ev.num);
-      const focMod = modules.find(m => m.id === focusedModuleId);
+      const focMod = modulesRef.current.find(m => m.id === focusedModuleIdRef.current);
       if (focMod) {
         const typeDef = MODULE_TYPE_MAP.get(focMod.typeId);
         if (typeDef && pos < typeDef.knobs.length) {
@@ -1724,7 +1733,7 @@ export default function SynthApp() {
         }
       }
     }
-  }, [focusedModuleId, modules, handleParamChange, handleKeyPitch]);
+  }, [handleParamChange, handleKeyPitch]);
 
   // ─── MIDI Clock sync ────────────────────────────────────────────────────────
   const [midiClockInfo, setMidiClockInfo] = useState<MidiClockInfo>({ bpm: null, deviceName: null, locked: false });
