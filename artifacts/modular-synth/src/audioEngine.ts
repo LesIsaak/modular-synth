@@ -1237,20 +1237,31 @@ export function createAudioModule(
       let step = 0;
       const stepRef = { value: 0 };
       let gateCb: ((on: boolean, freq: number) => void) | null = null;
+      let lastExtClkMs = -Infinity;
       const getMs = () => 60000 / (p.bpm ?? 120);
-      let timer = makeClockTimer(getMs, (i) => {
-        step = i % 8;
-        stepRef.value = step;
+      const doStep = () => {
+        const ms = getMs();
         const midi = Math.round(p[`s${step + 1}`] ?? (60 + step));
         const freq = midiToHz(midi);
+        stepRef.value = step;
         freqNode.offset.value = freq;
         gateCb?.(true, freq);
-        setTimeout(() => gateCb?.(false, freq), getMs() * 0.45);
+        setTimeout(() => gateCb?.(false, freq), ms * 0.45);
+        step = (step + 1) % 8;
+      };
+      let timer = makeClockTimer(getMs, () => {
+        // Suppress internal clock when external CLK is patched (auto-detect)
+        if (performance.now() - lastExtClkMs < getMs() * 2) return;
+        doStep();
       });
       return {
         outputs: new Map([['voct_out', freqNode]]),
         inputs: new Map(),
         stepRef,
+        portNoteOn: new Map([
+          ['clk_in',   () => { lastExtClkMs = performance.now(); doStep(); }],
+          ['reset_in', () => { step = 0; stepRef.value = 0; }],
+        ]),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
         destroy: () => { timer.destroy(); gateCb = null; try { freqNode.stop(); } catch(_){} freqNode.disconnect(); },
@@ -1261,20 +1272,27 @@ export function createAudioModule(
       let step = 0;
       const stepRef = { value: 0 };
       let gateCb: ((on: boolean, freq: number) => void) | null = null;
+      let lastExtClkMs = -Infinity;
       const getMs = () => 60000 / (p.bpm ?? 120);
-      let timer = makeClockTimer(getMs, (i) => {
-        step = i % 8;
+      const doStep = () => {
+        const ms = getMs();
         stepRef.value = step;
         const active = (p[`t${step + 1}`] ?? 0) > 0.5;
-        if (active) {
-          gateCb?.(true, 440);
-          setTimeout(() => gateCb?.(false, 440), getMs() * 0.4);
-        }
+        if (active) { gateCb?.(true, 440); setTimeout(() => gateCb?.(false, 440), ms * 0.4); }
+        step = (step + 1) % 8;
+      };
+      let timer = makeClockTimer(getMs, () => {
+        if (performance.now() - lastExtClkMs < getMs() * 2) return;
+        doStep();
       });
       return {
         outputs: new Map(),
         inputs: new Map(),
         stepRef,
+        portNoteOn: new Map([
+          ['clk_in',   () => { lastExtClkMs = performance.now(); doStep(); }],
+          ['reset_in', () => { step = 0; stepRef.value = 0; }],
+        ]),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
         destroy: () => { timer.destroy(); gateCb = null; },
@@ -1285,16 +1303,25 @@ export function createAudioModule(
       const cvNode = ctx.createConstantSource(); cvNode.offset.value = 0; cvNode.start();
       let step = 0;
       const stepRef = { value: 0 };
+      let lastExtClkMs = -Infinity;
       const getMs = () => 60000 / (p.bpm ?? 120);
-      let timer = makeClockTimer(getMs, (i) => {
-        step = i % 8;
+      const doStep = () => {
         stepRef.value = step;
         cvNode.offset.value = (p[`v${step + 1}`] ?? 0) * 500;
+        step = (step + 1) % 8;
+      };
+      let timer = makeClockTimer(getMs, () => {
+        if (performance.now() - lastExtClkMs < getMs() * 2) return;
+        doStep();
       });
       return {
         outputs: new Map([['cv_out', cvNode]]),
         inputs: new Map(),
         stepRef,
+        portNoteOn: new Map([
+          ['clk_in',   () => { lastExtClkMs = performance.now(); doStep(); }],
+          ['reset_in', () => { step = 0; stepRef.value = 0; cvNode.offset.value = (p['v1'] ?? 0) * 500; }],
+        ]),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         destroy: () => { timer.destroy(); try { cvNode.stop(); } catch(_){} cvNode.disconnect(); },
       };
@@ -1304,21 +1331,31 @@ export function createAudioModule(
       let step = 0;
       const stepRef = { value: 0 };
       let gateCb: ((on: boolean, freq: number) => void) | null = null;
+      let lastExtClkMs = -Infinity;
       const getMs = () => 60000 / (p.bpm ?? 120);
-      let timer = makeClockTimer(getMs, (i) => {
-        step = i % 8;
+      const doStep = () => {
+        const ms = getMs();
         stepRef.value = step;
         const active = (p[`g${step + 1}`] ?? 0) > 0.5;
         if (active) {
-          const len = getMs() * (p.gate_len ?? 0.5);
+          const len = ms * (p.gate_len ?? 0.5);
           gateCb?.(true, 440);
           setTimeout(() => gateCb?.(false, 440), len);
         }
+        step = (step + 1) % 8;
+      };
+      let timer = makeClockTimer(getMs, () => {
+        if (performance.now() - lastExtClkMs < getMs() * 2) return;
+        doStep();
       });
       return {
         outputs: new Map(),
         inputs: new Map(),
         stepRef,
+        portNoteOn: new Map([
+          ['clk_in',   () => { lastExtClkMs = performance.now(); doStep(); }],
+          ['reset_in', () => { step = 0; stepRef.value = 0; }],
+        ]),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => { gateCb = fn; },
         destroy: () => { timer.destroy(); gateCb = null; },
@@ -3163,8 +3200,12 @@ export function createAudioModule(
         clkStep++;
       };
 
+      let lastExtClkMs = -Infinity;
+
       const tick = (beatIndex: number) => {
-        if ((p.clk_src ?? 0) > 0.5) return; // external clock mode
+        if ((p.clk_src ?? 0) > 0.5) return; // explicit external clock mode
+        // Auto-detect: suppress internal timer while external CLK cable is active
+        if (performance.now() - lastExtClkMs < getMs() * 2) return;
         if (!running) return;
         const swing = getSwing();
         if (swing > 0.005 && beatIndex % 2 === 1) {
@@ -3192,9 +3233,10 @@ export function createAudioModule(
         inputs,
         stepRef,
         portNoteOn: new Map([
-          // External clock: each rising edge advances one step
+          // External clock: each rising edge advances one step; marks lastExtClkMs to suppress internal timer
           ['clk_in',  (_t: number, _f?: number) => {
             if (!running) return;
+            lastExtClkMs = performance.now();
             const swing = getSwing();
             if (swing > 0.005 && clkStep % 2 === 1) setTimeout(doTick, getMs() * swing);
             else doTick();
