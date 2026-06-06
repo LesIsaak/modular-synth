@@ -2820,7 +2820,7 @@ export function createAudioModule(
       const sampPlay = (time: number, freq = 440, fromPos?: number) => {
         if (samplerDestroyed) return;
         lastFreq = freq;
-        const bankIdx = Math.max(0, Math.min(NUM_BANKS - 1, Math.round((p.bank ?? 0) + bankCvTap.read())));
+        const bankIdx = Math.max(0, Math.min(NUM_BANKS - 1, Math.round(p.bank ?? 0)));
         const isRev   = Math.round(p.reverse ?? 0) > 0;
         const buf     = isRev ? banksRev[bankIdx] : banks[bankIdx];
         if (!buf) return;
