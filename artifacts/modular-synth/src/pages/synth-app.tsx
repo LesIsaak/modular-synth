@@ -510,6 +510,8 @@ function FixedKeyboardPanel({
   onLoad,
   extPitch,
   extMod,
+  showMinimap,
+  onToggleMinimap,
 }: {
   started: boolean;
   onNote:           (freq: number, on: boolean) => void;
@@ -527,6 +529,8 @@ function FixedKeyboardPanel({
   onLoad:           () => void;
   extPitch?:        number;
   extMod?:          number;
+  showMinimap:      boolean;
+  onToggleMinimap:  () => void;
 }) {
   const [octave,     setOctave]     = useState(4);
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -704,6 +708,19 @@ function FixedKeyboardPanel({
         })()}
         {/* Controls right side */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* Minimap toggle */}
+          <button
+            onClick={onToggleMinimap}
+            title={showMinimap ? 'Hide minimap' : 'Show minimap'}
+            style={{
+              height: 16, padding: '0 7px', fontSize: 7, letterSpacing: '0.16em',
+              borderRadius: 2, cursor: 'pointer', fontWeight: 700, textTransform: 'uppercase',
+              border: showMinimap ? '1px solid #e87d27' : '1px solid #374151',
+              background: showMinimap ? '#e87d27' : '#181818',
+              color: showMinimap ? '#000' : '#6b7280',
+              transition: 'all 0.12s',
+            }}
+          >MAP</button>
           {/* Cable opacity slider */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ fontSize: 7, color: '#6b7280', letterSpacing: '0.12em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
@@ -1252,7 +1269,7 @@ export default function SynthApp() {
 
   // ─── Pan mode ────────────────────────────────────────────────────────────────
   const [panMode, setPanMode]   = useState(false);
-  const [showMinimap, setShowMinimap] = useState(true);
+  const [showMinimap, setShowMinimap] = useState(false);
   const panModeRef              = useRef(false);   // effective value (button OR space held)
   const panDragRef              = useRef<{
     startX: number; startY: number; origScrollLeft: number; origScrollTop: number;
@@ -2659,6 +2676,8 @@ export default function SynthApp() {
         extMod={extKbMod}
         onSave={handleSavePatch}
         onLoad={handleLoadClick}
+        showMinimap={showMinimap}
+        onToggleMinimap={() => setShowMinimap(m => !m)}
       />
     </div>
   );
