@@ -1198,7 +1198,7 @@ export default function SynthApp() {
     undoStackRef.current = stack.slice(0, -1);
     setUndoAvail(undoStackRef.current.length > 0);
 
-    // Disconnect cables present now but absent in snapshot
+    // ── Step 1: Disconnect cables present now but absent in snapshot ─────────
     const toDisconnect = cables.filter(c => !snap.cables.find(p => p.id === c.id));
     for (const cable of toDisconnect) {
       const ftd = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
@@ -1212,24 +1212,8 @@ export default function SynthApp() {
         if (fa && ta) disconnectAudioPorts(fa, cable.fromPortId, ta, cable.toPortId);
       }
     }
-    // Reconnect cables absent now but present in snapshot
-    const toConnect = snap.cables.filter(c => !cables.find(p => p.id === c.id));
-    for (const cable of toConnect) {
-      const ftd = MODULE_TYPE_MAP.get(snap.modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
-      const fp  = ftd?.ports.find(p => p.id === cable.fromPortId);
-      if (fp?.type === 'gate_out') {
-        const gkUndo = `${cable.fromModuleId}:${cable.fromPortId}`;
-        if (!gateConnRef.current.has(gkUndo)) gateConnRef.current.set(gkUndo, new Set());
-        gateConnRef.current.get(gkUndo)!.add(cable.toModuleId);
-        if (!portGateMapRef.current.has(gkUndo)) portGateMapRef.current.set(gkUndo, new Map());
-        portGateMapRef.current.get(gkUndo)!.set(cable.toModuleId, cable.toPortId);
-      } else {
-        const fa = audioModulesRef.current.get(cable.fromModuleId);
-        const ta = audioModulesRef.current.get(cable.toModuleId);
-        if (fa && ta) connectAudioPorts(fa, cable.fromPortId, ta, cable.toPortId);
-      }
-    }
-    // Clean up modules that were added (in current but not in snapshot)
+
+    // ── Step 2: Destroy modules added since snapshot (before reconnecting) ───
     const addedMods = modules.filter(m => !snap.modules.find(p => p.id === m.id));
     for (const mod of addedMods) {
       try { audioModulesRef.current.get(mod.id)?.destroy(); } catch (_) {}
@@ -1239,15 +1223,55 @@ export default function SynthApp() {
       for (const k of [...portGateMapRef.current.keys()]) if (k.startsWith(`${mod.id}:`)) portGateMapRef.current.delete(k);
       for (const m of portGateMapRef.current.values()) m.delete(mod.id);
     }
-    // Re-create modules that were deleted (in snapshot but not current)
+
+    // ── Step 3: Re-create modules deleted since snapshot ─────────────────────
+    // Must happen BEFORE cable reconnection so the audio nodes exist to connect.
     const removedMods = snap.modules.filter(m => !modules.find(p => p.id === m.id));
     for (const mod of removedMods) {
-      if (audioCtxRef.current)
-        audioModulesRef.current.set(mod.id, createAudioModule(audioCtxRef.current, mod.typeId, { ...mod.params }));
+      if (audioCtxRef.current) {
+        const audio = createAudioModule(audioCtxRef.current, mod.typeId, { ...mod.params });
+        const typeDef = MODULE_TYPE_MAP.get(mod.typeId);
+        for (const sel of typeDef?.selectors ?? []) {
+          audio.setSelector?.(sel.id, mod.params[sel.id] ?? sel.default);
+        }
+        audioModulesRef.current.set(mod.id, audio);
+      }
+    }
+
+    // ── Step 4: Reconnect cables absent now but present in snapshot ───────────
+    // Modules now exist in audioModulesRef, so connects will succeed.
+    const toConnect = snap.cables.filter(c => !cables.find(p => p.id === c.id));
+    const gateCablesToWire: string[] = [];
+    for (const cable of toConnect) {
+      const ftd = MODULE_TYPE_MAP.get(snap.modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
+      const fp  = ftd?.ports.find(p => p.id === cable.fromPortId);
+      if (fp?.type === 'gate_out') {
+        const gkUndo = `${cable.fromModuleId}:${cable.fromPortId}`;
+        if (!gateConnRef.current.has(gkUndo)) gateConnRef.current.set(gkUndo, new Set());
+        gateConnRef.current.get(gkUndo)!.add(cable.toModuleId);
+        if (!portGateMapRef.current.has(gkUndo)) portGateMapRef.current.set(gkUndo, new Map());
+        portGateMapRef.current.get(gkUndo)!.set(cable.toModuleId, cable.toPortId);
+        if (!gateCablesToWire.includes(gkUndo)) gateCablesToWire.push(gkUndo);
+      } else {
+        const fa = audioModulesRef.current.get(cable.fromModuleId);
+        const ta = audioModulesRef.current.get(cable.toModuleId);
+        if (fa && ta) connectAudioPorts(fa, cable.fromPortId, ta, cable.toPortId);
+      }
+    }
+
+    // ── Step 5: Re-wire gate callbacks on source modules ──────────────────────
+    // gateConnRef is now correct — tell each gate source module who to fire.
+    for (const gk of gateCablesToWire) {
+      const [fromModuleId, fromPortId] = gk.split(':');
+      const fromAudio = audioModulesRef.current.get(fromModuleId);
+      if (fromAudio?.setPortGateTrigger) fromAudio.setPortGateTrigger(fromPortId, makeGateCb(gk));
+      else if (fromAudio?.setGateTrigger) fromAudio.setGateTrigger(makeGateCb(gk));
     }
 
     setCables(snap.cables);
     setModules(snap.modules);
+  // makeGateCb has [] deps (reads only refs) — safe to omit, avoids forward-ref error
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cables, modules]);
 
   const fileInputRef     = useRef<HTMLInputElement>(null);
