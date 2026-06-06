@@ -147,24 +147,39 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
       {/* ── Column numbers + track rows — hidden when collapsed ─────────── */}
       <div style={{ flex: 1, flexDirection: 'column', overflow: 'hidden', display: noteOpen ? 'flex' : 'none' }}>
 
-      {/* Column numbers */}
+      {/* Column indicators + numbers */}
       <div style={{
-        flexShrink: 0, height: 16,
+        flexShrink: 0, height: 22,
         display: 'flex', alignItems: 'center',
         padding: '0 10px', gap: 0,
         borderBottom: '1px solid #161616', background: '#0f0f0f',
       }}>
         <div style={{ flexShrink: 0, width: 64 }} />
         <div style={{ flex: 1, display: 'flex' }}>
-          {Array.from({ length: len }, (_, s) => (
-            <div
-              key={s}
-              style={{
-                flex: 1, textAlign: 'center', fontSize: 6, color: '#606060',
-                marginLeft: s > 0 && s % 4 === 0 ? 4 : 0,
-              }}
-            >{s + 1}</div>
-          ))}
+          {Array.from({ length: len }, (_, s) => {
+            const isLive = s === liveStep;
+            return (
+              <div
+                key={s}
+                style={{
+                  flex: 1, display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', justifyContent: 'center', gap: 2,
+                  marginLeft: s > 0 && s % 4 === 0 ? 4 : 0,
+                }}
+              >
+                <div style={{
+                  width: 5, height: 5, borderRadius: '50%',
+                  background: isLive ? '#e2e2e2' : s % 4 === 0 ? '#333' : '#222',
+                  boxShadow: isLive ? '0 0 6px #fff, 0 0 10px #aaa' : 'none',
+                  transition: 'background 0.04s, box-shadow 0.04s',
+                  flexShrink: 0,
+                }} />
+                <span style={{ fontSize: 5, color: isLive ? '#888' : '#383838', lineHeight: 1 }}>
+                  {s + 1}
+                </span>
+              </div>
+            );
+          })}
         </div>
         <div style={{ flexShrink: 0, width: 32 }} />
       </div>
