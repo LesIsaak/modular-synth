@@ -1,0 +1,376 @@
+{
+  "version": 1,
+  "modules": [
+    {
+      "id": "kb1",
+      "typeId": "keyboard",
+      "params": {},
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "vco1",
+      "typeId": "analog_vco",
+      "params": {
+        "freq": 1099.0817477152498,
+        "fine": -13.333333333333329,
+        "wave": 3
+      },
+      "x": 200,
+      "y": 0
+    },
+    {
+      "id": "vcf1",
+      "typeId": "vcf",
+      "params": {
+        "cutoff": 783.8672309604724,
+        "res": 2,
+        "type": 0
+      },
+      "x": 420,
+      "y": 0
+    },
+    {
+      "id": "adsr1",
+      "typeId": "adsr",
+      "params": {
+        "attack": 0.25445360117932997,
+        "decay": 0.12,
+        "sustain": 0.65,
+        "release": 3.327055084410687
+      },
+      "x": 620,
+      "y": 0
+    },
+    {
+      "id": "vca1",
+      "typeId": "vca",
+      "params": {
+        "gain": 1
+      },
+      "x": 900,
+      "y": 0
+    },
+    {
+      "id": "out1",
+      "typeId": "output",
+      "params": {
+        "volume": 0.7
+      },
+      "x": 1080,
+      "y": 0
+    },
+    {
+      "id": "poly_step_1780701540817",
+      "typeId": "poly_step",
+      "x": 1260,
+      "y": 0,
+      "params": {
+        "bpm": 120,
+        "swing": 0,
+        "gate_len": 0.4,
+        "clk_src": 0,
+        "global_len": 1,
+        "transport": 1,
+        "t1": -1,
+        "t2": 269488144,
+        "t3": 1800291397,
+        "t4": 0,
+        "t5": 135268368,
+        "t6": 0,
+        "t7": 0,
+        "t8": 0,
+        "t1_acc": 16843009,
+        "t2_acc": 1052688,
+        "t3_acc": 1225655296,
+        "t4_acc": 0,
+        "t5_acc": 135266320,
+        "t6_acc": 0,
+        "t7_acc": 0,
+        "t8_acc": 0,
+        "t1_mute": 0,
+        "t2_mute": 0,
+        "t3_mute": 1,
+        "t4_mute": 0,
+        "t5_mute": 0,
+        "t6_mute": 0,
+        "t7_mute": 0,
+        "t8_mute": 0,
+        "t1_vel": 0.01,
+        "t1_prob": 0.29,
+        "t2_vel": 0.01,
+        "t3_vel": 0.01,
+        "t2_prob": 1
+      }
+    },
+    {
+      "id": "drum_machine_1780701548114",
+      "typeId": "drum_machine",
+      "x": 1261,
+      "y": 600,
+      "params": {
+        "kick_tune": 0.2733333333333333,
+        "kick_decay": 0.6012748018984174,
+        "kick_punch": 0.77,
+        "kick_drive": 0,
+        "kick_vol": 0.85,
+        "snr_tune": 239.06666666666666,
+        "snr_snap": 0.7933333333333333,
+        "snr_decay": 0.3303333333333333,
+        "snr_tone": 366.6422500237016,
+        "snr_vol": 0.7,
+        "hhc_tone": 7500,
+        "hhc_decay": 0.04,
+        "hhc_body": 0.15,
+        "hhc_vol": 0.55,
+        "hho_tone": 6000,
+        "hho_decay": 0.35,
+        "hho_body": 0.15,
+        "hho_vol": 0.5,
+        "clp_tune": 1400,
+        "clp_snap": 0.8,
+        "clp_decay": 0.2,
+        "clp_vol": 0.6,
+        "per_tune": 300,
+        "per_decay": 0.15,
+        "per_sweep": 0.5,
+        "per_vol": 0.55
+      }
+    },
+    {
+      "id": "chord_osc_1780702622845",
+      "typeId": "chord_osc",
+      "x": 280,
+      "y": 300,
+      "params": {
+        "freq": 220,
+        "spread": 1,
+        "chord": 0
+      }
+    },
+    {
+      "id": "seq_step_1780702714594",
+      "typeId": "seq_step",
+      "x": 480,
+      "y": 300,
+      "params": {
+        "bpm": 120,
+        "s1": 40,
+        "s2": 41,
+        "s3": 39,
+        "s4": 42,
+        "s5": 35,
+        "s6": 35,
+        "s7": 35,
+        "s8": 35
+      }
+    },
+    {
+      "id": "delay_ping_1780703114350",
+      "typeId": "delay_ping",
+      "x": 820,
+      "y": 300,
+      "params": {
+        "time": 0.25,
+        "feedback": 0.4,
+        "mix": 0.35
+      }
+    },
+    {
+      "id": "clock_gen_1780703856072",
+      "typeId": "clock_gen",
+      "x": 1020,
+      "y": 300,
+      "params": {
+        "bpm": 120,
+        "swing": 0
+      }
+    },
+    {
+      "id": "arpeggiator_1780777311335",
+      "typeId": "arpeggiator",
+      "x": 0,
+      "y": 300,
+      "params": {
+        "bpm": 293,
+        "gate_len": 0.5,
+        "octaves": 2,
+        "swing": 0.14933333333333335,
+        "chance": 0.9133333333333333,
+        "mode": 5,
+        "div": 1,
+        "accent": 0
+      }
+    }
+  ],
+  "cables": [
+    {
+      "id": "c3",
+      "fromModuleId": "vcf1",
+      "fromPortId": "out",
+      "toModuleId": "vca1",
+      "toPortId": "audio_in",
+      "color": "#14b8a6"
+    },
+    {
+      "id": "cable_1780701574601",
+      "fromModuleId": "poly_step_1780701540817",
+      "fromPortId": "t1_gate",
+      "toModuleId": "drum_machine_1780701548114",
+      "toPortId": "kick_trig",
+      "color": "#ff8787"
+    },
+    {
+      "id": "cable_1780701576216",
+      "fromModuleId": "poly_step_1780701540817",
+      "fromPortId": "t2_gate",
+      "toModuleId": "drum_machine_1780701548114",
+      "toPortId": "snr_trig",
+      "color": "#63e6be"
+    },
+    {
+      "id": "cable_1780701725970",
+      "fromModuleId": "poly_step_1780701540817",
+      "fromPortId": "t3_gate",
+      "toModuleId": "drum_machine_1780701548114",
+      "toPortId": "hhc_trig",
+      "color": "#f783ac"
+    },
+    {
+      "id": "cable_1780701728536",
+      "fromModuleId": "poly_step_1780701540817",
+      "fromPortId": "t4_gate",
+      "toModuleId": "drum_machine_1780701548114",
+      "toPortId": "hho_trig",
+      "color": "#a9e34b"
+    },
+    {
+      "id": "cable_1780702246394",
+      "fromModuleId": "poly_step_1780701540817",
+      "fromPortId": "t5_gate",
+      "toModuleId": "drum_machine_1780701548114",
+      "toPortId": "clp_trig",
+      "color": "#ffec99"
+    },
+    {
+      "id": "cable_1780703129617",
+      "fromModuleId": "drum_machine_1780701548114",
+      "fromPortId": "out",
+      "toModuleId": "delay_ping_1780703114350",
+      "toPortId": "audio_in",
+      "color": "#66d9e8"
+    },
+    {
+      "id": "cable_1780703134145",
+      "fromModuleId": "delay_ping_1780703114350",
+      "fromPortId": "out",
+      "toModuleId": "out1",
+      "toPortId": "in_l",
+      "color": "#ffa94d"
+    },
+    {
+      "id": "cable_1780703149390",
+      "fromModuleId": "drum_machine_1780701548114",
+      "fromPortId": "kick_out",
+      "toModuleId": "out1",
+      "toPortId": "in_r",
+      "color": "#ff6b6b"
+    },
+    {
+      "id": "cable_1780703164202",
+      "fromModuleId": "drum_machine_1780701548114",
+      "fromPortId": "snr_out",
+      "toModuleId": "out1",
+      "toPortId": "in_r",
+      "color": "#ffd93d"
+    },
+    {
+      "id": "cable_1780703175323",
+      "fromModuleId": "drum_machine_1780701548114",
+      "fromPortId": "clp_out",
+      "toModuleId": "out1",
+      "toPortId": "in_r",
+      "color": "#6bcb77"
+    },
+    {
+      "id": "cable_1780703616126",
+      "fromModuleId": "vca1",
+      "fromPortId": "out",
+      "toModuleId": "out1",
+      "toPortId": "in_l",
+      "color": "#6bcb77"
+    },
+    {
+      "id": "cable_1780712209855",
+      "fromModuleId": "clock_gen_1780703856072",
+      "fromPortId": "gate_out",
+      "toModuleId": "seq_step_1780702714594",
+      "toPortId": "clock_in",
+      "color": "#4d96ff"
+    },
+    {
+      "id": "cable_1780771687629",
+      "fromModuleId": "seq_step_1780702714594",
+      "fromPortId": "gate_out",
+      "toModuleId": "chord_osc_1780702622845",
+      "toPortId": "gate_in",
+      "color": "#ffd93d"
+    },
+    {
+      "id": "cable_1780771691262",
+      "fromModuleId": "chord_osc_1780702622845",
+      "fromPortId": "out",
+      "toModuleId": "vcf1",
+      "toPortId": "audio_in",
+      "color": "#f97316"
+    },
+    {
+      "id": "cable_1780772693085",
+      "fromModuleId": "clock_gen_1780703856072",
+      "fromPortId": "gate_out",
+      "toModuleId": "poly_step_1780701540817",
+      "toPortId": "clk_in",
+      "color": "#4d96ff"
+    },
+    {
+      "id": "cable_1780776985975",
+      "fromModuleId": "adsr1",
+      "fromPortId": "env_out",
+      "toModuleId": "vca1",
+      "toPortId": "cv_in",
+      "color": "#ff922b"
+    },
+    {
+      "id": "cable_1780777665806",
+      "fromModuleId": "vco1",
+      "fromPortId": "out",
+      "toModuleId": "vcf1",
+      "toPortId": "audio_in",
+      "color": "#ff922b"
+    },
+    {
+      "id": "cable_1780777826305",
+      "fromModuleId": "kb1",
+      "fromPortId": "gate_out",
+      "toModuleId": "arpeggiator_1780777311335",
+      "toPortId": "gate_in",
+      "color": "#ff922b"
+    },
+    {
+      "id": "cable_1780777832864",
+      "fromModuleId": "kb1",
+      "fromPortId": "voct_out",
+      "toModuleId": "arpeggiator_1780777311335",
+      "toPortId": "voct_in",
+      "color": "#ff922b"
+    },
+    {
+      "id": "cable_1780777834677",
+      "fromModuleId": "arpeggiator_1780777311335",
+      "fromPortId": "voct_out",
+      "toModuleId": "vco1",
+      "toPortId": "voct",
+      "color": "#cc5de8"
+    }
+  ]
+}
