@@ -3249,12 +3249,18 @@ export function createAudioModule(
         clkStep++;
       };
 
-      let lastExtClkMs = -Infinity;
+      let lastExtClkMs    = -Infinity;
+      let extClkIntervalMs = Infinity; // measured interval between the last two external pulses
 
       const tick = (beatIndex: number) => {
         if ((p.clk_src ?? 0) > 0.5) return; // explicit external clock mode
-        // Auto-detect: suppress internal timer while external CLK cable is active
-        if (performance.now() - lastExtClkMs < getMs() * 2) return;
+        // Auto-detect: suppress internal timer while external CLK is active.
+        // Use 1.5× the measured external pulse interval so the window always
+        // outlasts the gap between pulses, regardless of the external tempo.
+        const suppressFor = Number.isFinite(extClkIntervalMs)
+          ? extClkIntervalMs * 1.5
+          : getMs() * 6;   // fallback before first two pulses arrive
+        if (performance.now() - lastExtClkMs < suppressFor) return;
         if (!running) return;
         const swing = getSwing();
         if (swing > 0.005 && beatIndex % 2 === 1) {
@@ -3285,7 +3291,9 @@ export function createAudioModule(
           // External clock: each rising edge advances one step; marks lastExtClkMs to suppress internal timer
           ['clk_in',  (_t: number, _f?: number) => {
             if (!running) return;
-            lastExtClkMs = performance.now();
+            const now = performance.now();
+            if (lastExtClkMs > -Infinity) extClkIntervalMs = now - lastExtClkMs;
+            lastExtClkMs = now;
             const swing = getSwing();
             if (swing > 0.005 && clkStep % 2 === 1) setTimeout(doTick, getMs() * swing);
             else doTick();
