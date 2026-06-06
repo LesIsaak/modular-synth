@@ -1534,15 +1534,27 @@ export function createAudioModule(
       const portCbs = new Map<string, (on: boolean, freq: number) => void>();
       const DIV: Record<string, number> = { gate_out: 1, div2_out: 2, div4_out: 4, div8_out: 8 };
       const lastMs: Record<string, number> = {};
-      const getMs = () => 60000 / (p.bpm ?? 120);
+
+      // Bug fix 3: wire up tempo_cv input using AnalyserNode tap
+      const tempoCvMix = ctx.createGain(); tempoCvMix.gain.value = 1;
+      const tempoCvTap = ctx.createAnalyser(); tempoCvTap.fftSize = 32;
+      tempoCvMix.connect(tempoCvTap);
+      const tempoCvBuf = new Float32Array(1);
+      const readTempoCv = () => { tempoCvTap.getFloatTimeDomainData(tempoCvBuf); return tempoCvBuf[0]; };
+
+      // ±5 V CV range → ±120 BPM offset (matches poly_step bpmCv scaling)
+      const getMs = () => 60000 / Math.max(1, (p.bpm ?? 120) + readTempoCv() * 120);
+
       let timer = makeClockTimer(getMs, (i) => {
         beat = i;
         const ms = getMs();
-        const swingOffset = (beat % 2 === 1) ? ms * (p.swing ?? 0) : 0;
+        // Bug fix 1: capture `i` here so the closure uses the correct beat even
+        // if another tick fires and mutates `beat` before the setTimeout runs.
+        const swingOffset = (i % 2 === 1) ? ms * (p.swing ?? 0) : 0;
         setTimeout(() => {
           for (const [portId, cb] of portCbs) {
             const div = DIV[portId] ?? 1;
-            if (beat % div === 0) {
+            if (i % div === 0) {          // use `i`, not the shared `beat`
               lastMs[portId] = performance.now();
               cb(true, 440);
               setTimeout(() => cb(false, 440), ms * 0.45);
@@ -1552,7 +1564,11 @@ export function createAudioModule(
       });
       return {
         outputs: new Map(),
-        inputs: new Map(),
+        inputs: new Map([['tempo_cv', { node: tempoCvMix as AudioNode }]]),
+        // Bug fix 2: handle reset_in — restart the beat counter and timer phase
+        portNoteOn: new Map([
+          ['reset_in', () => { beat = 0; timer.restart(); }],
+        ]),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
         setGateTrigger: fn => {
           if (fn) portCbs.set('gate_out', fn);
@@ -1561,7 +1577,7 @@ export function createAudioModule(
         setPortGateTrigger: (portId, fn) => { portCbs.set(portId, fn); },
         getLevel:     () => Math.max(0, 1 - (performance.now() - (lastMs['gate_out'] ?? 0)) / 120),
         getPortLevel: (portId: string) => Math.max(0, 1 - (performance.now() - (lastMs[portId] ?? 0)) / 120),
-        destroy: () => { timer.destroy(); portCbs.clear(); },
+        destroy: () => { timer.destroy(); portCbs.clear(); tempoCvMix.disconnect(); tempoCvTap.disconnect(); },
       };
     }
 
