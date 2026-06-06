@@ -586,7 +586,7 @@ function SamplerBankPanel({
   const bankIndex = Math.round(module.params.bank ?? 0);
 
   return (
-    <div style={{ flex: 1, padding: '6px 5px', display: 'flex', flexDirection: 'column', gap: 6, overflow: 'hidden' }}>
+    <div style={{ flex: 1, padding: '4px 5px', display: 'flex', flexDirection: 'column', gap: 4, overflow: 'hidden' }}>
       {/* Bank row */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 5,
@@ -661,7 +661,7 @@ function SamplerBankPanel({
       )}
 
       {/* Knobs */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 4px', justifyContent: 'center' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 4px', justifyContent: 'center' }}>
         {typeDef.knobs.map(knob => (
           <Knob
             key={knob.id}
