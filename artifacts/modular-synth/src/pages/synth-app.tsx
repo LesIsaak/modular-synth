@@ -1408,49 +1408,96 @@ export default function SynthApp() {
     }
   }, []);
 
-  // ─── Build patch from example ───────────────────────────────────────────────
+  // ─── Build patch from example (full replace) ────────────────────────────────
   const handleBuildPatch = useCallback((patch: PatchExample) => {
     const ctx = audioCtxRef.current;
     if (!ctx) return;
 
     pushUndo(cables, modules);
 
-    // Map: label used in patch.modules → { typeId, instanceId }
-    const labelToInst = new Map<string, { typeId: string; id: string }>();
-    const newInsts: ModuleInstance[] = [];
-    let runningModules = [...modules];
+    // ── Tear down all current audio (same as handleLoadPatch) ──
+    for (const nodes of audioModulesRef.current.values()) {
+      try { nodes.destroy(); } catch (_) {}
+    }
+    audioModulesRef.current.clear();
+    gateConnRef.current.clear();
+    portGateMapRef.current.clear();
 
-    for (const label of patch.modules) {
-      if (label === 'Keyboard') {
+    // ── Ensure Keyboard and Output are always present ──
+    const hasKeyboard = patch.modules.some(l => l === 'Keyboard' || MODULE_TYPES.find(m => m.name === l)?.id === 'keyboard');
+    const hasOutput   = patch.modules.some(l => MODULE_TYPES.find(m => m.name === l)?.id === 'output');
+    const fullLabels  = [
+      ...(hasKeyboard ? [] : ['Keyboard']),
+      ...patch.modules,
+      ...(hasOutput   ? [] : ['Output']),
+    ];
+
+    // ── Build module instances left-to-right ──
+    const labelToInst = new Map<string, { typeId: string; id: string }>();
+    const builtModules: ModuleInstance[] = [];
+    let x = 0;
+
+    for (let i = 0; i < fullLabels.length; i++) {
+      const label = fullLabels[i];
+
+      // Keyboard is always kb1
+      if (label === 'Keyboard' || MODULE_TYPES.find(m => m.name === label)?.id === 'keyboard') {
+        const kbDef = MODULE_TYPE_MAP.get('keyboard')!;
+        const params = getDefaultParams(kbDef);
+        const inst: ModuleInstance = { id: 'kb1', typeId: 'keyboard', x, y: 0, params };
+        builtModules.push(inst);
         labelToInst.set(label, { typeId: 'keyboard', id: 'kb1' });
+        const audio = createAudioModule(ctx, 'keyboard', { ...params });
+        audioModulesRef.current.set('kb1', audio);
+        x += kbDef.width ?? SLOT_W;
         continue;
       }
-      // Find module type by display name
+
       const typeDef = MODULE_TYPES.find(m => m.name === label);
       if (!typeDef) continue;
-      // Avoid duplicating keyboard module
-      if (typeDef.id === 'keyboard') { labelToInst.set(label, { typeId: 'keyboard', id: 'kb1' }); continue; }
 
-      const id = `${typeDef.id}_${Date.now()}_${newInsts.length}`;
+      const id = `${typeDef.id}_p${i}`;
       const params = getDefaultParams(typeDef);
-      const { x, y } = findNextSlot(runningModules, typeDef.id);
-      const inst: ModuleInstance = { id, typeId: typeDef.id, x, y, params };
-      newInsts.push(inst);
-      runningModules = [...runningModules, inst];
+      const inst: ModuleInstance = { id, typeId: typeDef.id, x, y: 0, params };
+      builtModules.push(inst);
       labelToInst.set(label, { typeId: typeDef.id, id });
+      x += typeDef.width ?? SLOT_W;
 
-      // Create audio node
       const audio = createAudioModule(ctx, typeDef.id, { ...params });
       audioModulesRef.current.set(id, audio);
-      // Apply selectors
       for (const sel of typeDef.selectors ?? []) {
         audio.setSelector?.(sel.id, params[sel.id] ?? sel.default);
       }
     }
 
-    // Build cables from connections
-    const newCables: Cable[] = [];
-    for (const conn of patch.connections) {
+    // ── Wire cables ──
+    const builtCables: Cable[] = [];
+
+    // If keyboard or output were auto-added, patch in their missing connections
+    const effectiveConnections = [...patch.connections];
+    if (!hasKeyboard) {
+      const firstNonKb = fullLabels.find(l => l !== 'Keyboard' && MODULE_TYPES.find(m => m.name === l)?.id !== 'keyboard');
+      if (firstNonKb) {
+        const tgt = labelToInst.get(firstNonKb);
+        const tgtDef = tgt ? MODULE_TYPE_MAP.get(tgt.typeId) : undefined;
+        const voctIn  = tgtDef?.ports.find(p => p.type === 'cv_in'   && p.name.toUpperCase() === 'V/OCT');
+        const gateIn  = tgtDef?.ports.find(p => p.type === 'gate_in' && p.name.toUpperCase() === 'GATE');
+        if (voctIn) effectiveConnections.unshift({ from: 'Keyboard', out: 'V/OCT', to: firstNonKb, in: voctIn.name,  sig: 'cv'   });
+        if (gateIn) effectiveConnections.unshift({ from: 'Keyboard', out: 'GATE',  to: firstNonKb, in: gateIn.name, sig: 'gate' });
+      }
+    }
+    if (!hasOutput) {
+      const lastNonOut = [...fullLabels].reverse().find(l => MODULE_TYPES.find(m => m.name === l)?.id !== 'output');
+      if (lastNonOut) {
+        const src = labelToInst.get(lastNonOut);
+        const srcDef = src ? MODULE_TYPE_MAP.get(src.typeId) : undefined;
+        const audioOut = srcDef?.ports.find(p => p.type === 'audio_out');
+        if (audioOut) effectiveConnections.push({ from: lastNonOut, out: audioOut.name, to: 'Output', in: 'L', sig: 'audio' });
+      }
+    }
+
+    for (let ci = 0; ci < effectiveConnections.length; ci++) {
+      const conn = effectiveConnections[ci];
       const fromInst = labelToInst.get(conn.from);
       const toInst   = labelToInst.get(conn.to);
       if (!fromInst || !toInst) continue;
@@ -1459,7 +1506,6 @@ export default function SynthApp() {
       const toTypeDef   = MODULE_TYPE_MAP.get(toInst.typeId);
       if (!fromTypeDef || !toTypeDef) continue;
 
-      // Match by port name; from = _out side, to = _in side
       const fromPort = fromTypeDef.ports.find(
         p => p.type.endsWith('_out') && p.name.toUpperCase() === conn.out.toUpperCase()
       );
@@ -1469,13 +1515,12 @@ export default function SynthApp() {
       if (!fromPort || !toPort) continue;
 
       const cable: Cable = {
-        id: `cable_patch_${Date.now()}_${newCables.length}`,
+        id: `cable_bp_${ci}`,
         fromModuleId: fromInst.id, fromPortId: fromPort.id,
         toModuleId:   toInst.id,   toPortId:   toPort.id,
-        color: CABLE_COLORS[(cables.length + newCables.length) % CABLE_COLORS.length],
+        color: CABLE_COLORS[ci % CABLE_COLORS.length],
       };
 
-      // Wire audio / gate
       if (fromPort.type === 'gate_out') {
         const gk = `${fromInst.id}:${fromPort.id}`;
         if (!gateConnRef.current.has(gk)) gateConnRef.current.set(gk, new Set());
@@ -1491,11 +1536,12 @@ export default function SynthApp() {
         if (fromAudio && toAudio) connectAudioPorts(fromAudio, fromPort.id, toAudio, toPort.id);
       }
 
-      newCables.push(cable);
+      builtCables.push(cable);
     }
 
-    setModules(prev => [...prev, ...newInsts]);
-    setCables(prev => [...prev, ...newCables]);
+    // ── Replace state entirely ──
+    setModules(builtModules);
+    setCables(builtCables);
   }, [cables, modules, pushUndo, makeGateCb]);
 
   // ─── Delete module ──────────────────────────────────────────────────────────
