@@ -69,10 +69,12 @@ export default function ModuleInfoPopup({
   typeDef,
   anchor,
   onClose,
+  onBuildPatch,
 }: {
   typeDef: ModuleTypeDef;
   anchor: { x: number; y: number };
   onClose: () => void;
+  onBuildPatch?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<'info' | 'patch'>('info');
@@ -356,6 +358,29 @@ export default function ModuleInfoPopup({
                 {patch.tip}
               </p>
             </div>
+          )}
+
+          {/* Build in rack button */}
+          {onBuildPatch && (
+            <button
+              onMouseDown={e => e.stopPropagation()}
+              onClick={() => { onBuildPatch(); onClose(); }}
+              style={{
+                marginTop: 12, width: '100%',
+                padding: '6px 0',
+                fontSize: 8, fontWeight: 700, letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                background: typeDef.accentColor + '18',
+                border: `1px solid ${typeDef.accentColor}55`,
+                borderRadius: 3, cursor: 'pointer',
+                color: typeDef.accentColor,
+                transition: 'background 0.12s',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = typeDef.accentColor + '30'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = typeDef.accentColor + '18'; }}
+            >
+              ▶ Build in rack
+            </button>
           )}
         </div>
       )}

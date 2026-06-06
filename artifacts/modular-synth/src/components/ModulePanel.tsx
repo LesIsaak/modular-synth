@@ -48,6 +48,8 @@ interface ModulePanelProps {
   audioTrigGetDeviceLabel?: () => string;
   /** Audio Trig: getter polled to get available audio input devices */
   audioTrigGetDeviceList?: () => { deviceId: string; label: string }[];
+  /** Build this module's example patch in the rack */
+  onBuildPatch?: () => void;
 }
 
 function ActivityLED({ getLevelFn, color }: { getLevelFn: () => number; color: string }) {
@@ -531,6 +533,7 @@ export default function ModulePanel({
   onFreezeKill,
   onSeqReset,
   onAudioTrigPickDevice, audioTrigGetDeviceLabel, audioTrigGetDeviceList,
+  onBuildPatch,
 }: ModulePanelProps) {
   const typeDef = MODULE_TYPE_MAP.get(module.typeId);
   const [showDelete, setShowDelete] = useState(false);
@@ -1315,6 +1318,7 @@ export default function ModulePanel({
           typeDef={typeDef}
           anchor={infoAnchor}
           onClose={() => setShowInfo(false)}
+          onBuildPatch={onBuildPatch}
         />
       )}
     </div>

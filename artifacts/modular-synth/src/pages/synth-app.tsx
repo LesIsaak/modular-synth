@@ -6,6 +6,7 @@ import {
   CABLE_COLORS, getDefaultParams, MODULE_TYPES, MODULE_DESCRIPTIONS,
 } from '../moduleDefinitions';
 import { createAudioModule, connectAudioPorts, disconnectAudioPorts, getCurrentTickAudioTime } from '../audioEngine';
+import { MODULE_PATCH_EXAMPLES, PatchExample } from '../modulePatchExamples';
 import ModulePanel from '../components/ModulePanel';
 import IORefPanel from '../components/IORefPanel';
 
@@ -1407,6 +1408,96 @@ export default function SynthApp() {
     }
   }, []);
 
+  // ─── Build patch from example ───────────────────────────────────────────────
+  const handleBuildPatch = useCallback((patch: PatchExample) => {
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
+
+    pushUndo(cables, modules);
+
+    // Map: label used in patch.modules → { typeId, instanceId }
+    const labelToInst = new Map<string, { typeId: string; id: string }>();
+    const newInsts: ModuleInstance[] = [];
+    let runningModules = [...modules];
+
+    for (const label of patch.modules) {
+      if (label === 'Keyboard') {
+        labelToInst.set(label, { typeId: 'keyboard', id: 'kb1' });
+        continue;
+      }
+      // Find module type by display name
+      const typeDef = MODULE_TYPES.find(m => m.name === label);
+      if (!typeDef) continue;
+      // Avoid duplicating keyboard module
+      if (typeDef.id === 'keyboard') { labelToInst.set(label, { typeId: 'keyboard', id: 'kb1' }); continue; }
+
+      const id = `${typeDef.id}_${Date.now()}_${newInsts.length}`;
+      const params = getDefaultParams(typeDef);
+      const { x, y } = findNextSlot(runningModules, typeDef.id);
+      const inst: ModuleInstance = { id, typeId: typeDef.id, x, y, params };
+      newInsts.push(inst);
+      runningModules = [...runningModules, inst];
+      labelToInst.set(label, { typeId: typeDef.id, id });
+
+      // Create audio node
+      const audio = createAudioModule(ctx, typeDef.id, { ...params });
+      audioModulesRef.current.set(id, audio);
+      // Apply selectors
+      for (const sel of typeDef.selectors ?? []) {
+        audio.setSelector?.(sel.id, params[sel.id] ?? sel.default);
+      }
+    }
+
+    // Build cables from connections
+    const newCables: Cable[] = [];
+    for (const conn of patch.connections) {
+      const fromInst = labelToInst.get(conn.from);
+      const toInst   = labelToInst.get(conn.to);
+      if (!fromInst || !toInst) continue;
+
+      const fromTypeDef = MODULE_TYPE_MAP.get(fromInst.typeId);
+      const toTypeDef   = MODULE_TYPE_MAP.get(toInst.typeId);
+      if (!fromTypeDef || !toTypeDef) continue;
+
+      // Match by port name; from = _out side, to = _in side
+      const fromPort = fromTypeDef.ports.find(
+        p => p.type.endsWith('_out') && p.name.toUpperCase() === conn.out.toUpperCase()
+      );
+      const toPort = toTypeDef.ports.find(
+        p => p.type.endsWith('_in') && p.name.toUpperCase() === conn.in.toUpperCase()
+      );
+      if (!fromPort || !toPort) continue;
+
+      const cable: Cable = {
+        id: `cable_patch_${Date.now()}_${newCables.length}`,
+        fromModuleId: fromInst.id, fromPortId: fromPort.id,
+        toModuleId:   toInst.id,   toPortId:   toPort.id,
+        color: CABLE_COLORS[(cables.length + newCables.length) % CABLE_COLORS.length],
+      };
+
+      // Wire audio / gate
+      if (fromPort.type === 'gate_out') {
+        const gk = `${fromInst.id}:${fromPort.id}`;
+        if (!gateConnRef.current.has(gk)) gateConnRef.current.set(gk, new Set());
+        gateConnRef.current.get(gk)!.add(toInst.id);
+        if (!portGateMapRef.current.has(gk)) portGateMapRef.current.set(gk, new Map());
+        portGateMapRef.current.get(gk)!.set(toInst.id, toPort.id);
+        const fromAudio = audioModulesRef.current.get(fromInst.id);
+        if (fromAudio?.setPortGateTrigger) fromAudio.setPortGateTrigger(fromPort.id, makeGateCb(gk));
+        else if (fromAudio?.setGateTrigger) fromAudio.setGateTrigger(makeGateCb(gk));
+      } else {
+        const fromAudio = audioModulesRef.current.get(fromInst.id);
+        const toAudio   = audioModulesRef.current.get(toInst.id);
+        if (fromAudio && toAudio) connectAudioPorts(fromAudio, fromPort.id, toAudio, toPort.id);
+      }
+
+      newCables.push(cable);
+    }
+
+    setModules(prev => [...prev, ...newInsts]);
+    setCables(prev => [...prev, ...newCables]);
+  }, [cables, modules, pushUndo, makeGateCb]);
+
   // ─── Delete module ──────────────────────────────────────────────────────────
   const handleDeleteModule = useCallback((moduleId: string) => {
     pushUndo(cables, modules);
@@ -2317,6 +2408,7 @@ export default function SynthApp() {
                 onAudioTrigPickDevice={mod.typeId === 'audio_trig' ? (deviceId?: string) => audioModulesRef.current.get(mod.id)?.triggerDeviceRepick?.(deviceId) : undefined}
                 audioTrigGetDeviceLabel={mod.typeId === 'audio_trig' ? () => audioModulesRef.current.get(mod.id)?.getDeviceLabel?.() ?? '—' : undefined}
                 audioTrigGetDeviceList={mod.typeId === 'audio_trig' ? () => audioModulesRef.current.get(mod.id)?.getDeviceList?.() ?? [] : undefined}
+                onBuildPatch={MODULE_PATCH_EXAMPLES[mod.typeId] ? () => handleBuildPatch(MODULE_PATCH_EXAMPLES[mod.typeId]!) : undefined}
               />
             </div>
           ))}
