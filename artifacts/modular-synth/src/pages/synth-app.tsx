@@ -2113,9 +2113,16 @@ export default function SynthApp() {
       if (!matchedKnob) continue;
 
       const srcGetLevel = audioModulesRef.current.get(cable.fromModuleId)?.getLevel;
-      if (!srcGetLevel) continue;
+      const destMod     = audioModulesRef.current.get(cable.toModuleId);
+      // Prefer source's getLevel; fall back to destination's getPortLevel so
+      // modules that read CV via AnalyserNode taps (e.g. bd_drum) still show
+      // the indicator regardless of which source is patched in.
+      const toPortId = cable.toPortId;
+      const levelFn: (() => number) | undefined = srcGetLevel ??
+        (destMod?.getPortLevel ? () => destMod.getPortLevel!(toPortId) : undefined);
+      if (!levelFn) continue;
       if (!map.has(cable.toModuleId)) map.set(cable.toModuleId, new Map());
-      map.get(cable.toModuleId)!.set(matchedKnob.id, srcGetLevel);
+      map.get(cable.toModuleId)!.set(matchedKnob.id, levelFn);
     }
     return map;
   // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -3357,6 +3357,11 @@ export function createAudioModule(
           ['trig_in',   () => fire(false)],
           ['accent_in', () => fire(true)],
         ]),
+        getPortLevel: (portId: string) => {
+          if (portId === 'tune_cv')  return Math.max(0, Math.min(1, (tuneTap.read()  + 1) / 2));
+          if (portId === 'decay_cv') return Math.max(0, Math.min(1, (decayTap.read() + 1) / 2));
+          return 0;
+        },
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'vol') outGain.gain.value = val;
