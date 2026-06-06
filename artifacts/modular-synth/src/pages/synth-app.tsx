@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import { ModuleInstance, Cable, PendingCable, PortType, MidiMonitorData } from '../types';
 import { MidiClockInfo, getMidiClockInfo, setMidiClockLocked, emitMidiClockInfo, addMidiClockListener, removeMidiClockListener } from '../midiClock';
 import {
@@ -1094,6 +1094,9 @@ export default function SynthApp() {
   const [saveDialogInput, setSaveDialogInput] = useState('');
   const [modules,      setModules]      = useState<ModuleInstance[]>(DEFAULT_MODULES);
   const [cables,       setCables]       = useState<Cable[]>(DEFAULT_CABLES);
+  // Bumped after every modules commit so PatchCables re-renders once port refs are populated
+  const [cableLayoutVersion, setCableLayoutVersion] = useState(0);
+  useLayoutEffect(() => { setCableLayoutVersion(v => v + 1); }, [modules]);
   const [pendingCable, setPendingCable] = useState<PendingCable | null>(null);
   const pendingCableRef = useRef<PendingCable | null>(null);
   pendingCableRef.current = pendingCable;
