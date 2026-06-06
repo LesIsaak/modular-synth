@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ModuleTypeDef, PortType } from '../types';
 import { MODULE_DESCRIPTIONS } from '../moduleDescriptions';
 import { CATEGORY_LABELS } from '../moduleDefinitions';
@@ -76,30 +76,50 @@ export default function ModuleInfoPopup({
   onClose: () => void;
   onBuildPatch?: () => void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
+  const POPUP_W = 272;
+  const initLeft = Math.max(8, Math.min(anchor.x, window.innerWidth - POPUP_W - 8));
+  const initTop  = Math.min(anchor.y + 6, window.innerHeight - 60);
+
+  const [pos, setPos] = useState({ x: initLeft, y: initTop });
   const [view, setView] = useState<'info' | 'patch'>('info');
 
+  const dragging  = useRef(false);
+  const dragStart = useRef({ mx: 0, my: 0, px: 0, py: 0 });
+
+  const onHeaderMouseDown = useCallback((e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button')) return;
+    e.preventDefault();
+    dragging.current  = true;
+    dragStart.current = { mx: e.clientX, my: e.clientY, px: pos.x, py: pos.y };
+
+    const onMove = (ev: MouseEvent) => {
+      if (!dragging.current) return;
+      const nx = dragStart.current.px + ev.clientX - dragStart.current.mx;
+      const ny = dragStart.current.py + ev.clientY - dragStart.current.my;
+      setPos({
+        x: Math.max(0, Math.min(nx, window.innerWidth  - POPUP_W - 4)),
+        y: Math.max(0, Math.min(ny, window.innerHeight - 40)),
+      });
+    };
+    const onUp = () => {
+      dragging.current = false;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup',   onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup',   onUp);
+  }, [pos.x, pos.y]);
+
   useEffect(() => {
-    const handleDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
     const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('mousedown', handleDown);
     document.addEventListener('keydown', handleKey);
-    return () => {
-      document.removeEventListener('mousedown', handleDown);
-      document.removeEventListener('keydown', handleKey);
-    };
+    return () => document.removeEventListener('keydown', handleKey);
   }, [onClose]);
 
   const inPorts  = typeDef.ports.filter(p => p.type.endsWith('_in'));
   const outPorts = typeDef.ports.filter(p => p.type.endsWith('_out'));
   const description = MODULE_DESCRIPTIONS[typeDef.id];
   const patch = MODULE_PATCH_EXAMPLES[typeDef.id];
-
-  const POPUP_W = 272;
-  const left = Math.max(8, Math.min(anchor.x, window.innerWidth - POPUP_W - 8));
-  const top  = Math.min(anchor.y + 6, window.innerHeight - 60);
 
   const tabBtn = (label: string, active: boolean, onClick: () => void) => (
     <button
@@ -118,11 +138,10 @@ export default function ModuleInfoPopup({
 
   return (
     <div
-      ref={ref}
       style={{
         position: 'fixed',
-        left,
-        top,
+        left: pos.x,
+        top:  pos.y,
         width: POPUP_W,
         maxHeight: '72vh',
         overflowY: 'auto',
@@ -137,12 +156,29 @@ export default function ModuleInfoPopup({
       }}
       onMouseDown={e => e.stopPropagation()}
     >
-      {/* ── Header ─────────────────────────────────────────────────────── */}
-      <div style={{
-        padding: '8px 10px 7px',
-        borderBottom: '1px solid #1e1e1e',
-        display: 'flex', alignItems: 'flex-start', gap: 6,
-      }}>
+      {/* ── Header (drag handle) ─────────────────────────────────────── */}
+      <div
+        onMouseDown={onHeaderMouseDown}
+        style={{
+          padding: '8px 10px 7px',
+          borderBottom: '1px solid #1e1e1e',
+          display: 'flex', alignItems: 'flex-start', gap: 6,
+          cursor: 'grab',
+        }}
+      >
+        {/* Drag grip dots */}
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: 2,
+          justifyContent: 'center', marginTop: 2, flexShrink: 0,
+        }}>
+          {[0, 1, 2].map(r => (
+            <div key={r} style={{ display: 'flex', gap: 2 }}>
+              <div style={{ width: 2, height: 2, borderRadius: '50%', background: '#3a3a3a' }} />
+              <div style={{ width: 2, height: 2, borderRadius: '50%', background: '#3a3a3a' }} />
+            </div>
+          ))}
+        </div>
+
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
             fontSize: 9, fontWeight: 700, color: typeDef.accentColor,
