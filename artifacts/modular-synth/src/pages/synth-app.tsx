@@ -970,6 +970,119 @@ function useMIDI(
   return { status, deviceCount };
 }
 
+// ─── Minimap ──────────────────────────────────────────────────────────────────
+const MINI_W = 164;
+const MINI_H = Math.round(MINI_W * CONTENT_H / CONTENT_W); // ≈205
+
+function Minimap({
+  modules,
+  rackRef,
+}: {
+  modules: ModuleInstance[];
+  rackRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  const scaleX = MINI_W / CONTENT_W;
+  const scaleY = MINI_H / CONTENT_H;
+  const [scroll, setScroll]   = useState({ left: 0, top: 0 });
+  const [viewSize, setViewSize] = useState({ w: 0, h: 0 });
+  const miniDragRef = useRef(false);
+
+  useEffect(() => {
+    const el = rackRef.current;
+    if (!el) return;
+    const update = () => {
+      setScroll({ left: el.scrollLeft, top: el.scrollTop });
+      setViewSize({ w: el.clientWidth, h: el.clientHeight });
+    };
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update, { passive: true });
+    return () => {
+      el.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
+  }, [rackRef]);
+
+  const navigateTo = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = rackRef.current;
+    if (!el) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    el.scrollLeft = Math.max(0, mx / scaleX - viewSize.w / 2);
+    el.scrollTop  = Math.max(0, my / scaleY - Math.max(0, viewSize.h - KB_H) / 2);
+  };
+
+  const vpW = Math.min(MINI_W, viewSize.w * scaleX);
+  const vpH = Math.min(MINI_H, Math.max(0, viewSize.h - KB_H) * scaleY);
+
+  return (
+    <div
+      style={{
+        position: 'absolute', bottom: 12, right: 12,
+        width: MINI_W, height: MINI_H,
+        background: 'rgba(8,8,8,0.93)',
+        border: '1px solid #2a2a2a',
+        borderRadius: 4,
+        overflow: 'hidden',
+        cursor: 'crosshair',
+        zIndex: 40,
+        boxShadow: '0 4px 20px rgba(0,0,0,0.75)',
+        userSelect: 'none',
+      }}
+      onMouseDown={e => { miniDragRef.current = true; navigateTo(e); e.stopPropagation(); }}
+      onMouseMove={e => { if (miniDragRef.current) navigateTo(e); }}
+      onMouseUp={() => { miniDragRef.current = false; }}
+      onMouseLeave={() => { miniDragRef.current = false; }}
+    >
+      {/* Row grid lines */}
+      {Array.from({ length: Math.ceil(CONTENT_H / SLOT_H) }, (_, i) => (
+        <div key={i} style={{
+          position: 'absolute', left: 0, right: 0,
+          top: Math.round(i * SLOT_H * scaleY), height: 1,
+          background: '#181818', pointerEvents: 'none',
+        }} />
+      ))}
+
+      {/* Module rects */}
+      {modules.map(m => {
+        const def   = MODULE_TYPE_MAP.get(m.typeId);
+        const mw    = def?.width ?? SLOT_W;
+        const color = CATEGORY_COLORS[def?.category ?? ''] ?? '#444';
+        return (
+          <div key={m.id} style={{
+            position: 'absolute',
+            left:   Math.round(m.x * scaleX),
+            top:    Math.round(m.y * scaleY),
+            width:  Math.max(2, Math.round(mw * scaleX) - 1),
+            height: Math.max(2, Math.round(SLOT_H * scaleY) - 1),
+            background: color, opacity: 0.8, borderRadius: 1,
+            pointerEvents: 'none',
+          }} />
+        );
+      })}
+
+      {/* Viewport rect */}
+      <div style={{
+        position: 'absolute',
+        left:   Math.round(scroll.left * scaleX),
+        top:    Math.round(scroll.top  * scaleY),
+        width:  vpW, height: vpH,
+        border: '1px solid rgba(232,125,39,0.9)',
+        background: 'rgba(232,125,39,0.07)',
+        borderRadius: 2, pointerEvents: 'none',
+      }} />
+
+      {/* Label */}
+      <div style={{
+        position: 'absolute', bottom: 3, right: 5,
+        fontSize: 6, letterSpacing: '0.14em', color: '#2e2e2e',
+        textTransform: 'uppercase', pointerEvents: 'none',
+      }}>MINIMAP</div>
+    </div>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function SynthApp() {
   const [started,         setStarted]         = useState(false);
@@ -1076,6 +1189,16 @@ export default function SynthApp() {
     moduleId: string; startX: number; startY: number; origX: number; origY: number;
     origScrollLeft: number; origScrollTop: number;
   } | null>(null);
+
+  // ─── Pan mode ────────────────────────────────────────────────────────────────
+  const [panMode, setPanMode]   = useState(false);
+  const panModeRef              = useRef(false);   // effective value (button OR space held)
+  const panDragRef              = useRef<{
+    startX: number; startY: number; origScrollLeft: number; origScrollTop: number;
+  } | null>(null);
+
+  // Keep panModeRef current whenever the button-toggled state changes
+  useEffect(() => { panModeRef.current = panMode; }, [panMode]);
 
   // ─── Port DOM refs ──────────────────────────────────────────────────────────
   const registerPortRef = useCallback((key: string, el: HTMLDivElement | null) => {
@@ -1765,7 +1888,19 @@ export default function SynthApp() {
   }, [cables, modules, getPortCenter]);
 
   // ─── Drag (snap on release) ─────────────────────────────────────────────────
+  const handleRackMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!panModeRef.current) return;
+    if (e.button !== 0) return;
+    e.preventDefault();
+    panDragRef.current = {
+      startX: e.clientX, startY: e.clientY,
+      origScrollLeft: rackRef.current?.scrollLeft ?? 0,
+      origScrollTop:  rackRef.current?.scrollTop  ?? 0,
+    };
+  }, []);
+
   const handleDragStart = useCallback((moduleId: string, e: React.MouseEvent) => {
+    if (panModeRef.current) return; // pan mode — don't drag modules
     e.preventDefault();
     const mod = modules.find(m => m.id === moduleId);
     if (!mod) return;
@@ -1829,6 +1964,12 @@ export default function SynthApp() {
     const onMouseMove = (e: MouseEvent) => {
       lastMouse = { x: e.clientX, y: e.clientY };
 
+      // Pan drag — scroll the rack canvas
+      if (panDragRef.current && rackRef.current) {
+        rackRef.current.scrollLeft = panDragRef.current.origScrollLeft - (e.clientX - panDragRef.current.startX);
+        rackRef.current.scrollTop  = panDragRef.current.origScrollTop  - (e.clientY - panDragRef.current.startY);
+      }
+
       // Cable-tail position: only update when actively patching, throttled to RAF rate.
       // Avoids full SynthApp re-renders from every mousemove when no cable is pending.
       if (pendingCableRef.current && !cableRafId) {
@@ -1867,6 +2008,7 @@ export default function SynthApp() {
     };
 
     const onMouseUp = () => {
+      panDragRef.current = null; // clear pan drag on any mouse-up
       if (edgeRafId)  { cancelAnimationFrame(edgeRafId);  edgeRafId  = 0; }
       if (dragRafId)  { cancelAnimationFrame(dragRafId);  dragRafId  = 0; }
       if (cableRafId) { cancelAnimationFrame(cableRafId); cableRafId = 0; }
@@ -1903,6 +2045,28 @@ export default function SynthApp() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [handleUndo, handleSavePatch, handleLoadClick]);
+
+  // Space = hold to temporarily activate pan mode (no re-render needed, just ref)
+  useEffect(() => {
+    const onDown = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' || e.repeat) return;
+      const t = e.target as Element | null;
+      if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement) return;
+      e.preventDefault();
+      panModeRef.current = true;
+    };
+    const onUp = (e: KeyboardEvent) => {
+      if (e.code !== 'Space') return;
+      panModeRef.current = panMode; // restore to button-toggled value
+      panDragRef.current = null;    // cancel any in-flight pan drag
+    };
+    window.addEventListener('keydown', onDown);
+    window.addEventListener('keyup',   onUp);
+    return () => {
+      window.removeEventListener('keydown', onDown);
+      window.removeEventListener('keyup',   onUp);
+    };
+  }, [panMode]);
 
   // Legacy keyboard handler (for any keyboard module instances in modules list — none by default)
   const handleModuleKeyPress = useCallback((moduleId: string, freq: number, on: boolean) => {
@@ -2041,14 +2205,48 @@ export default function SynthApp() {
 
       <ModuleBrowser onAdd={handleAddModule} />
 
-      {/* Rack — bottom-padded so modules aren't hidden behind the fixed keyboard */}
-      <div
-        ref={rackRef}
-        className="flex-1 overflow-auto relative rack-bg"
-        style={{ paddingBottom: KB_H }}
-        onClick={() => { if (pendingCable) setPendingCable(null); }}
-        data-testid="rack-workspace"
-      >
+      {/* Rack viewport wrapper — relative so pan button + minimap are fixed to viewport */}
+      <div className="flex-1 relative overflow-hidden">
+
+        {/* Pan mode toggle button */}
+        <button
+          title={panMode ? 'Pan mode ON — click to exit (or hold Space)' : 'Pan mode — drag to scroll canvas (or hold Space)'}
+          onClick={() => setPanMode(m => !m)}
+          style={{
+            position: 'absolute', top: 12, right: 12,
+            zIndex: 42, display: 'flex', alignItems: 'center', gap: 5,
+            padding: '0 9px', height: 24,
+            fontSize: 7, fontFamily: 'monospace', fontWeight: 700,
+            letterSpacing: '0.18em', textTransform: 'uppercase',
+            borderRadius: 3, cursor: 'pointer',
+            border: panMode ? '1px solid #c96a1a' : '1px solid #2e2e2e',
+            background: panMode ? '#e87d27' : '#181818',
+            color: panMode ? '#000' : '#555',
+            boxShadow: panMode ? '0 0 10px rgba(232,125,39,0.35)' : 'none',
+            transition: 'all 0.15s',
+          }}
+        >
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M9 3a1 1 0 0 0-1 1v4H6.5A1.5 1.5 0 0 0 5 9.5v.5a1 1 0 0 0 0 2v1a1 1 0 0 0 0 2v.5A4.5 4.5 0 0 0 9.5 20h3a4.5 4.5 0 0 0 4.5-4.5V11a1 1 0 0 0-2 0v-1.5A1.5 1.5 0 0 0 13.5 8H13V4a1 1 0 0 0-1-1H9z"/>
+          </svg>
+          PAN
+        </button>
+
+        {/* Minimap */}
+        <Minimap modules={modules} rackRef={rackRef} />
+
+        {/* Scrollable canvas */}
+        <div
+          ref={rackRef}
+          className="absolute inset-0 overflow-auto rack-bg"
+          style={{
+            paddingBottom: KB_H,
+            cursor: panMode ? 'grab' : 'default',
+          }}
+          onClick={() => { if (pendingCable) setPendingCable(null); }}
+          onMouseDown={handleRackMouseDown}
+          data-testid="rack-workspace"
+        >
         <div className="relative" style={{ width: CONTENT_W, height: CONTENT_H }}>
           <PatchCables
             cables={cables}
@@ -2110,7 +2308,8 @@ export default function SynthApp() {
             </div>
           )}
         </div>
-      </div>
+        </div>{/* /scrollable rack */}
+      </div>{/* /rack viewport wrapper */}
 
       {/* Save patch name dialog */}
       {saveDialogOpen && (
