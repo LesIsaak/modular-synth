@@ -1247,7 +1247,7 @@ export function createAudioModule(
         freqNode.offset.value = freq;
         gateCb?.(true, freq);
         setTimeout(() => gateCb?.(false, freq), ms * 0.45);
-        step = (step + 1) % 8;
+        step = (step + 1) % Math.max(1, Math.round(p.steps ?? 8));
       };
       let timer = makeClockTimer(getMs, () => {
         // Suppress internal clock when external CLK is patched (auto-detect)
@@ -1279,7 +1279,7 @@ export function createAudioModule(
         stepRef.value = step;
         const active = (p[`t${step + 1}`] ?? 0) > 0.5;
         if (active) { gateCb?.(true, 440); setTimeout(() => gateCb?.(false, 440), ms * 0.4); }
-        step = (step + 1) % 8;
+        step = (step + 1) % Math.max(1, Math.round(p.steps ?? 8));
       };
       let timer = makeClockTimer(getMs, () => {
         if (performance.now() - lastExtClkMs < getMs() * 2) return;
@@ -1308,7 +1308,7 @@ export function createAudioModule(
       const doStep = () => {
         stepRef.value = step;
         cvNode.offset.value = (p[`v${step + 1}`] ?? 0) * 500;
-        step = (step + 1) % 8;
+        step = (step + 1) % Math.max(1, Math.round(p.steps ?? 8));
       };
       let timer = makeClockTimer(getMs, () => {
         if (performance.now() - lastExtClkMs < getMs() * 2) return;
@@ -1342,7 +1342,7 @@ export function createAudioModule(
           gateCb?.(true, 440);
           setTimeout(() => gateCb?.(false, 440), len);
         }
-        step = (step + 1) % 8;
+        step = (step + 1) % Math.max(1, Math.round(p.steps ?? 8));
       };
       let timer = makeClockTimer(getMs, () => {
         if (performance.now() - lastExtClkMs < getMs() * 2) return;

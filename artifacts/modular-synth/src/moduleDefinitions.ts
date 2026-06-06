@@ -479,7 +479,8 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
   {
     id: 'seq_step', name: 'Step Seq', category: 'sequencer', accentColor: SEQ, width: 340,
     knobs: [
-      { id: 'bpm', name: 'BPM', min: 20, max: 300, default: 120, step: 1 },
+      { id: 'bpm',   name: 'BPM',   min: 20, max: 300, default: 120, step: 1 },
+      { id: 'steps', name: 'STEPS', min: 1,  max: 8,   default: 8,   step: 1 },
       { id: 's1',  name: 'S1',  min: 0, max: 127, default: 60,  step: 1 },
       { id: 's2',  name: 'S2',  min: 0, max: 127, default: 62,  step: 1 },
       { id: 's3',  name: 'S3',  min: 0, max: 127, default: 64,  step: 1 },
@@ -498,7 +499,8 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
   {
     id: 'seq_trigger', name: 'Trigger Seq', category: 'sequencer', accentColor: SEQ, width: 320,
     knobs: [
-      { id: 'bpm', name: 'BPM', min: 20, max: 300, default: 120, step: 1 },
+      { id: 'bpm',   name: 'BPM',   min: 20, max: 300, default: 120, step: 1 },
+      { id: 'steps', name: 'STEPS', min: 1,  max: 8,   default: 8,   step: 1 },
       { id: 't1',  name: 'T1',  min: 0, max: 1, default: 1, step: 1 },
       { id: 't2',  name: 'T2',  min: 0, max: 1, default: 0, step: 1 },
       { id: 't3',  name: 'T3',  min: 0, max: 1, default: 1, step: 1 },
@@ -516,7 +518,8 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
   {
     id: 'seq_cv', name: 'CV Seq', category: 'sequencer', accentColor: SEQ, width: 320,
     knobs: [
-      { id: 'bpm', name: 'BPM', min: 20, max: 300, default: 120, step: 1 },
+      { id: 'bpm',   name: 'BPM',   min: 20, max: 300, default: 120, step: 1 },
+      { id: 'steps', name: 'STEPS', min: 1,  max: 8,   default: 8,   step: 1 },
       { id: 'v1',  name: 'V1',  min: 0, max: 1, default: 0.0  },
       { id: 'v2',  name: 'V2',  min: 0, max: 1, default: 0.25 },
       { id: 'v3',  name: 'V3',  min: 0, max: 1, default: 0.5  },
@@ -535,6 +538,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
     id: 'seq_gate', name: 'Gate Seq', category: 'sequencer', accentColor: SEQ, width: 320,
     knobs: [
       { id: 'bpm',      name: 'BPM',    min: 20, max: 300, default: 120, step: 1 },
+      { id: 'steps',    name: 'STEPS',  min: 1,  max: 8,   default: 8,   step: 1 },
       { id: 'gate_len', name: 'LENGTH', min: 0.1, max: 0.9, default: 0.5 },
       { id: 'g1',       name: 'G1',     min: 0, max: 1, default: 1, step: 1 },
       { id: 'g2',       name: 'G2',     min: 0, max: 1, default: 1, step: 1 },
