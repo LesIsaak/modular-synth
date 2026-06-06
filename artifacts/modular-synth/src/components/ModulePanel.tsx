@@ -40,6 +40,8 @@ interface ModulePanelProps {
   onToggleMidiClockLock?: () => void;
   /** Freeze module: instantly kill the frozen loop */
   onFreezeKill?: () => void;
+  /** Seq modules: reset step counter to 1 */
+  onSeqReset?: () => void;
   /** Audio Trig: start capture with specific deviceId, or open browser picker when omitted */
   onAudioTrigPickDevice?: (deviceId?: string) => void;
   /** Audio Trig: getter polled to show the active capture device name */
@@ -527,6 +529,7 @@ export default function ModulePanel({
   onLoadSample, samplerBanksFilled,
   midiClockInfo, onToggleMidiClockLock,
   onFreezeKill,
+  onSeqReset,
   onAudioTrigPickDevice, audioTrigGetDeviceLabel, audioTrigGetDeviceList,
 }: ModulePanelProps) {
   const typeDef = MODULE_TYPE_MAP.get(module.typeId);
@@ -988,13 +991,33 @@ export default function ModulePanel({
                     return (
                       <>
                         {ctrlKnobs.length > 0 && (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 4px', justifyContent: 'center' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 4px', justifyContent: 'center', alignItems: 'center' }}>
                             {ctrlKnobs.map(knob => (
                               <Knob key={knob.id} def={knob}
                                 value={module.params[knob.id] ?? knob.default}
                                 onChange={val => onParamChange(module.id, knob.id, val)}
                                 size="sm" cvGetLevel={cvLevels?.get(knob.id)} />
                             ))}
+                            {onSeqReset && (
+                              <button
+                                onMouseDown={e => e.stopPropagation()}
+                                onClick={onSeqReset}
+                                title="Reset to step 1"
+                                style={{
+                                  height: 18, padding: '0 6px',
+                                  fontSize: 7, fontFamily: 'monospace', fontWeight: 700,
+                                  letterSpacing: '0.14em', textTransform: 'uppercase',
+                                  borderRadius: 2, cursor: 'pointer',
+                                  border: '1px solid #333',
+                                  background: '#1a1a1a', color: '#888',
+                                  flexShrink: 0,
+                                }}
+                                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#e87d27'; (e.currentTarget as HTMLButtonElement).style.borderColor = '#c96a1a'; }}
+                                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#888'; (e.currentTarget as HTMLButtonElement).style.borderColor = '#333'; }}
+                              >
+                                RST
+                              </button>
+                            )}
                           </div>
                         )}
                         {stepKnobs.length > 0 && (
