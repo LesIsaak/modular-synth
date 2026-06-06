@@ -1218,6 +1218,24 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
       { id: 't6_mute', name: 'T6 MUTE', min: 0, max: 1, default: 0, step: 1 },
       { id: 't7_mute', name: 'T7 MUTE', min: 0, max: 1, default: 0, step: 1 },
       { id: 't8_mute', name: 'T8 MUTE', min: 0, max: 1, default: 0, step: 1 },
+      // Velocity (per track) — scales gate output amplitude; 1.0 = full, accented steps ×1.0, unaccented ×0.6
+      { id: 't1_vel', name: 'T1 VEL', min: 0.01, max: 1, default: 0.8 },
+      { id: 't2_vel', name: 'T2 VEL', min: 0.01, max: 1, default: 0.8 },
+      { id: 't3_vel', name: 'T3 VEL', min: 0.01, max: 1, default: 0.8 },
+      { id: 't4_vel', name: 'T4 VEL', min: 0.01, max: 1, default: 0.8 },
+      { id: 't5_vel', name: 'T5 VEL', min: 0.01, max: 1, default: 0.8 },
+      { id: 't6_vel', name: 'T6 VEL', min: 0.01, max: 1, default: 0.8 },
+      { id: 't7_vel', name: 'T7 VEL', min: 0.01, max: 1, default: 0.8 },
+      { id: 't8_vel', name: 'T8 VEL', min: 0.01, max: 1, default: 0.8 },
+      // Probability (per track) — 0 = never fires, 1 = always fires
+      { id: 't1_prob', name: 'T1 PROB', min: 0, max: 1, default: 1 },
+      { id: 't2_prob', name: 'T2 PROB', min: 0, max: 1, default: 1 },
+      { id: 't3_prob', name: 'T3 PROB', min: 0, max: 1, default: 1 },
+      { id: 't4_prob', name: 'T4 PROB', min: 0, max: 1, default: 1 },
+      { id: 't5_prob', name: 'T5 PROB', min: 0, max: 1, default: 1 },
+      { id: 't6_prob', name: 'T6 PROB', min: 0, max: 1, default: 1 },
+      { id: 't7_prob', name: 'T7 PROB', min: 0, max: 1, default: 1 },
+      { id: 't8_prob', name: 'T8 PROB', min: 0, max: 1, default: 1 },
     ],
     ports: [
       // ── Inputs ────────────────────────────────────────────────────

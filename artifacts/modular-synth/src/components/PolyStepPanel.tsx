@@ -191,6 +191,8 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
           const mask   = Math.round(p[`t${t+1}`]     ?? 0);
           const acc    = Math.round(p[`t${t+1}_acc`] ?? 0);
           const muted  = (p[`t${t+1}_mute`] ?? 0) > 0.5;
+          const vel    = Math.min(1, Math.max(0.01, p[`t${t+1}_vel`]  ?? 0.8));
+          const prob   = Math.min(1, Math.max(0,    p[`t${t+1}_prob`] ?? 1));
 
           return (
             <div
@@ -276,6 +278,40 @@ export default function PolyStepPanel({ module: mod, knobDefs, onParamChange, st
                   border: `1px solid ${muted ? color : '#2a2a2a'}`,
                 }}
               >M</button>
+
+              {/* VEL */}
+              <div
+                onMouseDown={e => e.stopPropagation()}
+                style={{ flexShrink: 0, marginLeft: 6, width: 44, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}
+              >
+                <span style={{ fontSize: 6, color: '#555', textTransform: 'uppercase', letterSpacing: '0.06em' }}>VEL</span>
+                <input
+                  type="range" min={0.01} max={1} step={0.01}
+                  value={vel}
+                  onChange={e => set(`t${t+1}_vel`, parseFloat(e.target.value))}
+                  style={{ width: 44, height: 10, cursor: 'pointer', accentColor: color }}
+                />
+                <span style={{ fontSize: 6, color: '#666', fontVariantNumeric: 'tabular-nums' }}>
+                  {Math.round(vel * 100)}%
+                </span>
+              </div>
+
+              {/* PROB */}
+              <div
+                onMouseDown={e => e.stopPropagation()}
+                style={{ flexShrink: 0, marginLeft: 4, width: 44, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}
+              >
+                <span style={{ fontSize: 6, color: prob < 1 ? '#a78bfa' : '#555', textTransform: 'uppercase', letterSpacing: '0.06em' }}>PROB</span>
+                <input
+                  type="range" min={0} max={1} step={0.01}
+                  value={prob}
+                  onChange={e => set(`t${t+1}_prob`, parseFloat(e.target.value))}
+                  style={{ width: 44, height: 10, cursor: 'pointer', accentColor: prob < 1 ? '#a78bfa' : color }}
+                />
+                <span style={{ fontSize: 6, color: prob < 1 ? '#a78bfa' : '#666', fontVariantNumeric: 'tabular-nums' }}>
+                  {Math.round(prob * 100)}%
+                </span>
+              </div>
             </div>
           );
         })}
