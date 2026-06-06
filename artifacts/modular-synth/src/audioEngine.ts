@@ -3119,8 +3119,9 @@ export function createAudioModule(
         const masterLenIdx = Math.max(0, Math.min(4, Math.round(p.global_len ?? 3)));
         const masterLen    = LEN_MAP[masterLenIdx];
         const masterStep   = trackPos[0];
+        // Bug fix 1: stepNode used a hardcoded /15 denominator; use masterLen - 1 like posNode
         posNode.offset.value  = masterLen > 1 ? masterStep / (masterLen - 1) : 0;
-        stepNode.offset.value = masterStep / 15;
+        stepNode.offset.value = masterLen > 1 ? masterStep / (masterLen - 1) : 0;
 
         // Beat pulse on track-1 step 0
         if (masterStep === 0) fire('beat_out', dur);
@@ -3143,12 +3144,16 @@ export function createAudioModule(
           // Global EOC on track 1 wrap
           if (isEOC && t === 0) fire('eoc_out', dur);
 
-          // Velocity CV — non-zero only when step fires
-          velNodes[t].offset.value = isOn ? vel * (isAcc ? 1.0 : 0.6) : 0;
-
-          // Gate — gated by mute and probability
+          // Bug fix 2: velocity CV must only be non-zero when the gate actually fires
+          // (mute and probability both gate it), and must drop back to 0 when the gate
+          // closes (after dur ms) rather than staying high for the entire step period.
           if (!muted && isOn && Math.random() < prob) {
+            const scaledVel = vel * (isAcc ? 1.0 : 0.6);
+            velNodes[t].offset.value = scaledVel;
+            setTimeout(() => { velNodes[t].offset.value = 0; }, dur);
             fire(`t${tn}_gate`, dur, isAcc ? 880 : 440);
+          } else {
+            velNodes[t].offset.value = 0;
           }
 
           // Advance track step (wraps at track length)
