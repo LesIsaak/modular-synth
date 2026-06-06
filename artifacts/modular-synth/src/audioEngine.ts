@@ -2795,6 +2795,7 @@ export function createAudioModule(
       let samplerDestroyed = false;
       let lastTriggerMs = 0;
       let lastFreq = 440;
+      let lastBankIdx = 0;
       // Track when and where playback started so we can resume from current position
       let playStartCtx  = 0; // ctx.currentTime at src.start()
       let playOffset    = 0; // offset (seconds) passed to src.start()
@@ -2820,7 +2821,8 @@ export function createAudioModule(
       const sampPlay = (time: number, freq = 440, fromPos?: number) => {
         if (samplerDestroyed) return;
         lastFreq = freq;
-        const bankIdx = Math.max(0, Math.min(NUM_BANKS - 1, Math.round(p.bank ?? 0)));
+        const bankIdx = Math.max(0, Math.min(NUM_BANKS - 1, Math.round((p.bank ?? 0) + bankCvTap.read())));
+        lastBankIdx = bankIdx;
         const isRev   = Math.round(p.reverse ?? 0) > 0;
         const buf     = isRev ? banksRev[bankIdx] : banks[bankIdx];
         if (!buf) return;
@@ -2885,6 +2887,15 @@ export function createAudioModule(
           activeSource = null;
         }
       };
+
+      // Poll bank CV every 50 ms — switch bank immediately when it changes
+      const bankCvPollId = setInterval(() => {
+        if (samplerDestroyed) return;
+        const newIdx = Math.max(0, Math.min(NUM_BANKS - 1, Math.round((p.bank ?? 0) + bankCvTap.read())));
+        if (newIdx !== lastBankIdx && activeSource) {
+          sampPlay(ctx.currentTime, lastFreq);
+        }
+      }, 50);
 
       return {
         outputs: new Map([['audio_out', sampOut]]),
@@ -2956,6 +2967,7 @@ export function createAudioModule(
         destroy: () => {
           samplerDestroyed = true;
           eocCb = null;
+          clearInterval(bankCvPollId);
           sampStop(ctx.currentTime);
           pitchCvTap.destroy(); startCvTap.destroy();
           lenCvTap.destroy();   bankCvTap.destroy();
