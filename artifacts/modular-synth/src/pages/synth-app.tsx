@@ -1308,7 +1308,9 @@ export default function SynthApp() {
         const portHandler = toPortId ? m.portNoteOn?.get(toPortId) : undefined;
         try {
           if (portHandler) {
-            if (on) portHandler(getCurrentTickAudioTime() || ctx.currentTime, freq);
+            const t = getCurrentTickAudioTime() || ctx.currentTime;
+            if (on) portHandler(t, freq);
+            else    m.portNoteOff?.get(toPortId!)?.(t, freq);
           } else {
             if (on) m.noteOn?.(getCurrentTickAudioTime() || ctx.currentTime, freq);
             else    m.noteOff?.(getCurrentTickAudioTime() || ctx.currentTime);

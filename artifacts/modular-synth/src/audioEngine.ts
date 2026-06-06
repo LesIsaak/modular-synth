@@ -21,6 +21,8 @@ export interface AudioModuleNodes {
   getPortLevel?: (portId: string) => number;
   /** Per-port gate handlers (e.g. individual drum voice triggers) */
   portNoteOn?: Map<string, (time: number, freq?: number) => void>;
+  /** Gate-off counterpart to portNoteOn — called when a connected gate cable goes low */
+  portNoteOff?: Map<string, (time: number, freq?: number) => void>;
   /** Sampler only: decode and store an ArrayBuffer into the given bank slot */
   loadSample?: (arrayBuffer: ArrayBuffer, bankIndex: number) => Promise<void>;
   /** Freeze only: instantly silence and clear the frozen loop */
@@ -1567,8 +1569,8 @@ export function createAudioModule(
         if (!heldNotes.includes(freq)) heldNotes.push(freq);
         lastNoteFreq = freq;
       };
-      const removeLastNote = () => {
-        const idx = heldNotes.indexOf(lastNoteFreq);
+      const removeNote = (freq: number) => {
+        const idx = heldNotes.indexOf(freq);
         if (idx >= 0) { heldNotes.splice(idx, 1); if (stepIdx >= Math.max(1, heldNotes.length)) stepIdx = 0; }
       };
 
@@ -1578,12 +1580,20 @@ export function createAudioModule(
           ['voct_in', { node: voctMix as AudioNode }],
         ]),
         noteOn:  (_t, freq) => addNote(freq),
-        noteOff: (_t)       => removeLastNote(),
+        noteOff: (_t)       => removeNote(lastNoteFreq),
         portNoteOn: new Map([
           ['gate_in', (_t: number, freq?: number) => {
             // Prefer V/OCT tap if a cable is patched (reads >10 Hz = real pitch)
             const cv = readVoct();
-            addNote(cv > 10 ? cv : (freq ?? 440));
+            const f = cv > 10 ? cv : (freq ?? 440);
+            addNote(f);
+          }],
+        ]),
+        portNoteOff: new Map([
+          ['gate_in', (_t: number, freq?: number) => {
+            // Remove the exact note that was added by gate-on
+            const cv = readVoct();
+            removeNote(cv > 10 ? cv : (freq ?? lastNoteFreq));
           }],
         ]),
         setParam: (id, val) => {
