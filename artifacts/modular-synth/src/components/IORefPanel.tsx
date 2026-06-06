@@ -205,34 +205,34 @@ export default function IORefPanel({ onClose }: Props) {
       {/* Header */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '8px 12px 6px', borderBottom: '1px solid #1c1c1c', flexShrink: 0,
+        padding: '9px 12px 7px', borderBottom: '1px solid #1e1e1e', flexShrink: 0,
       }}>
-        <span style={{ fontSize: 10, letterSpacing: '0.18em', color: '#555', textTransform: 'uppercase' }}>
+        <span style={{ fontSize: 10, letterSpacing: '0.18em', color: '#777', textTransform: 'uppercase', fontWeight: 700 }}>
           Module I/O Reference
         </span>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           {/* Legend */}
           {([['audio','#fbbf24'],['cv','#a78bfa'],['gate','#86efac']] as const).map(([lbl, col]) => (
-            <div key={lbl} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: col }} />
-              <span style={{ fontSize: 9, color: '#555', letterSpacing: '0.08em' }}>{lbl}</span>
+            <div key={lbl} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <div style={{ width: 7, height: 7, borderRadius: '50%', background: col }} />
+              <span style={{ fontSize: 10, color: '#888', letterSpacing: '0.06em' }}>{lbl}</span>
             </div>
           ))}
           <button onClick={onClose} style={{
-            background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: 13, padding: 0,
+            background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: 14, padding: 0, lineHeight: 1,
           }}>✕</button>
         </div>
       </div>
 
       {/* Search */}
-      <div style={{ padding: '6px 12px 5px', borderBottom: '1px solid #161616', flexShrink: 0 }}>
+      <div style={{ padding: '7px 12px 6px', borderBottom: '1px solid #1a1a1a', flexShrink: 0 }}>
         <input
           type="text" placeholder="Search module or port…"
           value={search} onChange={e => setSearch(e.target.value)}
           style={{
-            width: '100%', background: '#151515', border: '1px solid #282828', borderRadius: 3,
-            color: '#9ca3af', fontSize: 11, padding: '4px 8px', outline: 'none',
-            letterSpacing: '0.04em',
+            width: '100%', background: '#161616', border: '1px solid #2e2e2e', borderRadius: 3,
+            color: '#c0c8d4', fontSize: 12, padding: '5px 9px', outline: 'none',
+            letterSpacing: '0.03em',
           }}
         />
       </div>
@@ -248,17 +248,17 @@ export default function IORefPanel({ onClose }: Props) {
               <div
                 onClick={() => toggle(cat)}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '4px 12px', cursor: 'pointer',
-                  background: '#111', borderBottom: '1px solid #1a1a1a',
+                  display: 'flex', alignItems: 'center', gap: 7,
+                  padding: '5px 12px', cursor: 'pointer',
+                  background: '#111', borderBottom: '1px solid #1c1c1c',
                   userSelect: 'none',
                 }}
               >
-                <div style={{ width: 7, height: 7, borderRadius: '50%', background: catColor, flexShrink: 0 }} />
-                <span style={{ fontSize: 10, color: catColor, letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 700, flex: 1 }}>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: catColor, flexShrink: 0 }} />
+                <span style={{ fontSize: 11, color: catColor, letterSpacing: '0.14em', textTransform: 'uppercase', fontWeight: 700, flex: 1 }}>
                   {CATEGORY_LABELS[cat] ?? cat}
                 </span>
-                <span style={{ fontSize: 10, color: '#333' }}>{isOpen ? '▴' : '▾'}</span>
+                <span style={{ fontSize: 11, color: '#555' }}>{isOpen ? '▴' : '▾'}</span>
               </div>
 
               {/* Module rows */}
@@ -267,18 +267,18 @@ export default function IORefPanel({ onClose }: Props) {
                 const outs = mod.ports.filter(p => p.type.endsWith('_out'));
                 return (
                   <div key={mod.id} style={{
-                    borderBottom: '1px solid #141414',
-                    padding: '5px 12px 6px 18px',
+                    borderBottom: '1px solid #181818',
+                    padding: '7px 12px 8px 18px',
                   }}>
-                    <span style={{ fontSize: 10, color: '#8a9ab0', letterSpacing: '0.1em', fontWeight: 700 }}>
+                    <span style={{ fontSize: 11, color: '#b0bfd0', letterSpacing: '0.08em', fontWeight: 700 }}>
                       {mod.name}
                     </span>
-                    <div style={{ display: 'flex', gap: 16, marginTop: 5 }}>
+                    <div style={{ display: 'flex', gap: 16, marginTop: 6 }}>
                       {/* Inputs */}
                       {ins.length > 0 && (
                         <div style={{ flex: 1 }}>
-                          <span style={{ fontSize: 8, color: '#3a3a3a', letterSpacing: '0.14em', textTransform: 'uppercase' }}>IN</span>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 3 }}>
+                          <span style={{ fontSize: 9, color: '#565656', letterSpacing: '0.16em', textTransform: 'uppercase', fontWeight: 700 }}>IN</span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
                             {ins.map(p => (
                               <PortRow key={p.id} port={p} desc={descFor(p.id)} />
                             ))}
@@ -288,8 +288,8 @@ export default function IORefPanel({ onClose }: Props) {
                       {/* Outputs */}
                       {outs.length > 0 && (
                         <div style={{ flex: 1 }}>
-                          <span style={{ fontSize: 8, color: '#3a3a3a', letterSpacing: '0.14em', textTransform: 'uppercase' }}>OUT</span>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 3 }}>
+                          <span style={{ fontSize: 9, color: '#565656', letterSpacing: '0.16em', textTransform: 'uppercase', fontWeight: 700 }}>OUT</span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
                             {outs.map(p => (
                               <PortRow key={p.id} port={p} desc={descFor(p.id)} />
                             ))}
@@ -304,7 +304,7 @@ export default function IORefPanel({ onClose }: Props) {
           );
         })}
         {byCat.size === 0 && (
-          <div style={{ padding: '20px 12px', textAlign: 'center', fontSize: 11, color: '#333', letterSpacing: '0.1em' }}>
+          <div style={{ padding: '24px 12px', textAlign: 'center', fontSize: 12, color: '#555', letterSpacing: '0.08em' }}>
             No results
           </div>
         )}
@@ -317,15 +317,15 @@ function PortRow({ port, desc }: { port: { id: string; name: string; type: PortT
   const dot = TYPE_DOT[port.type];
   const typeLabel = TYPE_LABEL[port.type];
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, minWidth: 72,
+        display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, minWidth: 88,
       }}>
-        <div style={{ width: 6, height: 6, borderRadius: '50%', background: dot, flexShrink: 0, marginTop: 1 }} />
-        <span style={{ fontSize: 9, color: dot, letterSpacing: '0.05em', fontWeight: 600 }}>{port.name}</span>
-        <span style={{ fontSize: 7, color: '#2e2e2e', letterSpacing: '0.06em' }}>{typeLabel}</span>
+        <div style={{ width: 7, height: 7, borderRadius: '50%', background: dot, flexShrink: 0, marginTop: 1 }} />
+        <span style={{ fontSize: 10, color: dot, letterSpacing: '0.05em', fontWeight: 700 }}>{port.name}</span>
+        <span style={{ fontSize: 8, color: '#484848', letterSpacing: '0.05em' }}>{typeLabel}</span>
       </div>
-      <span style={{ fontSize: 9, color: '#4a5568', letterSpacing: '0.02em', lineHeight: 1.35 }}>
+      <span style={{ fontSize: 10, color: '#8a96a6', letterSpacing: '0.02em', lineHeight: 1.45 }}>
         {desc || '—'}
       </span>
     </div>
