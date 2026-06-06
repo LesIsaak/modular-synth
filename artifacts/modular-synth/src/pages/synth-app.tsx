@@ -1084,6 +1084,34 @@ function Minimap({
   );
 }
 
+// ─── Patch module name aliases ─────────────────────────────────────────────────
+// Maps short/alternative labels used in patch examples → canonical module type IDs
+const PATCH_MODULE_ALIASES: Record<string, string> = {
+  'VCF':            'vcf',
+  'VCA':            'vca',
+  'Digital Osc':    'digital_osc',
+  'VCF LP24':       'filter_lp24',
+  'Filter LP24':    'filter_lp24',
+  'Wavetable Osc':  'wavetable_osc',
+  'FM Osc':         'fm_osc',
+  'Harmonic Osc':   'harmonic_osc',
+  'Chord Osc':      'chord_osc',
+  'VCF BP':         'filter_bp',
+  'Filter Ladder':  'filter_ladder',
+  'Filter SVF':     'filter_svf',
+  'Filter Comb':    'filter_comb',
+  'Filter Formant': 'filter_formant',
+  'VCA Expo':       'vca_expo',
+  'Drum Machine':   'drum_machine',
+  'LFO Multi':      'lfo_multi',
+  'Arpeggiator':    'arpeggiator',
+  'Clock Divider':  'clock_div',
+  'Delay Mod':      'delay_mod',
+  'Bitcrusher':     'bitcrusher',
+  'Euclidean':      'euclidean_trig',
+  'Poly Step':      'poly_step',
+};
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function SynthApp() {
   const [started,         setStarted]         = useState(false);
@@ -1418,6 +1446,12 @@ export default function SynthApp() {
 
     pushUndo(cables, modules);
 
+    // Resolve a patch label to its ModuleTypeDef — tries exact name match first,
+    // then falls back to the PATCH_MODULE_ALIASES shorthand map.
+    const resolveLabel = (label: string) =>
+      MODULE_TYPES.find(m => m.name === label) ??
+      MODULE_TYPE_MAP.get(PATCH_MODULE_ALIASES[label] ?? '');
+
     // ── Tear down all current audio (same as handleLoadPatch) ──
     for (const nodes of audioModulesRef.current.values()) {
       try { nodes.destroy(); } catch (_) {}
@@ -1427,8 +1461,8 @@ export default function SynthApp() {
     portGateMapRef.current.clear();
 
     // ── Ensure Keyboard and Output are always present ──
-    const hasKeyboard = patch.modules.some(l => l === 'Keyboard' || MODULE_TYPES.find(m => m.name === l)?.id === 'keyboard');
-    const hasOutput   = patch.modules.some(l => MODULE_TYPES.find(m => m.name === l)?.id === 'output');
+    const hasKeyboard = patch.modules.some(l => l === 'Keyboard' || resolveLabel(l)?.id === 'keyboard');
+    const hasOutput   = patch.modules.some(l => resolveLabel(l)?.id === 'output');
     const fullLabels  = [
       ...(hasKeyboard ? [] : ['Keyboard']),
       ...patch.modules,
@@ -1444,7 +1478,7 @@ export default function SynthApp() {
       const label = fullLabels[i];
 
       // Keyboard is always kb1
-      if (label === 'Keyboard' || MODULE_TYPES.find(m => m.name === label)?.id === 'keyboard') {
+      if (label === 'Keyboard' || resolveLabel(label)?.id === 'keyboard') {
         const kbDef = MODULE_TYPE_MAP.get('keyboard')!;
         const params = getDefaultParams(kbDef);
         const inst: ModuleInstance = { id: 'kb1', typeId: 'keyboard', x, y: 0, params };
@@ -1456,7 +1490,7 @@ export default function SynthApp() {
         continue;
       }
 
-      const typeDef = MODULE_TYPES.find(m => m.name === label);
+      const typeDef = resolveLabel(label);
       if (!typeDef) continue;
 
       const id = `${typeDef.id}_p${i}`;
@@ -1479,7 +1513,7 @@ export default function SynthApp() {
     // If keyboard or output were auto-added, patch in their missing connections
     const effectiveConnections = [...patch.connections];
     if (!hasKeyboard) {
-      const firstNonKb = fullLabels.find(l => l !== 'Keyboard' && MODULE_TYPES.find(m => m.name === l)?.id !== 'keyboard');
+      const firstNonKb = fullLabels.find(l => l !== 'Keyboard' && resolveLabel(l)?.id !== 'keyboard');
       if (firstNonKb) {
         const tgt = labelToInst.get(firstNonKb);
         const tgtDef = tgt ? MODULE_TYPE_MAP.get(tgt.typeId) : undefined;
@@ -1490,12 +1524,12 @@ export default function SynthApp() {
       }
     }
     if (!hasOutput) {
-      const lastNonOut = [...fullLabels].reverse().find(l => MODULE_TYPES.find(m => m.name === l)?.id !== 'output');
+      const lastNonOut = [...fullLabels].reverse().find(l => resolveLabel(l)?.id !== 'output');
       if (lastNonOut) {
         const src = labelToInst.get(lastNonOut);
         const srcDef = src ? MODULE_TYPE_MAP.get(src.typeId) : undefined;
         const audioOut = srcDef?.ports.find(p => p.type === 'audio_out');
-        if (audioOut) effectiveConnections.push({ from: lastNonOut, out: audioOut.name, to: 'Output', in: 'L', sig: 'audio' });
+        if (audioOut) effectiveConnections.push({ from: lastNonOut, out: audioOut.name, to: 'Output', in: 'IN L', sig: 'audio' });
       }
     }
 
