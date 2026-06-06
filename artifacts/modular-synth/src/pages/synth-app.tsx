@@ -136,7 +136,7 @@ function ModuleBrowser({ onAdd }: { onAdd: (typeId: string) => void }) {
   const byCategory = CATEGORY_ORDER.map(cat => ({
     cat,
     label: CATEGORY_LABELS[cat],
-    types: MODULE_TYPES.filter(m => m.category === cat && m.id !== 'keyboard'),
+    types: MODULE_TYPES.filter(m => m.category === cat),
   })).filter(g => g.types.length > 0);
 
   const [tooltip, setTooltip] = useState<{ id: string; name: string; desc: string; color: string; y: number } | null>(null);
@@ -341,12 +341,17 @@ function PatchCables({
 }
 
 // ─── Pitch wheel ──────────────────────────────────────────────────────────────
-function PitchWheel({ onChange }: { onChange: (val: number) => void }) {
+function PitchWheel({ onChange, externalValue }: { onChange: (val: number) => void; externalValue?: number }) {
   const [value, setValue] = useState(0);
   const dragging = useRef(false);
   const startY   = useRef(0);
   const startVal = useRef(0);
   const TRACK_H  = 100;
+
+  // Sync visual position when MIDI sends external bend value
+  useEffect(() => {
+    if (externalValue !== undefined) setValue(externalValue);
+  }, [externalValue]);
 
   const onMouseDown = (e: React.MouseEvent) => {
     dragging.current = true;
@@ -412,12 +417,17 @@ function PitchWheel({ onChange }: { onChange: (val: number) => void }) {
 }
 
 // ─── Mod wheel ────────────────────────────────────────────────────────────────
-function ModWheel({ onChange }: { onChange: (val: number) => void }) {
+function ModWheel({ onChange, externalValue }: { onChange: (val: number) => void; externalValue?: number }) {
   const [value, setValue] = useState(0);
   const dragging = useRef(false);
   const startY   = useRef(0);
   const startVal = useRef(0);
   const TRACK_H  = 100;
+
+  // Sync visual position when MIDI sends external mod wheel value
+  useEffect(() => {
+    if (externalValue !== undefined) setValue(externalValue);
+  }, [externalValue]);
 
   const onMouseDown = (e: React.MouseEvent) => {
     dragging.current = true;
@@ -498,6 +508,8 @@ function FixedKeyboardPanel({
   midiActiveNotes,
   onSave,
   onLoad,
+  extPitch,
+  extMod,
 }: {
   started: boolean;
   onNote:           (freq: number, on: boolean) => void;
@@ -513,6 +525,8 @@ function FixedKeyboardPanel({
   midiActiveNotes?: ReadonlySet<number>;
   onSave:           () => void;
   onLoad:           () => void;
+  extPitch?:        number;
+  extMod?:          number;
 }) {
   const [octave,     setOctave]     = useState(4);
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -521,6 +535,11 @@ function FixedKeyboardPanel({
   const [kbZoom,     setKbZoom]     = useState(1);
   const pitchRef    = useRef(0);    // current pitch bend -1..1
   const heldFreqRef = useRef(0);    // base freq of held note
+
+  // Keep pitchRef in sync when MIDI sends external bend — ensures next key press uses correct bend
+  useEffect(() => {
+    if (extPitch !== undefined) pitchRef.current = extPitch;
+  }, [extPitch]);
   const heldMidiRef = useRef<number | null>(null);
   const holdRef     = useRef(false);
 
@@ -814,8 +833,8 @@ function FixedKeyboardPanel({
       <div style={{ flex: 1, display: 'flex', padding: '10px 14px 10px', gap: 14 }}>
         {/* Pitch + Mod wheels */}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-          <PitchWheel onChange={handlePitchChange} />
-          <ModWheel onChange={handleModChange} />
+          <PitchWheel onChange={handlePitchChange} externalValue={extPitch} />
+          <ModWheel onChange={handleModChange} externalValue={extMod} />
         </div>
 
         {/* Vertical divider */}
@@ -1139,6 +1158,9 @@ export default function SynthApp() {
     gate: false, note: 60, noteName: '---', velocity: 0,
     pitchBend: 0, modWheel: 0, lastCC: null, noteCount: 0, channel: 1,
   });
+  // External pitch/mod wheel values driven by MIDI — fed to on-screen wheels
+  const [extKbPitch, setExtKbPitch] = useState<number | undefined>(undefined);
+  const [extKbMod,   setExtKbMod]   = useState<number | undefined>(undefined);
 
   // ─── Undo history ──────────────────────────────────────────────────────────
   const undoStackRef   = useRef<Array<{ cables: Cable[]; modules: ModuleInstance[] }>>([]);
@@ -1213,6 +1235,8 @@ export default function SynthApp() {
   const gateConnRef      = useRef<Map<string, Set<string>>>(new Map());
   const heldNotesRef     = useRef<number[]>([]);
   const glideRef         = useRef<number>(0);
+  // Tracks all keyboard module IDs so MIDI events propagate to every KB OUT instance
+  const kbModuleIdsRef   = useRef<string[]>(['kb1']);
   /** fromModuleId → Map<destModuleId, destPortId> — for per-port drum triggers */
   const portGateMapRef   = useRef<Map<string, Map<string, string>>>(new Map());
   const portRefsRef      = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -1350,35 +1374,49 @@ export default function SynthApp() {
     setStarted(true);
   }, []);
 
+  // Keep kbModuleIdsRef in sync whenever modules change (handles undo/restore too)
+  useEffect(() => {
+    kbModuleIdsRef.current = modules.filter(m => m.typeId === 'keyboard').map(m => m.id);
+  }, [modules]);
+
   // ─── Keyboard callbacks — last-note priority with note memory + glide ───────
   const handleKeyNote = useCallback((freq: number, on: boolean) => {
     const ctx = audioCtxRef.current;
     if (!ctx) return;
     if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-    const kb1 = audioModulesRef.current.get('kb1');
-    if (!kb1) return;
+    if (kbModuleIdsRef.current.length === 0) return;
 
     const t    = ctx.currentTime + 0.008;
     const held = heldNotesRef.current;
 
+    // Apply V/OCT pitch to every KB OUT instance (each has its own ConstantSource)
     const applyPitch = (target: number, legato: boolean) => {
-      const freqNode = kb1.outputs.get('voct_out') as (AudioNode & { offset?: AudioParam }) | undefined;
-      if (!freqNode || !('offset' in freqNode) || !freqNode.offset) return;
-      const g = glideRef.current;
-      if (g > 0 && legato) {
-        const current = freqNode.offset.value;
-        freqNode.offset.cancelScheduledValues(t);
-        freqNode.offset.setValueAtTime(current, t);
-        freqNode.offset.linearRampToValueAtTime(target, t + g);
-      } else {
-        freqNode.offset.cancelScheduledValues(t);
-        freqNode.offset.setValueAtTime(target, t);
+      for (const kbId of kbModuleIdsRef.current) {
+        const kbAudio = audioModulesRef.current.get(kbId);
+        if (!kbAudio) continue;
+        const freqNode = kbAudio.outputs.get('voct_out') as (AudioNode & { offset?: AudioParam }) | undefined;
+        if (!freqNode || !('offset' in freqNode) || !freqNode.offset) continue;
+        const g = glideRef.current;
+        if (g > 0 && legato) {
+          const current = freqNode.offset.value;
+          freqNode.offset.cancelScheduledValues(t);
+          freqNode.offset.setValueAtTime(current, t);
+          freqNode.offset.linearRampToValueAtTime(target, t + g);
+        } else {
+          freqNode.offset.cancelScheduledValues(t);
+          freqNode.offset.setValueAtTime(target, t);
+        }
       }
     };
 
-    const gateModules = gateConnRef.current.get('kb1:gate_out') ?? new Set<string>();
-    const triggerOn  = (time: number, f: number) => { for (const id of gateModules) audioModulesRef.current.get(id)?.noteOn?.(time, f); };
-    const triggerOff = (time: number)            => { for (const id of gateModules) audioModulesRef.current.get(id)?.noteOff?.(time); };
+    // Gate triggers: aggregate across all KB OUT instances
+    const allGateModules = new Set<string>();
+    for (const kbId of kbModuleIdsRef.current) {
+      const gk = `${kbId}:gate_out`;
+      for (const id of gateConnRef.current.get(gk) ?? []) allGateModules.add(id);
+    }
+    const triggerOn  = (time: number, f: number) => { for (const id of allGateModules) audioModulesRef.current.get(id)?.noteOn?.(time, f); };
+    const triggerOff = (time: number)            => { for (const id of allGateModules) audioModulesRef.current.get(id)?.noteOff?.(time); };
 
     if (on) {
       if (!held.includes(freq)) held.push(freq);
@@ -1398,31 +1436,33 @@ export default function SynthApp() {
   }, []);
 
   const handleKeyBend = useCallback((bentFreq: number) => {
-    const kb1 = audioModulesRef.current.get('kb1');
-    if (!kb1) return;
-    const freqNode = kb1.outputs.get('voct_out') as (AudioNode & { offset?: AudioParam }) | undefined;
-    if (freqNode && 'offset' in freqNode && freqNode.offset) {
-      freqNode.offset.value = bentFreq;
+    for (const kbId of kbModuleIdsRef.current) {
+      const freqNode = audioModulesRef.current.get(kbId)?.outputs.get('voct_out') as
+        (AudioNode & { offset?: AudioParam }) | undefined;
+      if (freqNode?.offset) freqNode.offset.value = bentFreq;
     }
   }, []);
 
   const handleKeyPitch = useCallback((val: number) => {
-    const node = audioModulesRef.current.get('kb1')?.outputs.get('pitch_out') as
-      (AudioNode & { offset?: AudioParam }) | undefined;
-    if (node?.offset) node.offset.value = val;
+    for (const kbId of kbModuleIdsRef.current) {
+      const node = audioModulesRef.current.get(kbId)?.outputs.get('pitch_out') as
+        (AudioNode & { offset?: AudioParam }) | undefined;
+      if (node?.offset) node.offset.value = val;
+    }
   }, []);
 
   const handleKeyMod = useCallback((val: number) => {
-    const node = audioModulesRef.current.get('kb1')?.outputs.get('mod_out') as
-      (AudioNode & { offset?: AudioParam }) | undefined;
-    if (node?.offset) node.offset.value = val;
+    for (const kbId of kbModuleIdsRef.current) {
+      const node = audioModulesRef.current.get(kbId)?.outputs.get('mod_out') as
+        (AudioNode & { offset?: AudioParam }) | undefined;
+      if (node?.offset) node.offset.value = val;
+    }
   }, []);
 
   // handleMidiMon declared below after handleParamChange — useMIDI wired after it
 
   // ─── Add module ─────────────────────────────────────────────────────────────
   const handleAddModule = useCallback((typeId: string) => {
-    if (typeId === 'keyboard') return;
     const typeDef = MODULE_TYPE_MAP.get(typeId);
     if (!typeDef) return;
     const id     = `${typeId}_${Date.now()}`;
@@ -1655,6 +1695,16 @@ export default function SynthApp() {
       setMidiActiveNotes(prev => { const s = new Set(prev); s.delete(ev.note); return s; });
     }
 
+    // ── MIDI wheels → KB OUT pitch/mod CV outputs + on-screen wheel visuals ──
+    if (ev.type === 'bend') {
+      handleKeyPitch(ev.bend);          // drive pitch_out CV from MIDI pitch wheel
+      setExtKbPitch(ev.bend);           // move on-screen pitch wheel
+    }
+    if (ev.type === 'cc' && ev.num === 1) {
+      setExtKbMod(ev.val / 127);        // move on-screen mod wheel
+      // mod_out CV is already driven by useMIDI → handleKeyMod
+    }
+
     // ── CC → knob auto-mapping (skip CC1 = mod wheel) ──
     if (ev.type === 'cc' && ev.num !== 1 && focusedModuleId) {
       if (!ccOrderRef.current.includes(ev.num)) {
@@ -1674,7 +1724,7 @@ export default function SynthApp() {
         }
       }
     }
-  }, [focusedModuleId, modules, handleParamChange]);
+  }, [focusedModuleId, modules, handleParamChange, handleKeyPitch]);
 
   // ─── MIDI Clock sync ────────────────────────────────────────────────────────
   const [midiClockInfo, setMidiClockInfo] = useState<MidiClockInfo>({ bpm: null, deviceName: null, locked: false });
@@ -2601,6 +2651,8 @@ export default function SynthApp() {
         midiStatus={midiStatus}
         midiDeviceCount={midiDeviceCount}
         midiActiveNotes={midiActiveNotes}
+        extPitch={extKbPitch}
+        extMod={extKbMod}
         onSave={handleSavePatch}
         onLoad={handleLoadClick}
       />
