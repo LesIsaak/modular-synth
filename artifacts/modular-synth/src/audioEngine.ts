@@ -20,9 +20,7 @@ export interface AudioModuleNodes {
   /** Per-port variant of getLevel — use when the module has multiple outputs at different rates */
   getPortLevel?: (portId: string) => number;
   /** Per-port gate handlers (e.g. individual drum voice triggers) */
-  portNoteOn?:  Map<string, (time: number, freq?: number) => void>;
-  /** Per-port gate-off handlers — called when the gate cable goes low */
-  portNoteOff?: Map<string, (time: number) => void>;
+  portNoteOn?: Map<string, (time: number, freq?: number) => void>;
   /** Sampler only: decode and store an ArrayBuffer into the given bank slot */
   loadSample?: (arrayBuffer: ArrayBuffer, bankIndex: number) => Promise<void>;
   /** Freeze only: instantly silence and clear the frozen loop */
@@ -261,12 +259,6 @@ export function createAudioModule(
           ['sync_in', { node: voct }],
         ]),
         noteOn: (_t, freq) => { voct.offset.value = freq; },
-        portNoteOn:  new Map([['gate_in', () => {
-          waveGains.forEach(g => g.gain.setTargetAtTime(1, ctx.currentTime, 0.003));
-        }]]),
-        portNoteOff: new Map([['gate_in', () => {
-          waveGains.forEach(g => g.gain.setTargetAtTime(0, ctx.currentTime, 0.005));
-        }]]),
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'fine') oscs.forEach(o => { o.detune.value = val * 100; });
