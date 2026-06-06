@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ModuleInstance, KnobDef, PortType, PendingCable, MidiMonitorData } from '../types';
+import { ModuleInstance, KnobDef, ModuleTypeDef, PortType, PendingCable, MidiMonitorData } from '../types';
 import { MODULE_TYPE_MAP } from '../moduleDefinitions';
 import Knob from './Knob';
 import PortJack from './PortJack';
@@ -524,6 +524,187 @@ function PianoKeyboard({ octave, onKeyPress }: {
   );
 }
 
+// ─── Sampler bank panel with REC capability ────────────────────────────────
+function SamplerBankPanel({
+  module, accent, samplerBanksFilled, onParamChange, onLoadSample, typeDef, onSelectorChange, cvLevels,
+}: {
+  module: ModuleInstance;
+  accent: string;
+  samplerBanksFilled?: boolean[];
+  onParamChange: (moduleId: string, paramId: string, value: number) => void;
+  onLoadSample?: (file: File, bankIndex: number) => void;
+  typeDef: ModuleTypeDef;
+  onSelectorChange: (moduleId: string, selId: string, value: number) => void;
+  cvLevels?: Map<string, () => number>;
+}) {
+  const [recording, setRecording] = useState(false);
+  const [recSecs, setRecSecs] = useState(0);
+  const [recError, setRecError] = useState<string | null>(null);
+  const mrRef    = useRef<MediaRecorder | null>(null);
+  const chunks   = useRef<Blob[]>([]);
+  const streamRef= useRef<MediaStream | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => () => {
+    mrRef.current?.stop();
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    if (timerRef.current) clearInterval(timerRef.current);
+  }, []);
+
+  const startRec = async () => {
+    setRecError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      streamRef.current = stream;
+      chunks.current = [];
+      const mr = new MediaRecorder(stream);
+      mrRef.current = mr;
+      mr.ondataavailable = e => { if (e.data.size > 0) chunks.current.push(e.data); };
+      mr.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
+        if (timerRef.current) clearInterval(timerRef.current);
+        const blob = new Blob(chunks.current, { type: 'audio/webm' });
+        const file = new File([blob], `rec-bank${Math.round(module.params.bank ?? 0) + 1}.webm`, { type: 'audio/webm' });
+        onLoadSample?.(file, Math.round(module.params.bank ?? 0));
+        setRecording(false);
+        setRecSecs(0);
+      };
+      mr.start();
+      setRecording(true);
+      setRecSecs(0);
+      let s = 0;
+      timerRef.current = setInterval(() => { s++; setRecSecs(s); }, 1000);
+    } catch (err) {
+      setRecError('Mic access denied');
+      setRecording(false);
+    }
+  };
+
+  const stopRec = () => { mrRef.current?.stop(); };
+
+  const bankIndex = Math.round(module.params.bank ?? 0);
+
+  return (
+    <div style={{ flex: 1, padding: '6px 5px', display: 'flex', flexDirection: 'column', gap: 6, overflow: 'hidden' }}>
+      {/* Bank row */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 5,
+        padding: '4px 6px', background: '#0e0e0e',
+        borderRadius: 3, border: '1px solid #1c1c1c', flexShrink: 0,
+      }}>
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          {Array.from({ length: 8 }, (_, i) => {
+            const isSelected = bankIndex === i;
+            const isFilled   = samplerBanksFilled?.[i] ?? false;
+            return (
+              <div
+                key={i}
+                onClick={() => onParamChange(module.id, 'bank', i)}
+                onMouseDown={e => e.stopPropagation()}
+                title={`Bank ${i + 1}${isFilled ? ' · loaded' : ' · empty'}`}
+                style={{
+                  width: 11, height: 11, borderRadius: '50%',
+                  cursor: 'pointer', flexShrink: 0,
+                  background: isSelected ? accent : isFilled ? `${accent}55` : '#1a1a1a',
+                  border: `1px solid ${isSelected ? accent : isFilled ? `${accent}88` : '#2a2a2a'}`,
+                  boxShadow: isSelected ? `0 0 6px ${accent}aa` : 'none',
+                  transition: 'background 0.1s, box-shadow 0.1s',
+                }}
+              />
+            );
+          })}
+        </div>
+        {/* LOAD button */}
+        <label
+          style={{
+            marginLeft: 'auto', padding: '2px 6px', fontSize: 7,
+            borderRadius: 2, cursor: 'pointer', background: '#1c1c1c',
+            color: accent, border: `1px solid ${accent}55`,
+            textTransform: 'uppercase', letterSpacing: '0.12em',
+            flexShrink: 0, lineHeight: '14px', userSelect: 'none',
+          }}
+          onMouseDown={e => e.stopPropagation()}
+          title={`Load into bank ${bankIndex + 1}`}
+        >
+          LOAD
+          <input
+            type="file"
+            accept="audio/*,.wav,.mp3,.flac,.ogg,.aiff"
+            style={{ display: 'none' }}
+            onChange={e => {
+              const file = e.target.files?.[0];
+              if (file && onLoadSample) { onLoadSample(file, bankIndex); e.target.value = ''; }
+            }}
+          />
+        </label>
+        {/* REC / STOP button */}
+        <button
+          onMouseDown={e => e.stopPropagation()}
+          onClick={recording ? stopRec : startRec}
+          title={recording ? 'Stop recording' : `Record mic into bank ${bankIndex + 1}`}
+          style={{
+            padding: '2px 6px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
+            fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em',
+            lineHeight: '14px', flexShrink: 0, userSelect: 'none',
+            border: recording ? '1px solid #ef4444' : '1px solid #374151',
+            background: recording ? '#ef4444' : '#1c1c1c',
+            color: recording ? '#fff' : '#9ca3af',
+            animation: recording ? 'recPulse 1s ease-in-out infinite' : 'none',
+          }}
+        >
+          {recording ? `■ ${recSecs}s` : '● REC'}
+        </button>
+      </div>
+      {recError && (
+        <span style={{ fontSize: 6, color: '#ef4444', textAlign: 'center', letterSpacing: '0.1em' }}>{recError}</span>
+      )}
+
+      {/* Knobs */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 4px', justifyContent: 'center' }}>
+        {typeDef.knobs.map(knob => (
+          <Knob
+            key={knob.id}
+            def={knob}
+            value={module.params[knob.id] ?? knob.default}
+            onChange={val => onParamChange(module.id, knob.id, val)}
+            size="sm"
+            cvGetLevel={cvLevels?.get(knob.id)}
+          />
+        ))}
+      </div>
+
+      {/* DIR + LOOP selectors */}
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+        {(typeDef.selectors ?? []).map(sel => {
+          const curVal = module.params[sel.id] ?? sel.default;
+          return (
+            <div key={sel.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+              <span style={{ fontSize: 6, color: '#666', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{sel.name}</span>
+              <div style={{ display: 'flex', gap: 2 }}>
+                {sel.options.map((opt, i) => (
+                  <button
+                    key={opt}
+                    onMouseDown={e => e.stopPropagation()}
+                    onClick={() => onSelectorChange(module.id, sel.id, i)}
+                    data-testid={`selector-${module.id}-${sel.id}-${opt}`}
+                    style={{
+                      padding: '2px 5px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
+                      background: Math.round(curVal) === i ? accent : '#1c1c1c',
+                      color: Math.round(curVal) === i ? '#000' : '#666',
+                      border: `1px solid ${Math.round(curVal) === i ? accent : '#282828'}`,
+                    }}
+                  >{opt}</button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function ModulePanel({
   module, connectedPorts, pendingCable, onPortClick, onPortDoubleClick, onPortHold, onParamChange,
   onSelectorChange, onDragStart, onDelete, onRegisterPortRef, onKeyPress,
@@ -834,104 +1015,16 @@ export default function ModulePanel({
             {/* Controls */}
             {isSampler ? (
               /* ── Sampler: bank dots, load button, knobs, dir/loop selectors ── */
-              <div style={{ flex: 1, padding: '6px 5px', display: 'flex', flexDirection: 'column', gap: 6, overflow: 'hidden' }}>
-                {/* Bank row */}
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 5,
-                  padding: '4px 6px', background: '#0e0e0e',
-                  borderRadius: 3, border: '1px solid #1c1c1c', flexShrink: 0,
-                }}>
-                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                    {Array.from({ length: 8 }, (_, i) => {
-                      const isSelected = Math.round(module.params.bank ?? 0) === i;
-                      const isFilled   = samplerBanksFilled?.[i] ?? false;
-                      return (
-                        <div
-                          key={i}
-                          onClick={() => onParamChange(module.id, 'bank', i)}
-                          onMouseDown={e => e.stopPropagation()}
-                          title={`Bank ${i + 1}${isFilled ? ' · loaded' : ' · empty'}`}
-                          style={{
-                            width: 11, height: 11, borderRadius: '50%',
-                            cursor: 'pointer', flexShrink: 0,
-                            background: isSelected ? accent : isFilled ? `${accent}55` : '#1a1a1a',
-                            border: `1px solid ${isSelected ? accent : isFilled ? `${accent}88` : '#2a2a2a'}`,
-                            boxShadow: isSelected ? `0 0 6px ${accent}aa` : 'none',
-                            transition: 'background 0.1s, box-shadow 0.1s',
-                          }}
-                        />
-                      );
-                    })}
-                  </div>
-                  <label
-                    style={{
-                      marginLeft: 'auto', padding: '2px 7px', fontSize: 7,
-                      borderRadius: 2, cursor: 'pointer', background: '#1c1c1c',
-                      color: accent, border: `1px solid ${accent}55`,
-                      textTransform: 'uppercase', letterSpacing: '0.12em',
-                      flexShrink: 0, lineHeight: '14px', userSelect: 'none',
-                    }}
-                    onMouseDown={e => e.stopPropagation()}
-                    title={`Load into bank ${Math.round(module.params.bank ?? 0) + 1}`}
-                  >
-                    LOAD
-                    <input
-                      type="file"
-                      accept="audio/*,.wav,.mp3,.flac,.ogg,.aiff"
-                      style={{ display: 'none' }}
-                      onChange={e => {
-                        const file = e.target.files?.[0];
-                        if (file && onLoadSample) {
-                          onLoadSample(file, Math.round(module.params.bank ?? 0));
-                          e.target.value = '';
-                        }
-                      }}
-                    />
-                  </label>
-                </div>
-
-                {/* Knobs */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 4px', justifyContent: 'center' }}>
-                  {typeDef.knobs.map(knob => (
-                    <Knob
-                      key={knob.id}
-                      def={knob}
-                      value={module.params[knob.id] ?? knob.default}
-                      onChange={val => onParamChange(module.id, knob.id, val)}
-                      size="sm"
-                      cvGetLevel={cvLevels?.get(knob.id)}
-                    />
-                  ))}
-                </div>
-
-                {/* DIR + LOOP selectors */}
-                <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
-                  {(typeDef.selectors ?? []).map(sel => {
-                    const curVal = module.params[sel.id] ?? sel.default;
-                    return (
-                      <div key={sel.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                        <span style={{ fontSize: 6, color: '#666', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{sel.name}</span>
-                        <div style={{ display: 'flex', gap: 2 }}>
-                          {sel.options.map((opt, i) => (
-                            <button
-                              key={opt}
-                              onMouseDown={e => e.stopPropagation()}
-                              onClick={() => onSelectorChange(module.id, sel.id, i)}
-                              data-testid={`selector-${module.id}-${sel.id}-${opt}`}
-                              style={{
-                                padding: '2px 5px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
-                                background: Math.round(curVal) === i ? accent : '#1c1c1c',
-                                color: Math.round(curVal) === i ? '#000' : '#666',
-                                border: `1px solid ${Math.round(curVal) === i ? accent : '#282828'}`,
-                              }}
-                            >{opt}</button>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+              <SamplerBankPanel
+                module={module}
+                accent={accent}
+                samplerBanksFilled={samplerBanksFilled}
+                onParamChange={onParamChange}
+                onLoadSample={onLoadSample}
+                typeDef={typeDef}
+                onSelectorChange={onSelectorChange}
+                cvLevels={cvLevels}
+              />
             ) : isEuc ? (
               /* ── KNIGHT GATE: knobs+selector left, LED ring right ── */
               <div style={{ flex: 1, padding: '6px 8px', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 10, overflow: 'hidden' }}>
