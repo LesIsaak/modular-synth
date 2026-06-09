@@ -1063,8 +1063,6 @@ function useMIDI(
 }
 
 // ─── Minimap ──────────────────────────────────────────────────────────────────
-const MINI_W = 164;
-
 function Minimap({
   modules,
   rackRef,
@@ -1072,13 +1070,19 @@ function Minimap({
   modules: ModuleInstance[];
   rackRef: React.RefObject<HTMLDivElement | null>;
 }) {
-  // Uniform scale — width is fixed; height grows with the lowest module row
-  const scale = MINI_W / CONTENT_W;
+  // Both axes grow with content — uniform scale fits used area into a 200×200 box
+  const usedW = modules.length
+    ? Math.max(...modules.map(m => m.x + (MODULE_TYPE_MAP.get(m.typeId)?.width  ?? SLOT_W)))
+    : SLOT_W * 3;
   const usedH = modules.length
     ? Math.max(...modules.map(m => m.y + (MODULE_TYPE_MAP.get(m.typeId)?.height ?? SLOT_H)))
     : SLOT_H;
+  const effectiveW = Math.max(SLOT_W * 3, Math.min(CONTENT_W, usedW + SLOT_W));
   const effectiveH = Math.max(SLOT_H * 2, Math.min(CONTENT_H, usedH + SLOT_H));
-  const miniH = Math.max(60, Math.round(effectiveH * scale));
+  const MAX_MINI = 200;
+  const scale  = Math.min(MAX_MINI / effectiveW, MAX_MINI / effectiveH);
+  const miniW  = Math.max(60, Math.round(effectiveW * scale));
+  const miniH  = Math.max(40, Math.round(effectiveH * scale));
 
   const [scroll, setScroll]   = useState({ left: 0, top: 0 });
   const [viewSize, setViewSize] = useState({ w: 0, h: 0 });
@@ -1110,14 +1114,14 @@ function Minimap({
     el.scrollTop  = Math.max(0, my / scale - Math.max(0, viewSize.h - KB_H) / 2);
   };
 
-  const vpW = Math.min(MINI_W, viewSize.w * scale);
+  const vpW = Math.min(miniW, viewSize.w * scale);
   const vpH = Math.min(miniH, Math.max(0, viewSize.h - KB_H) * scale);
 
   return (
     <div
       style={{
         position: 'absolute', bottom: 12, right: 12,
-        width: MINI_W, height: miniH,
+        width: miniW, height: miniH,
         background: 'rgba(8,8,8,0.93)',
         border: '1px solid #2a2a2a',
         borderRadius: 4,
@@ -1134,9 +1138,17 @@ function Minimap({
     >
       {/* Row grid lines */}
       {Array.from({ length: Math.ceil(effectiveH / SLOT_H) }, (_, i) => (
-        <div key={i} style={{
+        <div key={`r${i}`} style={{
           position: 'absolute', left: 0, right: 0,
           top: Math.round(i * SLOT_H * scale), height: 1,
+          background: '#181818', pointerEvents: 'none',
+        }} />
+      ))}
+      {/* Column grid lines */}
+      {Array.from({ length: Math.ceil(effectiveW / SLOT_W) }, (_, i) => (
+        <div key={`c${i}`} style={{
+          position: 'absolute', top: 0, bottom: 0,
+          left: Math.round(i * SLOT_W * scale), width: 1,
           background: '#181818', pointerEvents: 'none',
         }} />
       ))}
