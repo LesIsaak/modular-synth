@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo, useTransition } from 'react';
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo, useTransition, memo, forwardRef, useImperativeHandle } from 'react';
 import { ModuleInstance, Cable, PendingCable, PortType, MidiMonitorData } from '../types';
 import { MidiClockInfo, getMidiClockInfo, setMidiClockLocked, emitMidiClockInfo, addMidiClockListener, removeMidiClockListener } from '../midiClock';
 import {
@@ -233,12 +233,18 @@ function ModuleBrowser({ onAdd }: { onAdd: (typeId: string) => void }) {
 }
 
 // ─── Patch cables SVG ─────────────────────────────────────────────────────────
-function PatchCables({
-  cables, pendingCable, mousePos, getPortCenter, onRemoveCable, cableOpacity,
+// `layoutVersion` is intentionally not read in the body — it is a prop only so
+// that React.memo re-renders this layer when the parent bumps it (post-commit,
+// after a module commit/drop or patch load), once the port refs are populated so
+// getPortCenter reads fresh DOM. Bumping it (not `modules`) is what guarantees the
+// correction render lands AFTER the new module DOM exists. Cable-tail dragging no
+// longer touches this component; the in-progress cable is drawn imperatively by
+// <PendingCablePreview/> below.
+const PatchCables = memo(function PatchCables({
+  cables, getPortCenter, onRemoveCable, cableOpacity,
 }: {
   cables: Cable[];
-  pendingCable: PendingCable | null;
-  mousePos: { x: number; y: number };
+  layoutVersion: number;
   getPortCenter: (modId: string, portId: string) => { x: number; y: number } | null;
   onRemoveCable: (id: string) => void;
   cableOpacity: number;
@@ -313,32 +319,74 @@ function PatchCables({
           </g>
         );
       })}
-      {pendingCable && (() => {
-        const from = getPortCenter(pendingCable.fromModuleId, pendingCable.fromPortId);
-        if (!from) return null;
-        const col = pendingCable.color ?? '#e5e7eb';
-        const mx = mousePos.x, my = mousePos.y;
-        return (
-          <>
-            <path d={makePath(from.x, from.y, mx, my)}
-              fill="none" stroke="#000" strokeWidth={6} strokeLinecap="round" opacity={0.4} />
-            <path d={makePath(from.x, from.y, mx, my)}
-              fill="none" stroke={col} strokeWidth={4} strokeLinecap="round"
-              strokeDasharray="8 5" opacity={0.85} />
-            <circle cx={mx} cy={my} r={13} fill="black" opacity={0.4} />
-            <circle cx={mx} cy={my} r={12} fill="#383838" stroke="#555" strokeWidth={0.6} />
-            <circle cx={mx} cy={my} r={10} fill={col} opacity={0.9} />
-            <circle cx={mx} cy={my} r={8}  fill="#1c1c1c" />
-            <circle cx={mx} cy={my} r={5.5} fill="#404040" />
-            <circle cx={mx} cy={my} r={2.5} fill="#888" />
-            <ellipse cx={mx - 3} cy={my - 3} rx={3} ry={1.8} fill="white" opacity={0.15} />
-            <circle cx={mx} cy={my} r={12} fill="none" stroke={col} strokeWidth={1} opacity={0.7} />
-          </>
-        );
-      })()}
     </svg>
   );
-}
+});
+
+// ─── In-progress (pending) cable preview ──────────────────────────────────────
+// Drawn in its own SVG overlay and updated IMPERATIVELY (no React state) while
+// the user drags a cable tail, so patching never re-renders SynthApp. Re-renders
+// only happen on mount/unmount (pendingCable set/cleared — discrete events).
+type PendingCablePreviewHandle = { setMouse: (x: number, y: number) => void };
+
+const PendingCablePreview = forwardRef<PendingCablePreviewHandle, {
+  pendingCable: PendingCable;
+  getPortCenter: (modId: string, portId: string) => { x: number; y: number } | null;
+  initialPos: { x: number; y: number };
+}>(({ pendingCable, getPortCenter, initialPos }, ref) => {
+  const path1Ref = useRef<SVGPathElement>(null);
+  const path2Ref = useRef<SVGPathElement>(null);
+  const plugRef  = useRef<SVGGElement>(null);
+  const col = pendingCable.color ?? '#e5e7eb';
+
+  const makePath = (x1: number, y1: number, x2: number, y2: number) => {
+    const dy = Math.abs(y2 - y1);
+    const sag = Math.min(80 + dy * 0.4, 200);
+    const mx = (x1 + x2) / 2;
+    const my = Math.max(y1, y2) + sag;
+    return `M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`;
+  };
+
+  // Recompute `from` on every call (amendment): the source module can be dragged
+  // while a cable is pending, so a mount-cached origin would go stale.
+  const apply = useCallback((mx: number, my: number) => {
+    const from = getPortCenter(pendingCable.fromModuleId, pendingCable.fromPortId);
+    if (!from) return;
+    const d = makePath(from.x, from.y, mx, my);
+    path1Ref.current?.setAttribute('d', d);
+    path2Ref.current?.setAttribute('d', d);
+    plugRef.current?.setAttribute('transform', `translate(${mx} ${my})`);
+  }, [getPortCenter, pendingCable.fromModuleId, pendingCable.fromPortId]);
+
+  useImperativeHandle(ref, () => ({ setMouse: apply }), [apply]);
+  // Seed the initial geometry from the ref-held mouse position on mount.
+  useLayoutEffect(() => { apply(initialPos.x, initialPos.y); }, [apply, initialPos]);
+
+  const from = getPortCenter(pendingCable.fromModuleId, pendingCable.fromPortId);
+  const x0 = from?.x ?? initialPos.x, y0 = from?.y ?? initialPos.y;
+  const d0 = makePath(x0, y0, initialPos.x, initialPos.y);
+  return (
+    <svg
+      className="absolute top-0 left-0 pointer-events-none"
+      width={CONTENT_W}
+      height={CONTENT_H}
+      style={{ zIndex: 31 }}
+    >
+      <path ref={path1Ref} d={d0} fill="none" stroke="#000" strokeWidth={6} strokeLinecap="round" opacity={0.4} />
+      <path ref={path2Ref} d={d0} fill="none" stroke={col} strokeWidth={4} strokeLinecap="round" strokeDasharray="8 5" opacity={0.85} />
+      <g ref={plugRef} transform={`translate(${initialPos.x} ${initialPos.y})`}>
+        <circle cx={0} cy={0} r={13} fill="black" opacity={0.4} />
+        <circle cx={0} cy={0} r={12} fill="#383838" stroke="#555" strokeWidth={0.6} />
+        <circle cx={0} cy={0} r={10} fill={col} opacity={0.9} />
+        <circle cx={0} cy={0} r={8}  fill="#1c1c1c" />
+        <circle cx={0} cy={0} r={5.5} fill="#404040" />
+        <circle cx={0} cy={0} r={2.5} fill="#888" />
+        <ellipse cx={-3} cy={-3} rx={3} ry={1.8} fill="white" opacity={0.15} />
+        <circle cx={0} cy={0} r={12} fill="none" stroke={col} strokeWidth={1} opacity={0.7} />
+      </g>
+    </svg>
+  );
+});
 
 // ─── Pitch wheel ──────────────────────────────────────────────────────────────
 function PitchWheel({ onChange, externalValue }: { onChange: (val: number) => void; externalValue?: number }) {
@@ -493,7 +541,7 @@ const NOTE_NAMES  = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 function midiToHz(midi: number) { return 440 * Math.pow(2, (midi - 69) / 12); }
 
 
-function FixedKeyboardPanel({
+const FixedKeyboardPanel = memo(function FixedKeyboardPanel({
   started,
   onNote,
   onBend,
@@ -871,7 +919,7 @@ function FixedKeyboardPanel({
       </div>
     </div>
   );
-}
+});
 
 // ─── MIDI input hook ─────────────────────────────────────────────────────────
 type MidiMonEvent =
@@ -1169,7 +1217,11 @@ export default function SynthApp() {
   const [pendingCable, setPendingCable] = useState<PendingCable | null>(null);
   const pendingCableRef = useRef<PendingCable | null>(null);
   pendingCableRef.current = pendingCable;
-  const [mousePos,     setMousePos]     = useState({ x: 0, y: 0 });
+  // Cable-tail position is kept in a ref (not state) and the in-progress cable is
+  // drawn imperatively (see <PendingCablePreview/>) so dragging a cable never
+  // re-renders SynthApp — which would starve the main-thread audio scheduler.
+  const mousePosRef = useRef({ x: 0, y: 0 });
+  const pendingPreviewRef = useRef<PendingCablePreviewHandle | null>(null);
   const [cableOpacity,     setCableOpacity]     = useState(1);
   const [focusedModuleId,  setFocusedModuleId]  = useState<string | null>(null);
   const focusedModuleIdRef = useRef<string | null>(null);
@@ -1298,6 +1350,7 @@ export default function SynthApp() {
   // ─── Pan mode ────────────────────────────────────────────────────────────────
   const [panMode, setPanMode]   = useState(false);
   const [showMinimap, setShowMinimap] = useState(false);
+  const handleToggleMinimap = useCallback(() => setShowMinimap(m => !m), []);
   const panModeRef              = useRef(false);   // effective value (button OR space held)
   const panDragRef              = useRef<{
     startX: number; startY: number; origScrollLeft: number; origScrollTop: number;
@@ -1967,7 +2020,7 @@ export default function SynthApp() {
       // Seed mousePos to the port center so the free end starts there instead of
       // jumping from a stale position on the first mousemove.
       const center = getPortCenter(moduleId, portId);
-      if (center) setMousePos(center);
+      if (center) { mousePosRef.current = center; pendingPreviewRef.current?.setMouse(center.x, center.y); }
       setPendingCable({ fromModuleId: moduleId, fromPortId: portId, fromPortType: portType });
       return;
     }
@@ -2229,7 +2282,7 @@ export default function SynthApp() {
     // Seed mousePos to the held port center so the free end appears there
     // immediately instead of jumping from a stale position.
     const center = getPortCenter(moduleId, portId);
-    if (center) setMousePos(center);
+    if (center) { mousePosRef.current = center; pendingPreviewRef.current?.setMouse(center.x, center.y); }
     setPendingCable({ ...first, extra: rest.length > 0 ? rest : undefined });
   }, [getPortCenter, pushUndo]);
 
@@ -2301,10 +2354,10 @@ export default function SynthApp() {
           }));
         }
         if (hasCable) {
-          setMousePos({
-            x: mx - r.left + rackRef.current.scrollLeft,
-            y: my - r.top  + rackRef.current.scrollTop,
-          });
+          const cx = mx - r.left + rackRef.current.scrollLeft;
+          const cy = my - r.top  + rackRef.current.scrollTop;
+          mousePosRef.current = { x: cx, y: cy };
+          pendingPreviewRef.current?.setMouse(cx, cy);
         }
         edgeRafId = requestAnimationFrame(edgeScroll);
       }
@@ -2326,10 +2379,10 @@ export default function SynthApp() {
           cableRafId = 0;
           if (!rackRef.current) return;
           const r = rackRef.current.getBoundingClientRect();
-          setMousePos({
-            x: lastMouse.x - r.left + rackRef.current.scrollLeft,
-            y: lastMouse.y - r.top  + rackRef.current.scrollTop,
-          });
+          const cx = lastMouse.x - r.left + rackRef.current.scrollLeft;
+          const cy = lastMouse.y - r.top  + rackRef.current.scrollTop;
+          mousePosRef.current = { x: cx, y: cy };
+          pendingPreviewRef.current?.setMouse(cx, cy);
         });
       }
 
@@ -2623,12 +2676,19 @@ export default function SynthApp() {
         <div className="relative" style={{ width: CONTENT_W, height: CONTENT_H }}>
           <PatchCables
             cables={cables}
-            pendingCable={pendingCable}
-            mousePos={mousePos}
+            layoutVersion={cableLayoutVersion}
             getPortCenter={getPortCenter}
             onRemoveCable={handleRemoveCable}
             cableOpacity={cableOpacity}
           />
+          {pendingCable && (
+            <PendingCablePreview
+              ref={pendingPreviewRef}
+              pendingCable={pendingCable}
+              getPortCenter={getPortCenter}
+              initialPos={mousePosRef.current}
+            />
+          )}
 
           {modules.map(mod => {
             const cbs = getModuleCbs(mod.id, mod.typeId);
@@ -2790,7 +2850,7 @@ export default function SynthApp() {
         onSave={handleSavePatch}
         onLoad={handleLoadClick}
         showMinimap={showMinimap}
-        onToggleMinimap={() => setShowMinimap(m => !m)}
+        onToggleMinimap={handleToggleMinimap}
       />
     </div>
   );
