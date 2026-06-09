@@ -1544,32 +1544,65 @@ export function createAudioModule(
         return freq;
       };
 
+      // How many ms until the scheduled audio beat actually plays (lookahead offset).
+      const arpAudioLeadMs = () =>
+        (_currentTickAudioTime && _currentTickAudioTime > ctx.currentTime)
+          ? (_currentTickAudioTime - ctx.currentTime) * 1000
+          : 0;
+
+      // Core step: fire one arp note using the current _currentTickAudioTime context.
+      const doStep = () => {
+        if (Math.random() > (p.chance ?? 1)) return;
+        const freq = getNextFreq();
+        if (freq === null) return;
+        const stepMs  = getStepMs();
+        const gl      = Math.min(0.95, p.gate_len ?? 0.5);
+        const leadMs  = arpAudioLeadMs();
+        // Schedule V/OCT change precisely at the beat time.
+        const t = _currentTickAudioTime || ctx.currentTime;
+        voct.offset.setValueAtTime(freq, t);
+        gateCb?.(true, freq);
+        // Gate-off must fire after the audio beat plays, not after the tick fires.
+        setTimeout(() => gateCb?.(false, freq), stepMs * gl + leadMs);
+        // Accent every Nth step
+        const accentDiv = ACCENT_DIVS[Math.round(p.accent ?? 0)] ?? 0;
+        if (accentDiv > 0 && accentBeat % accentDiv === 0) {
+          accentCb?.(true, freq);
+          setTimeout(() => accentCb?.(false, freq), stepMs * gl * 0.5 + leadMs);
+        }
+        accentBeat++;
+      };
+
+      // External clock tracking — suppresses internal timer while CLK is patched.
+      let lastExtClkMs    = -Infinity;
+      let extClkIntervalMs = Infinity;
+
       const tick = () => {
+        // Suppress internal timer while external CLK is active.
+        const suppressFor = Number.isFinite(extClkIntervalMs)
+          ? extClkIntervalMs * 1.5
+          : getStepMs() * 6;
+        if (performance.now() - lastExtClkMs < suppressFor) return;
+
         const beat   = globalBeat++;
         const stepMs = getStepMs();
-        // Swing: delay odd beats
-        const swingDelay = (beat % 2 === 1) ? (p.swing ?? 0) * stepMs : 0;
+        const swingMs = (beat % 2 === 1) ? (p.swing ?? 0) * stepMs : 0;
 
-        setTimeout(() => {
-          // Chance: skip this step probabilistically
-          if (Math.random() > (p.chance ?? 1)) return;
-
-          const freq = getNextFreq();
-          if (freq === null) return;
-
-          voct.offset.value = freq;
-          gateCb?.(true, freq);
-          const gl = Math.min(0.95, p.gate_len ?? 0.5);
-          setTimeout(() => gateCb?.(false, freq), stepMs * gl);
-
-          // Accent: fire accent_out every Nth step
-          const accentDiv = ACCENT_DIVS[Math.round(p.accent ?? 0)] ?? 0;
-          if (accentDiv > 0 && accentBeat % accentDiv === 0) {
-            accentCb?.(true, freq);
-            setTimeout(() => accentCb?.(false, freq), stepMs * gl * 0.5);
-          }
-          accentBeat++;
-        }, swingDelay);
+        if (swingMs > 0) {
+          // Capture audio time NOW (valid inside tick callback) and restore it
+          // inside the timeout so doStep gets the correct scheduled time.
+          const capturedAudioTime = _currentTickAudioTime;
+          const swungAudioTime    = capturedAudioTime ? capturedAudioTime + swingMs / 1000 : 0;
+          const audioLeadMs = capturedAudioTime > ctx.currentTime
+            ? (capturedAudioTime - ctx.currentTime) * 1000 : 0;
+          setTimeout(() => {
+            _currentTickAudioTime = swungAudioTime;
+            doStep();
+            _currentTickAudioTime = 0;
+          }, audioLeadMs + swingMs);
+        } else {
+          doStep();
+        }
       };
 
       let timer = makeClockTimer(getStepMs, tick);
@@ -1599,6 +1632,16 @@ export function createAudioModule(
             const cv = readVoct();
             const f = cv > 10 ? cv : (freq ?? 440);
             addNote(f);
+          }],
+          // External clock: each rising edge = one arp step.
+          // Measuring the interval between pulses lets the internal timer
+          // know when to suppress itself automatically.
+          ['clk_in', () => {
+            const now = performance.now();
+            if (lastExtClkMs > -Infinity) extClkIntervalMs = now - lastExtClkMs;
+            lastExtClkMs = now;
+            globalBeat++;
+            doStep();
           }],
         ]),
         portNoteOff: new Map([
