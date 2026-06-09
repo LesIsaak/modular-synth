@@ -705,6 +705,168 @@ function SamplerBankPanel({
   );
 }
 
+// ─── Spectrum Analyzer display ────────────────────────────────────────────────
+// Live FFT frequency spectrum drawn imperatively via RAF — no React state per frame.
+function SpectrumAnalyzerDisplay({ analyser }: { analyser?: AnalyserNode }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const rafRef    = useRef(0);
+
+  useEffect(() => {
+    if (!analyser || !canvasRef.current) return;
+    const canvas    = canvasRef.current;
+    const ctx2d     = canvas.getContext('2d');
+    if (!ctx2d) return;
+    const bufLen    = analyser.frequencyBinCount; // fftSize / 2 = 1024
+    const dataArray = new Uint8Array(bufLen);
+    const W = canvas.width, H = canvas.height;
+    const NUM_BARS  = 64;
+
+    const draw = () => {
+      rafRef.current = requestAnimationFrame(draw);
+      analyser.getByteFrequencyData(dataArray);
+
+      ctx2d.fillStyle = '#060c0c';
+      ctx2d.fillRect(0, 0, W, H);
+
+      // Subtle grid
+      ctx2d.strokeStyle = '#0d1e1e';
+      ctx2d.lineWidth = 1;
+      for (let i = 1; i < 4; i++) {
+        const y = Math.round(H * i / 4) + 0.5;
+        ctx2d.beginPath(); ctx2d.moveTo(0, y); ctx2d.lineTo(W, y); ctx2d.stroke();
+      }
+      for (let i = 1; i < 4; i++) {
+        const x = Math.round(W * i / 4) + 0.5;
+        ctx2d.beginPath(); ctx2d.moveTo(x, 0); ctx2d.lineTo(x, H); ctx2d.stroke();
+      }
+
+      const barW = W / NUM_BARS;
+      for (let i = 0; i < NUM_BARS; i++) {
+        // Log-spaced bin mapping so bass frequencies aren't squished
+        const t0 = i / NUM_BARS, t1 = (i + 1) / NUM_BARS;
+        const b0 = Math.floor(Math.pow(bufLen * 0.85, t0));
+        const b1 = Math.max(b0 + 1, Math.floor(Math.pow(bufLen * 0.85, t1)));
+        let sum = 0;
+        for (let b = b0; b < b1 && b < bufLen; b++) sum += dataArray[b];
+        const avg = sum / (b1 - b0);
+        const barH = (avg / 255) * H;
+
+        const t   = i / NUM_BARS;
+        const hue = 170 + t * 30;          // cyan-green (bass) → blue-cyan (treble)
+        const sat = 65 + avg / 8;
+        const lit = 15 + avg / 4.5;
+
+        const x    = i * barW;
+        const grad = ctx2d.createLinearGradient(x, H - barH, x, H);
+        grad.addColorStop(0, `hsl(${hue}, ${sat}%, ${Math.min(lit + 28, 75)}%)`);
+        grad.addColorStop(1, `hsl(${hue - 15}, ${sat - 10}%, ${Math.max(lit - 5, 12)}%)`);
+        ctx2d.fillStyle = grad;
+        ctx2d.fillRect(x + 0.5, H - barH, Math.max(barW - 1, 1), barH);
+      }
+    };
+    draw();
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [analyser]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={234}
+      height={178}
+      style={{ display: 'block', margin: '4px auto 6px', borderRadius: 3, border: '1px solid #0d1e1e' }}
+    />
+  );
+}
+
+// ─── Oscilloscope display ─────────────────────────────────────────────────────
+// Live time-domain waveform with CRT phosphor aesthetics.
+// Gain is synced via a ref so knob changes never restart the RAF loop.
+function OscilloscopeDisplay({ analyser, gain }: { analyser?: AnalyserNode; gain: number }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const rafRef    = useRef(0);
+  const gainRef   = useRef(gain);
+  gainRef.current = gain; // stays fresh without triggering the effect
+
+  useEffect(() => {
+    if (!analyser || !canvasRef.current) return;
+    const canvas    = canvasRef.current;
+    const ctx2d     = canvas.getContext('2d');
+    if (!ctx2d) return;
+    const bufLen    = analyser.fftSize; // 2048
+    const dataArray = new Float32Array(bufLen);
+    const W = canvas.width, H = canvas.height;
+    const MID = H / 2;
+
+    const draw = () => {
+      rafRef.current = requestAnimationFrame(draw);
+      analyser.getFloatTimeDomainData(dataArray);
+
+      ctx2d.fillStyle = '#020c05';
+      ctx2d.fillRect(0, 0, W, H);
+
+      // Grid
+      ctx2d.strokeStyle = '#0a2012';
+      ctx2d.lineWidth = 1;
+      for (let i = 1; i < 4; i++) {
+        const y = Math.round(H * i / 4) + 0.5;
+        ctx2d.beginPath(); ctx2d.moveTo(0, y); ctx2d.lineTo(W, y); ctx2d.stroke();
+      }
+      for (let i = 1; i < 4; i++) {
+        const x = Math.round(W * i / 4) + 0.5;
+        ctx2d.beginPath(); ctx2d.moveTo(x, 0); ctx2d.lineTo(x, H); ctx2d.stroke();
+      }
+
+      // Auto-trigger: first upward zero-crossing in the first 40% of the buffer
+      let triggerIdx = 0;
+      const searchStart = Math.floor(bufLen * 0.05);
+      const searchEnd   = Math.floor(bufLen * 0.4);
+      for (let i = searchStart + 1; i < searchEnd; i++) {
+        if (dataArray[i - 1] < 0 && dataArray[i] >= 0) { triggerIdx = i; break; }
+      }
+
+      const drawLen = Math.min(bufLen - triggerIdx, Math.floor(bufLen * 0.55));
+      const scaleX  = W / drawLen;
+      const g       = gainRef.current;
+
+      // Outer phosphor halo
+      ctx2d.strokeStyle = '#063a15';
+      ctx2d.lineWidth   = 3.5;
+      ctx2d.beginPath();
+      for (let i = 0; i < drawLen; i++) {
+        const x = i * scaleX;
+        const y = MID - Math.max(-1, Math.min(1, dataArray[triggerIdx + i] * g)) * MID * 0.85;
+        i === 0 ? ctx2d.moveTo(x, y) : ctx2d.lineTo(x, y);
+      }
+      ctx2d.stroke();
+
+      // Bright phosphor trace
+      ctx2d.strokeStyle = '#22c55e';
+      ctx2d.lineWidth   = 1.5;
+      ctx2d.shadowColor = '#22c55e';
+      ctx2d.shadowBlur  = 4;
+      ctx2d.beginPath();
+      for (let i = 0; i < drawLen; i++) {
+        const x = i * scaleX;
+        const y = MID - Math.max(-1, Math.min(1, dataArray[triggerIdx + i] * g)) * MID * 0.85;
+        i === 0 ? ctx2d.moveTo(x, y) : ctx2d.lineTo(x, y);
+      }
+      ctx2d.stroke();
+      ctx2d.shadowBlur = 0;
+    };
+    draw();
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [analyser]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={234}
+      height={178}
+      style={{ display: 'block', margin: '4px auto 6px', borderRadius: 3, border: '1px solid #0a1e0e' }}
+    />
+  );
+}
+
 function ModulePanel({
   module, connectedPorts, pendingCable, onPortClick, onPortDoubleClick, onPortHold, onParamChange,
   onSelectorChange, onDragStart, onDelete, onRegisterPortRef, onKeyPress,
@@ -1388,6 +1550,12 @@ function ModulePanel({
                   );
                 })()}
                 {isOutput && <OutputMeter analyser={analyser} />}
+                {module.typeId === 'spectrum_analyzer' && (
+                  <SpectrumAnalyzerDisplay analyser={analyser} />
+                )}
+                {module.typeId === 'oscilloscope' && (
+                  <OscilloscopeDisplay analyser={analyser} gain={module.params.gain ?? 1} />
+                )}
                 {module.typeId === 'midi_monitor' && midiMonitorData && (
                   <MidiMonitorDisplay d={midiMonitorData} />
                 )}

@@ -4049,6 +4049,33 @@ export function createAudioModule(
       };
     }
 
+    // ── Visualizers ───────────────────────────────────────────────────────────
+    case 'spectrum_analyzer': {
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = p.smoothing ?? 0.8;
+      return {
+        outputs: new Map(),
+        inputs: new Map([['audio_in', { node: analyser }]]),
+        setParam: (id, val) => { p[id] = val; if (id === 'smoothing') analyser.smoothingTimeConstant = val; },
+        destroy: () => { try { analyser.disconnect(); } catch (_) {} },
+        analyser,
+      };
+    }
+
+    case 'oscilloscope': {
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0;
+      return {
+        outputs: new Map(),
+        inputs: new Map([['audio_in', { node: analyser }]]),
+        setParam: () => {},
+        destroy: () => { try { analyser.disconnect(); } catch (_) {} },
+        analyser,
+      };
+    }
+
     default:
       console.warn(`Unknown module type: ${typeId}`);
       return {

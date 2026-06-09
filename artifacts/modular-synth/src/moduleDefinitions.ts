@@ -17,6 +17,7 @@ const GRN = '#d97706';
 const UTL = '#94a3b8';
 const EUC = '#f59e0b';  // Shakmat amber
 const DRM = '#dc2626';  // Erica Synths red
+const VIS = '#22d3ee';  // Cyan — CRT monitor / scope
 
 const audioIn   = { id: 'audio_in',      name: 'IN',     type: 'audio_in'  } as const;
 const audioOut  = { id: 'out',            name: 'OUT',    type: 'audio_out' } as const;
@@ -1375,6 +1376,22 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
       { id: 'out',       name: 'MIX',   type: 'audio_out' },
     ],
   },
+
+  // ─── Visualizers ──────────────────────────────────────────────────────────────
+  {
+    id: 'spectrum_analyzer', name: 'SPECTRUM', category: 'visualizer', accentColor: VIS, width: 260, height: 360,
+    knobs: [
+      { id: 'smoothing', name: 'SMOOTH', min: 0, max: 0.99, default: 0.8 },
+    ],
+    ports: [{ id: 'audio_in', name: 'IN', type: 'audio_in' }],
+  },
+  {
+    id: 'oscilloscope', name: 'SCOPE', category: 'visualizer', accentColor: VIS, width: 260, height: 360,
+    knobs: [
+      { id: 'gain', name: 'GAIN', min: 0.1, max: 10, default: 1 },
+    ],
+    ports: [{ id: 'audio_in', name: 'IN', type: 'audio_in' }],
+  },
 ];
 
 export const MODULE_TYPE_MAP = new Map(MODULE_TYPES.map(m => [m.id, m]));
@@ -1384,6 +1401,7 @@ export const CATEGORY_ORDER: ModuleCategory[] = [
   'envelope', 'lfo', 'sequencer', 'clock',
   'delay', 'reverb', 'modulation', 'distortion',
   'spectral', 'granular', 'percussion', 'utility',
+  'visualizer',
 ];
 
 export const CATEGORY_LABELS: Record<string, string> = {
@@ -1391,6 +1409,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
   envelope:    'Envelopes',     lfo:        'LFO',           sequencer:  'Sequencers', clock:      'Clock',
   delay:       'Delay',         reverb:     'Reverb',        modulation: 'Modulation', distortion: 'Distortion',
   spectral:    'Spectral',      granular:   'Granular',      percussion: 'Percussion', utility:    'Utility / I/O',
+  visualizer:  'Visualizers',
 };
 
 export const CATEGORY_COLORS: Record<string, string> = {
@@ -1398,6 +1417,7 @@ export const CATEGORY_COLORS: Record<string, string> = {
   envelope:   '#a855f7', lfo:        '#ec4899', sequencer:  '#84cc16', clock:      '#eab308',
   delay:      '#22c55e', reverb:     '#10b981', modulation: '#06b6d4', distortion: '#ef4444',
   spectral:   '#8b5cf6', granular:   '#d97706', percussion: '#dc2626', utility:    '#94a3b8',
+  visualizer: '#22d3ee',
 };
 
 export const CABLE_COLORS = [
@@ -1524,6 +1544,10 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   keyboard:     'Exposes the on-screen keyboard as V/OCT and gate outputs so you can patch it to oscillators and envelopes like any other module.',
   midi_monitor: 'Displays incoming MIDI data — note, velocity, CC, pitch bend, and more. Useful for debugging MIDI patches and monitoring live input.',
   output:       'Final stereo output module with VU meter. All audio paths must end here. Adjust the master level with the GAIN knob.',
+
+  // ── Visualizers ──────────────────────────────────────────────────────
+  spectrum_analyzer: 'FFT frequency spectrum analyzer. Displays the frequency content of any signal in real time — bass at left, treble at right. SMOOTH adjusts temporal averaging; higher values give a slower, steadier display. Patch any audio signal to IN.',
+  oscilloscope:      'Real-time waveform oscilloscope. Displays the time-domain signal on a CRT-style phosphor display with auto-trigger on zero crossings. GAIN scales the vertical display. Patch any audio or CV signal to IN.',
 };
 
 export function getDefaultParams(typeDef: ModuleTypeDef): Record<string, number> {

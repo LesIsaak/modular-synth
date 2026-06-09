@@ -2723,7 +2723,7 @@ export default function SynthApp() {
                 onDelete={handleDeleteModule}
                 onRegisterPortRef={registerPortRef}
                 onKeyPress={handleModuleKeyPress}
-                analyser={mod.typeId === 'output' ? audioModulesRef.current.get(mod.id)?.analyser : undefined}
+                analyser={['output', 'spectrum_analyzer', 'oscilloscope'].includes(mod.typeId) ? audioModulesRef.current.get(mod.id)?.analyser : undefined}
                 moduleStepRef={(mod.typeId === 'drum_machine' || mod.typeId === 'euclidean_trig' || mod.typeId === 'poly_step' || mod.typeId === 'seq_step' || mod.typeId === 'seq_trigger' || mod.typeId === 'seq_cv' || mod.typeId === 'seq_gate')
                   ? audioModulesRef.current.get(mod.id)?.stepRef
                   : undefined}
