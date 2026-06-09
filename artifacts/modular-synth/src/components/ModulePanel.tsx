@@ -772,7 +772,7 @@ function SpectrumAnalyzerDisplay({ analyser }: { analyser?: AnalyserNode }) {
     <canvas
       ref={canvasRef}
       width={234}
-      height={178}
+      height={142}
       style={{ display: 'block', margin: '4px auto 6px', borderRadius: 3, border: '1px solid #0d1e1e' }}
     />
   );
@@ -861,7 +861,7 @@ function OscilloscopeDisplay({ analyser, gain }: { analyser?: AnalyserNode; gain
     <canvas
       ref={canvasRef}
       width={234}
-      height={178}
+      height={142}
       style={{ display: 'block', margin: '4px auto 6px', borderRadius: 3, border: '1px solid #0a1e0e' }}
     />
   );

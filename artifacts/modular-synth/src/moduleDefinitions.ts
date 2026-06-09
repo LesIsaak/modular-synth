@@ -1379,14 +1379,14 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
 
   // ─── Visualizers ──────────────────────────────────────────────────────────────
   {
-    id: 'spectrum_analyzer', name: 'SPECTRUM', category: 'visualizer', accentColor: VIS, width: 260, height: 360,
+    id: 'spectrum_analyzer', name: 'SPECTRUM', category: 'visualizer', accentColor: VIS, width: 260,
     knobs: [
       { id: 'smoothing', name: 'SMOOTH', min: 0, max: 0.99, default: 0.8 },
     ],
     ports: [{ id: 'audio_in', name: 'IN', type: 'audio_in' }],
   },
   {
-    id: 'oscilloscope', name: 'SCOPE', category: 'visualizer', accentColor: VIS, width: 260, height: 360,
+    id: 'oscilloscope', name: 'SCOPE', category: 'visualizer', accentColor: VIS, width: 260,
     knobs: [
       { id: 'gain', name: 'GAIN', min: 0.1, max: 10, default: 1 },
     ],
