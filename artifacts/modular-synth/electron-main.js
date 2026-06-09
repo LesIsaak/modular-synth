@@ -1,9 +1,6 @@
-import { app, BrowserWindow, protocol, net } from 'electron';
-import { fileURLToPath, pathToFileURL } from 'url';
+import { app, BrowserWindow, protocol } from 'electron';
+import fs from 'fs';
 import path from 'path';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const distDir = path.join(__dirname, 'dist');
 
 // Must be called before app is ready
 protocol.registerSchemesAsPrivileged([
@@ -17,6 +14,32 @@ protocol.registerSchemesAsPrivileged([
     },
   },
 ]);
+
+function mimeType(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  const map = {
+    '.html': 'text/html; charset=utf-8',
+    '.js':   'application/javascript; charset=utf-8',
+    '.mjs':  'application/javascript; charset=utf-8',
+    '.css':  'text/css; charset=utf-8',
+    '.json': 'application/json',
+    '.wasm': 'application/wasm',
+    '.svg':  'image/svg+xml',
+    '.png':  'image/png',
+    '.jpg':  'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif':  'image/gif',
+    '.webp': 'image/webp',
+    '.ico':  'image/x-icon',
+    '.woff': 'font/woff',
+    '.woff2':'font/woff2',
+    '.ttf':  'font/ttf',
+    '.otf':  'font/otf',
+  };
+  return map[ext] ?? 'application/octet-stream';
+}
+
+const distDir = path.join(app.getAppPath(), 'dist');
 
 const createWindow = () => {
   const win = new BrowserWindow({
@@ -33,20 +56,34 @@ const createWindow = () => {
     },
   });
 
-  // Load via custom protocol so window.location.pathname === '/'
-  // which lets wouter match the <Route path="/"> route
-  win.loadURL('app://./');
+  // Custom protocol makes window.location.pathname === '/'
+  // so the wouter <Route path="/"> matches correctly
+  win.loadURL('app://localhost/');
 };
 
 app.whenReady().then(() => {
+  // Serve Vite build files via fs (works with or without asar)
   protocol.handle('app', (req) => {
     const { pathname } = new URL(req.url);
-    const relPath = pathname.replace(/^\//, '') || 'index.html';
+    const relPath = pathname === '/' ? 'index.html' : pathname.replace(/^\//, '');
     const target = path.join(distDir, relPath);
-    // Serve the file; fall back to index.html for SPA deep links
-    return net.fetch(pathToFileURL(target).toString()).catch(() =>
-      net.fetch(pathToFileURL(path.join(distDir, 'index.html')).toString())
-    );
+
+    let filePath = target;
+    try {
+      fs.accessSync(filePath);
+    } catch {
+      // SPA fallback — any unknown path serves index.html
+      filePath = path.join(distDir, 'index.html');
+    }
+
+    const data = fs.readFileSync(filePath);
+    return new Response(data, {
+      status: 200,
+      headers: {
+        'Content-Type': mimeType(filePath),
+        'Access-Control-Allow-Origin': '*',
+      },
+    });
   });
 
   createWindow();

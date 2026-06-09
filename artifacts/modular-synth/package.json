@@ -15,6 +15,7 @@
   "build": {
     "appId": "com.orangecastle.modular",
     "productName": "OrangeCastle MODULAR",
+    "asar": false,
     "directories": {
       "buildResources": "build-resources",
       "output": "release"
