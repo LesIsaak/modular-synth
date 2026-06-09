@@ -3211,15 +3211,29 @@ export function createAudioModule(
       const getSwing   = () => Math.min(0.49, Math.max(0, (p.swing ?? 0) + swingCv.read() * 0.25));
       const getGateLen = () => Math.max(0.05, Math.min(0.9, p.gate_len ?? 0.4));
 
+      // How many ms until the scheduled audio beat actually plays.
+      // The clock fires LOOKAHEAD_MS early, so gate-off and other deferred
+      // callbacks must add this offset or they fire before the note sounds.
+      const audioLeadMs = () =>
+        (_currentTickAudioTime && _currentTickAudioTime > ctx.currentTime)
+          ? (_currentTickAudioTime - ctx.currentTime) * 1000
+          : 0;
+
       const fire = (portId: string, dur: number, freq = 440) => {
         const cb = gateCbs.get(portId);
         if (!cb) return;
-        cb(true, freq); setTimeout(() => cb(false, freq), dur);
+        cb(true, freq);
+        // Gate-off must fire dur ms AFTER the audio beat, not dur ms from now.
+        // Without this offset, the noteOff arrives before the note starts and
+        // cancels its attack envelope (audible as silence or very short notes).
+        setTimeout(() => cb(false, freq), dur + audioLeadMs());
       };
 
       const doTick = () => {
         const ms  = getMs();
         const dur = ms * getGateLen();
+        // Capture lead once per tick so all deferred callbacks in this tick agree.
+        const leadMs = audioLeadMs();
 
         // Clock passthrough — every tick
         fire('clk_out', dur);
@@ -3269,7 +3283,8 @@ export function createAudioModule(
           if (!muted && isOn && Math.random() < prob) {
             const scaledVel = vel * (isAcc ? 1.0 : 0.6);
             velNodes[t].offset.value = scaledVel;
-            setTimeout(() => { velNodes[t].offset.value = 0; }, dur);
+            // Drop vel CV after the gate closes, accounting for lookahead.
+            setTimeout(() => { velNodes[t].offset.value = 0; }, dur + leadMs);
             fire(`t${tn}_gate`, dur, isAcc ? 880 : 440);
           } else {
             velNodes[t].offset.value = 0;
@@ -3297,7 +3312,22 @@ export function createAudioModule(
         if (!running) return;
         const swing = getSwing();
         if (swing > 0.005 && beatIndex % 2 === 1) {
-          setTimeout(doTick, getMs() * swing);
+          // Capture the scheduled audio time NOW (while _currentTickAudioTime is
+          // still valid) so the swung doTick can restore it inside the timeout.
+          // Without this, _currentTickAudioTime is 0 when the timeout fires and
+          // swung beats fall back to ctx.currentTime — fully exposed to jitter.
+          const capturedAudioTime  = _currentTickAudioTime;
+          const swingOffsetS       = getMs() * swing / 1000;
+          const swungAudioTime     = capturedAudioTime ? capturedAudioTime + swingOffsetS : 0;
+          // Fire the timeout relative to when the beat actually plays, not now.
+          const leadMs = capturedAudioTime > ctx.currentTime
+            ? (capturedAudioTime - ctx.currentTime) * 1000
+            : 0;
+          setTimeout(() => {
+            _currentTickAudioTime = swungAudioTime;
+            doTick();
+            _currentTickAudioTime = 0;
+          }, leadMs + getMs() * swing);
         } else {
           doTick();
         }

@@ -1156,6 +1156,7 @@ export default function SynthApp() {
   const [samplerBanks,    setSamplerBanks]    = useState<Map<string, boolean[]>>(new Map());
   const [saveDialogOpen,  setSaveDialogOpen]  = useState(false);
   const [saveDialogInput, setSaveDialogInput] = useState('');
+  const [, startParamTransition] = useTransition();
   const [modules,      setModules]      = useState<ModuleInstance[]>(DEFAULT_MODULES);
   const modulesRef = useRef(modules);
   modulesRef.current = modules;
@@ -1690,10 +1691,15 @@ export default function SynthApp() {
 
   // ─── Param / selector change ────────────────────────────────────────────────
   const handleParamChange = useCallback((moduleId: string, paramId: string, value: number) => {
+    // Audio update is immediate — must not be deferred.
     audioModulesRef.current.get(moduleId)?.setParam(paramId, value);
     if (paramId === 'glide') glideRef.current = value;
-    setModules(prev => prev.map(m => m.id === moduleId ? { ...m, params: { ...m.params, [paramId]: value } } : m));
-  }, []);
+    // React state update is deferred so knob drags don't block the main thread
+    // and delay Worker tick messages processed by the audio scheduler.
+    startParamTransition(() => {
+      setModules(prev => prev.map(m => m.id === moduleId ? { ...m, params: { ...m.params, [paramId]: value } } : m));
+    });
+  }, [startParamTransition]);
 
   const handleSelectorChange = useCallback((moduleId: string, selId: string, value: number) => {
     setModules(prev => prev.map(m => m.id === moduleId ? { ...m, params: { ...m.params, [selId]: value } } : m));
