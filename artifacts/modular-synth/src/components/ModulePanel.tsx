@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, memo } from 'react';
 import { ModuleInstance, KnobDef, ModuleTypeDef, PortType, PendingCable, MidiMonitorData } from '../types';
 import { MODULE_TYPE_MAP } from '../moduleDefinitions';
 import Knob from './Knob';
@@ -705,7 +705,7 @@ function SamplerBankPanel({
   );
 }
 
-export default function ModulePanel({
+function ModulePanel({
   module, connectedPorts, pendingCable, onPortClick, onPortDoubleClick, onPortHold, onParamChange,
   onSelectorChange, onDragStart, onDelete, onRegisterPortRef, onKeyPress,
   analyser, midiMonitorData, isMidiTarget, moduleStepRef, getLevelFn, cvLevels, portLevels,
@@ -1502,3 +1502,5 @@ export default function ModulePanel({
     </div>
   );
 }
+
+export default memo(ModulePanel);

@@ -1161,6 +1161,8 @@ export default function SynthApp() {
   const modulesRef = useRef(modules);
   modulesRef.current = modules;
   const [cables,       setCables]       = useState<Cable[]>(DEFAULT_CABLES);
+  const cablesRef = useRef(cables);
+  cablesRef.current = cables;
   // Bumped after every modules commit so PatchCables re-renders once port refs are populated
   const [cableLayoutVersion, setCableLayoutVersion] = useState(0);
   useLayoutEffect(() => { setCableLayoutVersion(v => v + 1); }, [modules]);
@@ -1672,7 +1674,7 @@ export default function SynthApp() {
 
   // ─── Delete module ──────────────────────────────────────────────────────────
   const handleDeleteModule = useCallback((moduleId: string) => {
-    pushUndo(cables, modules);
+    pushUndo(cablesRef.current, modulesRef.current);
     setCables(prev => {
       const toRemove = prev.filter(c => c.fromModuleId === moduleId || c.toModuleId === moduleId);
       for (const cable of toRemove) {
@@ -1812,6 +1814,44 @@ export default function SynthApp() {
     audioModulesRef.current.get(moduleId)?.kill?.();
   }, []);
 
+  // ─── Stable per-module callback bundles ──────────────────────────────────────
+  // Inline closures at the ModulePanel call site are recreated every render and
+  // would defeat React.memo(ModulePanel), causing ALL panels to re-render on each
+  // drag/patch frame — which starves the main thread and jitters audio timing.
+  // Cache one stable bundle per module id; route through refs so the latest
+  // handler implementation is always used without changing the bundle's identity.
+  const handleLoadSampleRef = useRef(handleLoadSample);
+  const handleFreezeKillRef = useRef(handleFreezeKill);
+  const handleBuildPatchRef = useRef(handleBuildPatch);
+  handleLoadSampleRef.current = handleLoadSample;
+  handleFreezeKillRef.current = handleFreezeKill;
+  handleBuildPatchRef.current = handleBuildPatch;
+  const moduleCbCacheRef = useRef(new Map<string, {
+    onLoadSample: (file: File, bank: number) => void;
+    onFreezeKill: () => void;
+    onSeqReset: () => void;
+    onAudioTrigPickDevice: (deviceId?: string) => void;
+    audioTrigGetDeviceLabel: () => string;
+    audioTrigGetDeviceList: () => { deviceId: string; label: string }[];
+    onBuildPatch: () => void;
+  }>());
+  const getModuleCbs = useCallback((modId: string, typeId: string) => {
+    let h = moduleCbCacheRef.current.get(modId);
+    if (!h) {
+      h = {
+        onLoadSample: (file: File, bank: number) => handleLoadSampleRef.current(modId, file, bank),
+        onFreezeKill: () => handleFreezeKillRef.current(modId),
+        onSeqReset: () => audioModulesRef.current.get(modId)?.portNoteOn?.get('reset_in')?.(0),
+        onAudioTrigPickDevice: (deviceId?: string) => audioModulesRef.current.get(modId)?.triggerDeviceRepick?.(deviceId),
+        audioTrigGetDeviceLabel: () => audioModulesRef.current.get(modId)?.getDeviceLabel?.() ?? '—',
+        audioTrigGetDeviceList: () => audioModulesRef.current.get(modId)?.getDeviceList?.() ?? [],
+        onBuildPatch: () => handleBuildPatchRef.current(MODULE_PATCH_EXAMPLES[typeId]!),
+      };
+      moduleCbCacheRef.current.set(modId, h);
+    }
+    return h;
+  }, []);
+
   // ─── Patch save / load ───────────────────────────────────────────────────────
   const handleSavePatch = useCallback(() => {
     setSaveDialogInput('my-patch');
@@ -1916,6 +1956,12 @@ export default function SynthApp() {
 
   // ─── Port click — cable patching ────────────────────────────────────────────
   const handlePortClick = useCallback((moduleId: string, portId: string, portType: PortType) => {
+    // Read live state from refs so this callback stays referentially stable
+    // (module/cable drag mutates `modules`/`cables` per RAF; a changing identity
+    // here would defeat React.memo(ModulePanel) and re-render every panel).
+    const pendingCable = pendingCableRef.current;
+    const cables = cablesRef.current;
+    const modules = modulesRef.current;
     if (!pendingCable) {
       // Start a cable from any port — output OR input.
       // Seed mousePos to the port center so the free end starts there instead of
@@ -2031,10 +2077,11 @@ export default function SynthApp() {
 
     setCables(prev => [...prev, newCable, ...extraCables]);
     setPendingCable(null);
-  }, [pendingCable, cables, modules, getPortCenter]);
+  }, [getPortCenter, pushUndo, makeGateCb]);
 
   // ─── Double-click occupied port → cut the LAST cable touching it ────────────
   const handlePortDoubleClick = useCallback((moduleId: string, portId: string) => {
+    const modules = modulesRef.current;
     setCables(prev => {
       const touching = prev.filter(c =>
         (c.fromModuleId === moduleId && c.fromPortId === portId) ||
@@ -2057,7 +2104,7 @@ export default function SynthApp() {
       return prev.filter(c => c.id !== cable.id);
     });
     setPendingCable(null);
-  }, [modules]);
+  }, [pushUndo]);
 
   // ─── Remove cable ───────────────────────────────────────────────────────────
   const handleRemoveCable = useCallback((cableId: string) => {
@@ -2135,6 +2182,8 @@ export default function SynthApp() {
 
   // ─── Hold on occupied port → lift cable(s) for re-patching ─────────────────
   const handlePortHold = useCallback((moduleId: string, portId: string) => {
+    const cables = cablesRef.current;
+    const modules = modulesRef.current;
     const touching = cables.filter(c =>
       (c.fromModuleId === moduleId && c.fromPortId === portId) ||
       (c.toModuleId   === moduleId && c.toPortId   === portId)
@@ -2182,7 +2231,7 @@ export default function SynthApp() {
     const center = getPortCenter(moduleId, portId);
     if (center) setMousePos(center);
     setPendingCable({ ...first, extra: rest.length > 0 ? rest : undefined });
-  }, [cables, modules, getPortCenter]);
+  }, [getPortCenter, pushUndo]);
 
   // ─── Drag (snap on release) ─────────────────────────────────────────────────
   const handleRackMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -2202,14 +2251,14 @@ export default function SynthApp() {
   const handleDragStart = useCallback((moduleId: string, e: React.MouseEvent) => {
     if (panModeRef.current) return; // pan mode — don't drag modules
     e.preventDefault();
-    const mod = modules.find(m => m.id === moduleId);
+    const mod = modulesRef.current.find(m => m.id === moduleId);
     if (!mod) return;
     dragRef.current = {
       moduleId, startX: e.clientX, startY: e.clientY, origX: mod.x, origY: mod.y,
       origScrollLeft: rackRef.current?.scrollLeft ?? 0,
       origScrollTop:  rackRef.current?.scrollTop  ?? 0,
     };
-  }, [modules]);
+  }, []);
 
   useEffect(() => {
     const EDGE = 60;      // px from edge to start scrolling
@@ -2394,8 +2443,23 @@ export default function SynthApp() {
     }
   }, []);
 
-  // Connected ports set
-  const connectedPortsSet = new Set<string>();
+  // Connected ports set — memoized so it doesn't break ModulePanel memoization
+  // on every render (a fresh Set each render would re-render all panels).
+  const connectedPortsSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const c of cables) {
+      s.add(`${c.fromModuleId}-${c.fromPortId}`);
+      s.add(`${c.toModuleId}-${c.toPortId}`);
+    }
+    return s;
+  }, [cables]);
+  // Signature of module identities/types (NOT positions) — used to gate the
+  // level-map memos below so dragging (which only changes x/y) doesn't recompute
+  // them every frame and break panel memoization.
+  const moduleTypeSig = useMemo(
+    () => modules.map(m => `${m.id}:${m.typeId}`).join('|'),
+    [modules],
+  );
   // ─── CV-to-knob live animation map ─────────────────────────────────────────
   // Maps moduleId → (paramId → getLevel fn) for knobs that have a CV cable.
   // Port naming convention: portId ending in "_cv" modulates the param whose id
@@ -2433,7 +2497,7 @@ export default function SynthApp() {
     }
     return map;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cables, modules, started]); // `started` gates audioModulesRef population
+  }, [cables, moduleTypeSig, started]); // `started` gates audioModulesRef population
 
   // ─── Input-port receive level map ────────────────────────────────────────────
   // Maps moduleId → (portId → getLevel fn) for every connected input port.
@@ -2453,12 +2517,7 @@ export default function SynthApp() {
     }
     return map;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cables, modules, started]);
-
-  for (const c of cables) {
-    connectedPortsSet.add(`${c.fromModuleId}-${c.fromPortId}`);
-    connectedPortsSet.add(`${c.toModuleId}-${c.toPortId}`);
-  }
+  }, [cables, moduleTypeSig, started]);
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[#0a0a0a] font-mono select-none">
@@ -2571,7 +2630,9 @@ export default function SynthApp() {
             cableOpacity={cableOpacity}
           />
 
-          {modules.map(mod => (
+          {modules.map(mod => {
+            const cbs = getModuleCbs(mod.id, mod.typeId);
+            return (
             <div
               key={mod.id}
               data-mod="1"
@@ -2602,21 +2663,22 @@ export default function SynthApp() {
                 getLevelFn={audioModulesRef.current.get(mod.id)?.getLevel}
                 cvLevels={cvLevelMap.get(mod.id)}
                 portLevels={portLevelMap.get(mod.id)}
-                onLoadSample={mod.typeId === 'sampler' ? (file, bank) => handleLoadSample(mod.id, file, bank) : undefined}
+                onLoadSample={mod.typeId === 'sampler' ? cbs.onLoadSample : undefined}
                 samplerBanksFilled={mod.typeId === 'sampler' ? samplerBanks.get(mod.id) : undefined}
                 midiClockInfo={mod.typeId === 'midi_clock_in' ? midiClockInfo : undefined}
                 onToggleMidiClockLock={mod.typeId === 'midi_clock_in' ? handleToggleMidiClockLock : undefined}
-                onFreezeKill={mod.typeId === 'freeze_proc' ? () => handleFreezeKill(mod.id) : undefined}
+                onFreezeKill={mod.typeId === 'freeze_proc' ? cbs.onFreezeKill : undefined}
                 onSeqReset={['seq_step','seq_trigger','seq_cv','seq_gate'].includes(mod.typeId)
-                  ? () => audioModulesRef.current.get(mod.id)?.portNoteOn?.get('reset_in')?.(0)
+                  ? cbs.onSeqReset
                   : undefined}
-                onAudioTrigPickDevice={mod.typeId === 'audio_trig' ? (deviceId?: string) => audioModulesRef.current.get(mod.id)?.triggerDeviceRepick?.(deviceId) : undefined}
-                audioTrigGetDeviceLabel={mod.typeId === 'audio_trig' ? () => audioModulesRef.current.get(mod.id)?.getDeviceLabel?.() ?? '—' : undefined}
-                audioTrigGetDeviceList={mod.typeId === 'audio_trig' ? () => audioModulesRef.current.get(mod.id)?.getDeviceList?.() ?? [] : undefined}
-                onBuildPatch={MODULE_PATCH_EXAMPLES[mod.typeId] ? () => handleBuildPatch(MODULE_PATCH_EXAMPLES[mod.typeId]!) : undefined}
+                onAudioTrigPickDevice={mod.typeId === 'audio_trig' ? cbs.onAudioTrigPickDevice : undefined}
+                audioTrigGetDeviceLabel={mod.typeId === 'audio_trig' ? cbs.audioTrigGetDeviceLabel : undefined}
+                audioTrigGetDeviceList={mod.typeId === 'audio_trig' ? cbs.audioTrigGetDeviceList : undefined}
+                onBuildPatch={MODULE_PATCH_EXAMPLES[mod.typeId] ? cbs.onBuildPatch : undefined}
               />
             </div>
-          ))}
+            );
+          })}
 
           {pendingCable && (
             <div
