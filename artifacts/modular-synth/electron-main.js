@@ -1,8 +1,22 @@
-import { app, BrowserWindow } from 'electron';
-import { fileURLToPath } from 'url';
+import { app, BrowserWindow, protocol, net } from 'electron';
+import { fileURLToPath, pathToFileURL } from 'url';
 import path from 'path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const distDir = path.join(__dirname, 'dist');
+
+// Must be called before app is ready
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'app',
+    privileges: {
+      secure: true,
+      standard: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+    },
+  },
+]);
 
 const createWindow = () => {
   const win = new BrowserWindow({
@@ -19,11 +33,24 @@ const createWindow = () => {
     },
   });
 
-  win.loadFile(path.join(__dirname, 'dist', 'index.html'));
+  // Load via custom protocol so window.location.pathname === '/'
+  // which lets wouter match the <Route path="/"> route
+  win.loadURL('app://./');
 };
 
 app.whenReady().then(() => {
+  protocol.handle('app', (req) => {
+    const { pathname } = new URL(req.url);
+    const relPath = pathname.replace(/^\//, '') || 'index.html';
+    const target = path.join(distDir, relPath);
+    // Serve the file; fall back to index.html for SPA deep links
+    return net.fetch(pathToFileURL(target).toString()).catch(() =>
+      net.fetch(pathToFileURL(path.join(distDir, 'index.html')).toString())
+    );
+  });
+
   createWindow();
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
