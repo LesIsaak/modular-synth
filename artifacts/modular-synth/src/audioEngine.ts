@@ -170,6 +170,16 @@ let _timingCtx: AudioContext | null = null;
 /** Returns the AudioContext time for the tick currently being processed (0 outside a tick). */
 export function getCurrentTickAudioTime(): number { return _currentTickAudioTime; }
 
+/**
+ * How many real-time milliseconds remain until the currently-scheduled audio
+ * beat actually plays.  Gate-off setTimeouts must add this so they fire AFTER
+ * the note starts, not before (the clock worker fires LOOKAHEAD_MS early).
+ */
+function getAudioLeadMs(): number {
+  if (!_currentTickAudioTime || !_timingCtx) return 0;
+  return Math.max(0, (_currentTickAudioTime - _timingCtx.currentTime) * 1000);
+}
+
 function getClockWorker(): Worker {
   if (!_clockWorker) {
     _clockWorker = new Worker(new URL('./clockWorker.ts', import.meta.url), { type: 'module' });
@@ -1264,9 +1274,10 @@ export function createAudioModule(
         const midi = Math.round(p[`s${step + 1}`] ?? (60 + step));
         const freq = midiToHz(midi);
         stepRef.value = step;
-        freqNode.offset.value = freq;
+        const t = _currentTickAudioTime || ctx.currentTime;
+        freqNode.offset.setValueAtTime(freq, t);
         gateCb?.(true, freq);
-        setTimeout(() => gateCb?.(false, freq), ms * 0.45);
+        setTimeout(() => gateCb?.(false, freq), ms * 0.45 + getAudioLeadMs());
         step = (step + 1) % Math.max(1, Math.round(p.steps ?? 8));
       };
       let timer = makeClockTimer(getMs, () => {
@@ -1279,7 +1290,7 @@ export function createAudioModule(
         inputs: new Map(),
         stepRef,
         portNoteOn: new Map([
-          ['clock_in',  () => { lastExtClkMs = performance.now(); queueMicrotask(() => doStep()); }],
+          ['clock_in',  () => { lastExtClkMs = performance.now(); const t = _currentTickAudioTime; queueMicrotask(() => { _currentTickAudioTime = t; doStep(); _currentTickAudioTime = 0; }); }],
           ['reset_in',  () => { step = 0; stepRef.value = 0; }],
         ]),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
@@ -1298,7 +1309,7 @@ export function createAudioModule(
         const ms = getMs();
         stepRef.value = step;
         const active = (p[`t${step + 1}`] ?? 0) > 0.5;
-        if (active) { gateCb?.(true, 440); setTimeout(() => gateCb?.(false, 440), ms * 0.4); }
+        if (active) { gateCb?.(true, 440); setTimeout(() => gateCb?.(false, 440), ms * 0.4 + getAudioLeadMs()); }
         step = (step + 1) % Math.max(1, Math.round(p.steps ?? 8));
       };
       let timer = makeClockTimer(getMs, () => {
@@ -1310,7 +1321,7 @@ export function createAudioModule(
         inputs: new Map(),
         stepRef,
         portNoteOn: new Map([
-          ['clock_in',  () => { lastExtClkMs = performance.now(); queueMicrotask(() => doStep()); }],
+          ['clock_in',  () => { lastExtClkMs = performance.now(); const t = _currentTickAudioTime; queueMicrotask(() => { _currentTickAudioTime = t; doStep(); _currentTickAudioTime = 0; }); }],
           ['reset_in',  () => { step = 0; stepRef.value = 0; }],
         ]),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
@@ -1391,7 +1402,7 @@ export function createAudioModule(
         if (active) {
           const len = ms * (p.gate_len ?? 0.5);
           gateCb?.(true, 440);
-          setTimeout(() => gateCb?.(false, 440), len);
+          setTimeout(() => gateCb?.(false, 440), len + getAudioLeadMs());
         }
         step = (step + 1) % Math.max(1, Math.round(p.steps ?? 8));
       };
@@ -1404,7 +1415,7 @@ export function createAudioModule(
         inputs: new Map(),
         stepRef,
         portNoteOn: new Map([
-          ['clock_in',  () => { lastExtClkMs = performance.now(); queueMicrotask(() => doStep()); }],
+          ['clock_in',  () => { lastExtClkMs = performance.now(); const t = _currentTickAudioTime; queueMicrotask(() => { _currentTickAudioTime = t; doStep(); _currentTickAudioTime = 0; }); }],
           ['reset_in',  () => { step = 0; stepRef.value = 0; }],
         ]),
         setParam: (id, val) => { p[id] = val; if (id === 'bpm') timer.updateInterval(); },
@@ -1687,19 +1698,31 @@ export function createAudioModule(
       let timer = makeClockTimer(getMs, (i) => {
         beat = i;
         const ms = getMs();
-        // Bug fix 1: capture `i` here so the closure uses the correct beat even
-        // if another tick fires and mutates `beat` before the setTimeout runs.
         const swingOffset = (i % 2 === 1) ? ms * (p.swing ?? 0) : 0;
-        setTimeout(() => {
+        // Capture timing context NOW — valid inside the Worker tick callback.
+        const capturedAudioTime = _currentTickAudioTime;
+        const firePorts = () => {
+          const leadMs = getAudioLeadMs();
           for (const [portId, cb] of portCbs) {
             const div = DIV[portId] ?? 1;
-            if (i % div === 0) {          // use `i`, not the shared `beat`
+            if (i % div === 0) {
               lastMs[portId] = performance.now();
               cb(true, 440);
-              setTimeout(() => cb(false, 440), ms * 0.45);
+              setTimeout(() => cb(false, 440), ms * 0.45 + leadMs);
             }
           }
-        }, swingOffset);
+        };
+        if (swingOffset > 0) {
+          const swungAudioTime = capturedAudioTime ? capturedAudioTime + swingOffset / 1000 : 0;
+          const leadMs = capturedAudioTime && _timingCtx ? Math.max(0, (capturedAudioTime - _timingCtx.currentTime) * 1000) : 0;
+          setTimeout(() => {
+            _currentTickAudioTime = swungAudioTime;
+            firePorts();
+            _currentTickAudioTime = 0;
+          }, leadMs + swingOffset);
+        } else {
+          firePorts();
+        }
       });
       return {
         outputs: new Map(),
@@ -1724,8 +1747,9 @@ export function createAudioModule(
       let gateCb: ((on: boolean, freq: number) => void) | null = null;
       const getMs = () => 60000 / (p.bpm ?? 120) * (p.div ?? 2);
       let timer = makeClockTimer(getMs, () => {
+        const leadMs = getAudioLeadMs();
         gateCb?.(true, 440);
-        setTimeout(() => gateCb?.(false, 440), getMs() * 0.45);
+        setTimeout(() => gateCb?.(false, 440), getMs() * 0.45 + leadMs);
       });
       return {
         outputs: new Map(), inputs: new Map(),
@@ -1739,8 +1763,9 @@ export function createAudioModule(
       let gateCb: ((on: boolean, freq: number) => void) | null = null;
       const getMs = () => 60000 / (p.bpm ?? 120) / (p.mul ?? 2);
       let timer = makeClockTimer(getMs, () => {
+        const leadMs = getAudioLeadMs();
         gateCb?.(true, 440);
-        setTimeout(() => gateCb?.(false, 440), getMs() * 0.45);
+        setTimeout(() => gateCb?.(false, 440), getMs() * 0.45 + leadMs);
       });
       return {
         outputs: new Map(), inputs: new Map(),
@@ -1755,10 +1780,15 @@ export function createAudioModule(
       const getMs = () => 60000 / (p.bpm ?? 120);
       let timer = makeClockTimer(getMs, () => {
         const delayMs = getMs() * (p.delay ?? 0.25);
+        const capturedAudioTime = _currentTickAudioTime;
+        const leadMs = getAudioLeadMs();
         setTimeout(() => {
+          _currentTickAudioTime = capturedAudioTime ? capturedAudioTime + delayMs / 1000 : 0;
+          const innerLeadMs = getAudioLeadMs();
           gateCb?.(true, 440);
-          setTimeout(() => gateCb?.(false, 440), getMs() * 0.45);
-        }, delayMs);
+          setTimeout(() => gateCb?.(false, 440), getMs() * 0.45 + innerLeadMs);
+          _currentTickAudioTime = 0;
+        }, leadMs + delayMs);
       });
       return {
         outputs: new Map(), inputs: new Map(),
@@ -1774,11 +1804,23 @@ export function createAudioModule(
       const getMs = () => 60000 / (p.bpm ?? 120);
       let timer = makeClockTimer(getMs, (i) => {
         beat = i;
-        const shuffle = beat % 2 === 1 ? getMs() * (p.shuffle ?? 0.2) : 0;
-        setTimeout(() => {
+        const shuffleMs = beat % 2 === 1 ? getMs() * (p.shuffle ?? 0.2) : 0;
+        const capturedAudioTime = _currentTickAudioTime;
+        if (shuffleMs > 0) {
+          const swungAudioTime = capturedAudioTime ? capturedAudioTime + shuffleMs / 1000 : 0;
+          const leadMs = capturedAudioTime && _timingCtx ? Math.max(0, (capturedAudioTime - _timingCtx.currentTime) * 1000) : 0;
+          setTimeout(() => {
+            _currentTickAudioTime = swungAudioTime;
+            const innerLeadMs = getAudioLeadMs();
+            gateCb?.(true, 440);
+            setTimeout(() => gateCb?.(false, 440), getMs() * 0.4 + innerLeadMs);
+            _currentTickAudioTime = 0;
+          }, leadMs + shuffleMs);
+        } else {
+          const leadMs = getAudioLeadMs();
           gateCb?.(true, 440);
-          setTimeout(() => gateCb?.(false, 440), getMs() * 0.4);
-        }, shuffle);
+          setTimeout(() => gateCb?.(false, 440), getMs() * 0.4 + leadMs);
+        }
       });
       return {
         outputs: new Map(), inputs: new Map(),
@@ -1795,11 +1837,22 @@ export function createAudioModule(
       let timer = makeClockTimer(getMs, (i) => {
         beat = i;
         const swingMs = beat % 2 === 1 ? getMs() * (p.swing ?? 0.33) : 0;
-        const interval = getMs();
-        setTimeout(() => {
+        const capturedAudioTime = _currentTickAudioTime;
+        if (swingMs > 0) {
+          const swungAudioTime = capturedAudioTime ? capturedAudioTime + swingMs / 1000 : 0;
+          const leadMs = capturedAudioTime && _timingCtx ? Math.max(0, (capturedAudioTime - _timingCtx.currentTime) * 1000) : 0;
+          setTimeout(() => {
+            _currentTickAudioTime = swungAudioTime;
+            const innerLeadMs = getAudioLeadMs();
+            gateCb?.(true, 440);
+            setTimeout(() => gateCb?.(false, 440), getMs() * 0.4 + innerLeadMs);
+            _currentTickAudioTime = 0;
+          }, leadMs + swingMs);
+        } else {
+          const leadMs = getAudioLeadMs();
           gateCb?.(true, 440);
-          setTimeout(() => gateCb?.(false, 440), interval * 0.4);
-        }, swingMs);
+          setTimeout(() => gateCb?.(false, 440), getMs() * 0.4 + leadMs);
+        }
       });
       return {
         outputs: new Map(), inputs: new Map(),
@@ -3168,13 +3221,14 @@ export function createAudioModule(
         stepRef.value = step;
         clockStep++;
         const dur = getMs() * 0.4;
+        const leadMs = getAudioLeadMs();
         // CLK fires on every tick regardless of pattern
-        if (clkCb) { clkCb(true, 440); setTimeout(() => clkCb?.(false, 440), dur); }
+        if (clkCb) { clkCb(true, 440); setTimeout(() => clkCb?.(false, 440), dur + leadMs); }
         if (pattern[step]) {
           gateCb?.(true, 440);
-          setTimeout(() => gateCb?.(false, 440), dur);
+          setTimeout(() => gateCb?.(false, 440), dur + leadMs);
         } else {
-          if (invGateCb) { invGateCb(true, 440); setTimeout(() => invGateCb?.(false, 440), dur); }
+          if (invGateCb) { invGateCb(true, 440); setTimeout(() => invGateCb?.(false, 440), dur + leadMs); }
         }
       };
 
@@ -3400,13 +3454,25 @@ export function createAudioModule(
             const now = performance.now();
             if (lastExtClkMs > -Infinity) extClkIntervalMs = now - lastExtClkMs;
             lastExtClkMs = now;
-            // Each incoming pulse = 1 quarter note = 4 16th-note steps
+            // Each incoming pulse = 1 quarter note = 4 16th-note steps.
+            // Capture _currentTickAudioTime now (valid inside the source tick callback),
+            // then restore it for each deferred step so audio is scheduled correctly.
             const ms    = getMs();
             const swing = getSwing();
+            const capturedAudioTime = _currentTickAudioTime;
             for (let s = 0; s < 4; s++) {
-              const delay = s * ms + (swing > 0.005 && (clkStep + s) % 2 === 1 ? ms * swing : 0);
-              if (delay === 0) doTick();
-              else setTimeout(doTick, delay);
+              const swingOffsetMs = swing > 0.005 && (clkStep + s) % 2 === 1 ? ms * swing : 0;
+              const delayMs = s * ms + swingOffsetMs;
+              if (delayMs === 0) {
+                doTick();
+              } else {
+                const stepAudioTime = capturedAudioTime ? capturedAudioTime + delayMs / 1000 : 0;
+                setTimeout(() => {
+                  _currentTickAudioTime = stepAudioTime;
+                  doTick();
+                  _currentTickAudioTime = 0;
+                }, delayMs);
+              }
             }
           }],
           // Reset all tracks to step 0
