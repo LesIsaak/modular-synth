@@ -495,8 +495,8 @@ function PianoKeyboard({ octave, onKeyPress }: {
           return (
             <div key={i} className="flex-1 rounded-b cursor-pointer border border-gray-600 select-none"
               style={{ background: active ? '#d97706' : '#e5e7eb', boxShadow: active ? 'inset 0 2px 4px rgba(0,0,0,0.3)' : 'none', transition: 'background 0.05s' }}
-              onMouseDown={(e) => { e.preventDefault(); press(semitone); }}
-              onMouseUp={release}
+              onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); press(semitone); }}
+              onMouseUp={(e) => { e.stopPropagation(); release(); }}
               onMouseLeave={() => { if (activeNote === midi) release(); }}
               data-testid={`piano-key-white-${NOTE_NAMES[semitone]}`}
             />
@@ -512,8 +512,8 @@ function PianoKeyboard({ octave, onKeyPress }: {
           return (
             <div key={i} className="absolute rounded-b cursor-pointer pointer-events-auto select-none"
               style={{ left: `${leftPct - 4}%`, width: '8%', height: '100%', background: active ? '#d97706' : '#111', border: '1px solid #000', zIndex: 10, boxShadow: active ? 'none' : '0 3px 4px rgba(0,0,0,0.5)', transition: 'background 0.05s' }}
-              onMouseDown={(e) => { e.preventDefault(); press(semitone); }}
-              onMouseUp={release}
+              onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); press(semitone); }}
+              onMouseUp={(e) => { e.stopPropagation(); release(); }}
               onMouseLeave={() => { if (activeNote === midi) release(); }}
               data-testid={`piano-key-black-${NOTE_NAMES[semitone]}`}
             />
