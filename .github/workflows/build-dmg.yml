@@ -1,0 +1,46 @@
+name: Build macOS DMG
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-dmg:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build Vite app
+        working-directory: artifacts/modular-synth
+        run: pnpm run build
+        env:
+          BASE_PATH: "./"
+
+      - name: Build Electron DMG
+        working-directory: artifacts/modular-synth
+        run: pnpm run electron:build
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrangeCastle-MODULAR-macOS
+          path: artifacts/modular-synth/release/*.dmg
+          retention-days: 30
