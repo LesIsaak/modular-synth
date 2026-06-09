@@ -1204,6 +1204,7 @@ export default function SynthApp() {
       const ftd = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
       const fp  = ftd?.ports.find(p => p.id === cable.fromPortId);
       if (fp?.type === 'gate_out') {
+        audioModulesRef.current.get(cable.toModuleId)?.noteOff?.(audioCtxRef.current?.currentTime ?? 0);
         gateConnRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
         portGateMapRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
       } else {
@@ -1951,6 +1952,7 @@ export default function SynthApp() {
       const fromTypeDef = MODULE_TYPE_MAP.get(modules.find(m => m.id === finalFromModuleId)?.typeId ?? '');
       const fromPort    = fromTypeDef?.ports.find(p => p.id === finalFromPortId);
       if (fromPort?.type === 'gate_out') {
+        audioModulesRef.current.get(finalToModuleId)?.noteOff?.(audioCtxRef.current?.currentTime ?? 0);
         gateConnRef.current.get(`${finalFromModuleId}:${finalFromPortId}`)?.delete(finalToModuleId);
         portGateMapRef.current.get(`${finalFromModuleId}:${finalFromPortId}`)?.delete(finalToModuleId);
       } else {
@@ -2038,6 +2040,7 @@ export default function SynthApp() {
       const fromTypeDef = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
       const fromPort    = fromTypeDef?.ports.find(p => p.id === cable.fromPortId);
       if (fromPort?.type === 'gate_out') {
+        audioModulesRef.current.get(cable.toModuleId)?.noteOff?.(audioCtxRef.current?.currentTime ?? 0);
         gateConnRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
         portGateMapRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
       } else {
@@ -2059,6 +2062,7 @@ export default function SynthApp() {
       const fromTypeDef = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
       const fromPort    = fromTypeDef?.ports.find(p => p.id === cable.fromPortId);
       if (fromPort?.type === 'gate_out') {
+        audioModulesRef.current.get(cable.toModuleId)?.noteOff?.(audioCtxRef.current?.currentTime ?? 0);
         gateConnRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
         portGateMapRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
       } else {
@@ -2078,6 +2082,7 @@ export default function SynthApp() {
     const fromTypeDef = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
     const fromPort    = fromTypeDef?.ports.find(p => p.id === cable.fromPortId);
     if (fromPort?.type === 'gate_out') {
+      audioModulesRef.current.get(cable.toModuleId)?.noteOff?.(audioCtxRef.current?.currentTime ?? 0);
       gateConnRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
       portGateMapRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
     } else {
@@ -2104,6 +2109,7 @@ export default function SynthApp() {
     const toTypeDef   = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.toModuleId)?.typeId ?? '');
     const toPort      = toTypeDef?.ports.find(p => p.id === cable.toPortId);
     if (fromPort?.type === 'gate_out') {
+      audioModulesRef.current.get(cable.toModuleId)?.noteOff?.(audioCtxRef.current?.currentTime ?? 0);
       gateConnRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
       portGateMapRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
     } else {
@@ -2153,6 +2159,7 @@ export default function SynthApp() {
       const td = MODULE_TYPE_MAP.get(modules.find(m => m.id === cable.fromModuleId)?.typeId ?? '');
       const fp = td?.ports.find(p => p.id === cable.fromPortId);
       if (fp?.type === 'gate_out') {
+        audioModulesRef.current.get(cable.toModuleId)?.noteOff?.(audioCtxRef.current?.currentTime ?? 0);
         gateConnRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
         portGateMapRef.current.get(`${cable.fromModuleId}:${cable.fromPortId}`)?.delete(cable.toModuleId);
       } else {

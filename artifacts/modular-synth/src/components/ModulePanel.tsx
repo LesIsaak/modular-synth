@@ -762,6 +762,7 @@ export default function ModulePanel({
   const isEuc       = module.typeId === 'euclidean_trig';
   const isPolyStep  = module.typeId === 'poly_step';
   const isSampler   = module.typeId === 'sampler';
+  const isMixer     = module.typeId === 'mixer';
   const panelH   = isPolyStep && !noteOpen ? PANEL_H : (typeDef.height ?? PANEL_H);
   const bodyH    = panelH - RAIL_H * 2;
 
@@ -1001,7 +1002,7 @@ export default function ModulePanel({
         ) : (
           <>
             {/* Input ports */}
-            {inPorts.length > 0 && (
+            {!isMixer && inPorts.length > 0 && (
               <div style={{ flexShrink: 0, padding: '7px 5px 4px' }}>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 3px' }}>
                   {inPorts.map(port => (
@@ -1080,7 +1081,7 @@ export default function ModulePanel({
             ) : (
               /* ── Standard controls ── */
               <div style={{ flex: 1, padding: '6px 5px', display: 'flex', flexDirection: 'column', gap: 6, overflow: 'hidden' }}>
-                {typeDef.knobs.filter(k => !/^ch\d+_/.test(k.id)).length > 0 && (
+                {!isMixer && typeDef.knobs.filter(k => !/^ch\d+_/.test(k.id)).length > 0 && (
                   isSeqModule ? (() => {
                     const stepKnobs = typeDef.knobs.filter(k => /^[stgv]\d+$/.test(k.id));
                     const ctrlKnobs = typeDef.knobs.filter(k => !/^[stgv]\d+$/.test(k.id));
@@ -1119,19 +1120,41 @@ export default function ModulePanel({
                         {stepKnobs.length > 0 && (
                           <div style={{ display: 'flex', justifyContent: 'center', gap: 2 }}>
                             {stepKnobs.map((knob, idx) => {
-                              const isLive = idx === seqStep;
+                              const isLive    = idx === seqStep;
+                              const isTrigStep = module.typeId === 'seq_trigger';
+                              const stepOn     = isTrigStep && (module.params[knob.id] ?? knob.default) >= 0.5;
                               return (
-                                <div key={knob.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-                                  <Knob def={knob}
-                                    value={module.params[knob.id] ?? knob.default}
-                                    onChange={val => onParamChange(module.id, knob.id, val)}
-                                    size="sm" cvGetLevel={cvLevels?.get(knob.id)} />
+                                <div key={knob.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                                  {isTrigStep ? (
+                                    <button
+                                      onMouseDown={e => e.stopPropagation()}
+                                      onClick={() => onParamChange(module.id, knob.id, stepOn ? 0 : 1)}
+                                      style={{
+                                        width: 22, height: 22, borderRadius: 3, cursor: 'pointer',
+                                        background: stepOn ? accent : '#181818',
+                                        border: `1px solid ${stepOn ? accent : '#333'}`,
+                                        transition: 'background 0.08s, border-color 0.08s',
+                                        boxShadow: stepOn ? `0 0 5px ${accent}88` : 'none',
+                                        flexShrink: 0,
+                                      }}
+                                    />
+                                  ) : (
+                                    <Knob def={knob}
+                                      value={module.params[knob.id] ?? knob.default}
+                                      onChange={val => onParamChange(module.id, knob.id, val)}
+                                      size="sm" cvGetLevel={cvLevels?.get(knob.id)} />
+                                  )}
                                   <div style={{
                                     width: 5, height: 5, borderRadius: '50%',
                                     background: isLive ? '#e2e2e2' : '#222',
                                     boxShadow: isLive ? '0 0 6px #fff, 0 0 10px #aaa' : 'none',
                                     transition: 'background 0.04s, box-shadow 0.04s',
                                   }} />
+                                  {isTrigStep && (
+                                    <span style={{ fontSize: 6, color: '#555', letterSpacing: '0.06em', lineHeight: 1 }}>
+                                      {idx + 1}
+                                    </span>
+                                  )}
                                 </div>
                               );
                             })}
@@ -1302,6 +1325,49 @@ export default function ModulePanel({
                   );
                 })()}
 
+                {isMixer && (() => {
+                  const NUM_CH = 6;
+                  return (
+                    <>
+                      <div style={{ display: 'flex', gap: 2 }}>
+                        {Array.from({ length: NUM_CH }, (_, i) => {
+                          const n = i + 1;
+                          const gainId = `ch${n}`;
+                          const hiId   = `ch${n}_hi`;
+                          const midId  = `ch${n}_mid`;
+                          const loId   = `ch${n}_lo`;
+                          const gainDef = typeDef.knobs.find(k => k.id === gainId);
+                          const hiDef   = typeDef.knobs.find(k => k.id === hiId);
+                          const midDef  = typeDef.knobs.find(k => k.id === midId);
+                          const loDef   = typeDef.knobs.find(k => k.id === loId);
+                          const inPort  = inPorts.find(p => p.id === `in${n}`);
+                          return (
+                            <div key={n} style={{
+                              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+                              padding: '3px 2px', background: '#181818',
+                              border: '1px solid #282828', borderRadius: 3, flex: 1, minWidth: 0,
+                            }}>
+                              <span style={{ fontSize: 6, color: accent, fontWeight: 700, letterSpacing: '0.06em' }}>CH{n}</span>
+                              {gainDef && <Knob def={gainDef} value={module.params[gainId] ?? gainDef.default}
+                                onChange={v => onParamChange(module.id, gainId, v)} size="sm" />}
+                              {hiDef && <Knob def={hiDef} value={module.params[hiId] ?? hiDef.default}
+                                onChange={v => onParamChange(module.id, hiId, v)} size="sm" />}
+                              {midDef && <Knob def={midDef} value={module.params[midId] ?? midDef.default}
+                                onChange={v => onParamChange(module.id, midId, v)} size="sm" />}
+                              {loDef && <Knob def={loDef} value={module.params[loId] ?? loDef.default}
+                                onChange={v => onParamChange(module.id, loId, v)} size="sm" />}
+                              {inPort && <PortWithLabel {...portProps(inPort)} />}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #2a2a2a, transparent)', margin: '4px 0 3px' }} />
+                      <div style={{ display: 'flex', justifyContent: 'center', gap: 4 }}>
+                        {outPorts.map(port => <PortWithLabel key={port.id} {...portProps(port)} />)}
+                      </div>
+                    </>
+                  );
+                })()}
                 {isOutput && <OutputMeter analyser={analyser} />}
                 {module.typeId === 'midi_monitor' && midiMonitorData && (
                   <MidiMonitorDisplay d={midiMonitorData} />
@@ -1379,7 +1445,7 @@ export default function ModulePanel({
             )}
 
             {/* Output ports — hidden for audio_trig (ports rendered inside each strip) */}
-            {outPorts.length > 0 && module.typeId !== 'audio_trig' && (
+            {outPorts.length > 0 && module.typeId !== 'audio_trig' && module.typeId !== 'mixer' && (
               <div style={{ flexShrink: 0, padding: '4px 5px 7px' }}>
                 <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #2a2a2a, transparent)', margin: '0 0 5px' }} />
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 3px' }}>

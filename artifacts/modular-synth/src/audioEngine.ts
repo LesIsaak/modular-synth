@@ -3001,26 +3001,37 @@ export function createAudioModule(
 
     // ── Utility ──────────────────────────────────────────────────────
     case 'mixer': {
-      const gains = [
-        ctx.createGain(), ctx.createGain(), ctx.createGain(),
-        ctx.createGain(), ctx.createGain(), ctx.createGain(),
-      ];
+      const NUM_CH = 6;
+      type ChStrip = { lo: BiquadFilterNode; mid: BiquadFilterNode; hi: BiquadFilterNode; gain: GainNode };
+      const channels: ChStrip[] = [];
       const out = ctx.createGain(); out.gain.value = 1;
-      const keys = ['ch1', 'ch2', 'ch3', 'ch4', 'ch5', 'ch6'];
-      gains.forEach((g, i) => { g.gain.value = p[keys[i]] ?? 0.8; g.connect(out); });
+      for (let i = 0; i < NUM_CH; i++) {
+        const n = i + 1;
+        const lo  = ctx.createBiquadFilter(); lo.type  = 'lowshelf';  lo.frequency.value = 200;  lo.gain.value  = p[`ch${n}_lo`]  ?? 0;
+        const mid = ctx.createBiquadFilter(); mid.type = 'peaking';   mid.frequency.value = 1000; mid.Q.value = 0.7; mid.gain.value = p[`ch${n}_mid`] ?? 0;
+        const hi  = ctx.createBiquadFilter(); hi.type  = 'highshelf'; hi.frequency.value = 4000; hi.gain.value  = p[`ch${n}_hi`]  ?? 0;
+        const gain = ctx.createGain(); gain.gain.value = p[`ch${n}`] ?? 0.8;
+        lo.connect(mid); mid.connect(hi); hi.connect(gain); gain.connect(out);
+        channels.push({ lo, mid, hi, gain });
+      }
       return {
         outputs: new Map([['out', out]]),
-        inputs: new Map([
-          ['in1', { node: gains[0] }], ['in2', { node: gains[1] }],
-          ['in3', { node: gains[2] }], ['in4', { node: gains[3] }],
-          ['in5', { node: gains[4] }], ['in6', { node: gains[5] }],
-        ]),
+        inputs: new Map(channels.map((ch, i) => [`in${i + 1}`, { node: ch.lo as AudioNode }])),
         setParam: (id, val) => {
           p[id] = val;
-          const idx = keys.indexOf(id);
-          if (idx >= 0) gains[idx].gain.value = val;
+          const m = id.match(/^ch(\d+)(?:_(hi|mid|lo))?$/);
+          if (!m) return;
+          const ch = channels[parseInt(m[1]) - 1];
+          if (!ch) return;
+          if (!m[2])           ch.gain.gain.value = val;
+          else if (m[2] === 'hi')  ch.hi.gain.value  = val;
+          else if (m[2] === 'mid') ch.mid.gain.value  = val;
+          else if (m[2] === 'lo')  ch.lo.gain.value   = val;
         },
-        destroy: () => { gains.forEach(g => g.disconnect()); out.disconnect(); },
+        destroy: () => {
+          channels.forEach(ch => { ch.lo.disconnect(); ch.mid.disconnect(); ch.hi.disconnect(); ch.gain.disconnect(); });
+          out.disconnect();
+        },
       };
     }
 
