@@ -4,12 +4,13 @@
   "private": true,
   "type": "module",
   "main": "electron-main.js",
+  "repository": "https://github.com/LesIsaak/modular-synth",
   "scripts": {
     "dev": "vite --config vite.config.ts --host 0.0.0.0",
     "build": "vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "electron:build": "electron-builder --mac dmg"
+    "electron:build": "electron-builder --mac dmg --publish never"
   },
   "build": {
     "appId": "com.orangecastle.modular",
