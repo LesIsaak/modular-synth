@@ -24,7 +24,7 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile --force
+        run: pnpm install --no-frozen-lockfile
 
       - name: Build Vite app
         working-directory: artifacts/modular-synth
