@@ -1871,9 +1871,21 @@ export default function SynthApp() {
       }
     }
 
+    // Wire up gate callbacks — same as handleStart; without this, gate-source
+    // modules (arp, seq_step, poly_step …) fire with a null gateCb after load.
+    for (const [gk] of gateConnRef.current) {
+      const [fromModuleId, fromPortId] = gk.split(':');
+      const fromAudio = audioModulesRef.current.get(fromModuleId);
+      if (fromAudio?.setPortGateTrigger) {
+        fromAudio.setPortGateTrigger(fromPortId, makeGateCb(gk));
+      } else if (fromAudio?.setGateTrigger) {
+        fromAudio.setGateTrigger(makeGateCb(gk));
+      }
+    }
+
     setCables(patch.cables);
     setModules(patch.modules);
-  }, [cables, modules, pushUndo]);
+  }, [cables, modules, pushUndo, makeGateCb]);
 
   // ─── Auto-save / restore ────────────────────────────────────────────────────
   useEffect(() => {
