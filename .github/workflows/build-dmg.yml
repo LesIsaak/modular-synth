@@ -29,8 +29,6 @@ jobs:
       - name: Build Vite app
         working-directory: artifacts/modular-synth
         run: pnpm run build
-        env:
-          BASE_PATH: "./"
 
       - name: Build Electron DMG
         working-directory: artifacts/modular-synth
