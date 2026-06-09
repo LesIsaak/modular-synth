@@ -1070,19 +1070,20 @@ function Minimap({
   modules: ModuleInstance[];
   rackRef: React.RefObject<HTMLDivElement | null>;
 }) {
-  // Both axes grow with content — uniform scale fits used area into a 200×200 box
+  // Each axis scales independently: miniW grows with columns used, miniH with rows used
   const usedW = modules.length
     ? Math.max(...modules.map(m => m.x + (MODULE_TYPE_MAP.get(m.typeId)?.width  ?? SLOT_W)))
     : SLOT_W * 3;
   const usedH = modules.length
     ? Math.max(...modules.map(m => m.y + (MODULE_TYPE_MAP.get(m.typeId)?.height ?? SLOT_H)))
     : SLOT_H;
-  const effectiveW = Math.max(SLOT_W * 3, Math.min(CONTENT_W, usedW + SLOT_W));
+  const effectiveW = Math.max(SLOT_W * 2, Math.min(CONTENT_W, usedW + SLOT_W));
   const effectiveH = Math.max(SLOT_H * 2, Math.min(CONTENT_H, usedH + SLOT_H));
-  const MAX_MINI = 200;
-  const scale  = Math.min(MAX_MINI / effectiveW, MAX_MINI / effectiveH);
-  const miniW  = Math.max(60, Math.round(effectiveW * scale));
-  const miniH  = Math.max(40, Math.round(effectiveH * scale));
+  const scaleX = 200 / CONTENT_W;   // 200px = full rack width
+  const scaleY = 200 / CONTENT_H;   // 200px = full rack height
+  const miniW  = Math.max(36, Math.round(effectiveW * scaleX));
+  const miniH  = Math.max(24, Math.round(effectiveH * scaleY));
+  const scale  = scaleX; // used for navigation (x-dominant)
 
   const [scroll, setScroll]   = useState({ left: 0, top: 0 });
   const [viewSize, setViewSize] = useState({ w: 0, h: 0 });
@@ -1110,12 +1111,12 @@ function Minimap({
     const rect = e.currentTarget.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-    el.scrollLeft = Math.max(0, mx / scale - viewSize.w / 2);
-    el.scrollTop  = Math.max(0, my / scale - Math.max(0, viewSize.h - KB_H) / 2);
+    el.scrollLeft = Math.max(0, mx / scaleX - viewSize.w / 2);
+    el.scrollTop  = Math.max(0, my / scaleY - Math.max(0, viewSize.h - KB_H) / 2);
   };
 
-  const vpW = Math.min(miniW, viewSize.w * scale);
-  const vpH = Math.min(miniH, Math.max(0, viewSize.h - KB_H) * scale);
+  const vpW = Math.min(miniW, viewSize.w * scaleX);
+  const vpH = Math.min(miniH, Math.max(0, viewSize.h - KB_H) * scaleY);
 
   return (
     <div
@@ -1140,7 +1141,7 @@ function Minimap({
       {Array.from({ length: Math.ceil(effectiveH / SLOT_H) }, (_, i) => (
         <div key={`r${i}`} style={{
           position: 'absolute', left: 0, right: 0,
-          top: Math.round(i * SLOT_H * scale), height: 1,
+          top: Math.round(i * SLOT_H * scaleY), height: 1,
           background: '#181818', pointerEvents: 'none',
         }} />
       ))}
@@ -1148,7 +1149,7 @@ function Minimap({
       {Array.from({ length: Math.ceil(effectiveW / SLOT_W) }, (_, i) => (
         <div key={`c${i}`} style={{
           position: 'absolute', top: 0, bottom: 0,
-          left: Math.round(i * SLOT_W * scale), width: 1,
+          left: Math.round(i * SLOT_W * scaleX), width: 1,
           background: '#181818', pointerEvents: 'none',
         }} />
       ))}
@@ -1162,10 +1163,10 @@ function Minimap({
         return (
           <div key={m.id} style={{
             position: 'absolute',
-            left:   Math.round(m.x * scale),
-            top:    Math.round(m.y * scale),
-            width:  Math.max(2, Math.round(mw * scale) - 1),
-            height: Math.max(2, Math.round(mh * scale) - 1),
+            left:   Math.round(m.x * scaleX),
+            top:    Math.round(m.y * scaleY),
+            width:  Math.max(2, Math.round(mw * scaleX) - 1),
+            height: Math.max(2, Math.round(mh * scaleY) - 1),
             background: color, opacity: 0.8, borderRadius: 1,
             pointerEvents: 'none',
           }} />
@@ -1175,8 +1176,8 @@ function Minimap({
       {/* Viewport rect */}
       <div style={{
         position: 'absolute',
-        left:   Math.round(scroll.left * scale),
-        top:    Math.round(scroll.top  * scale),
+        left:   Math.round(scroll.left * scaleX),
+        top:    Math.round(scroll.top  * scaleY),
         width:  vpW, height: vpH,
         border: '1px solid rgba(232,125,39,0.9)',
         background: 'rgba(232,125,39,0.07)',
