@@ -601,6 +601,13 @@ const FixedKeyboardPanel = memo(function FixedKeyboardPanel({
     const freq = midiToHz(midi);
     const BEND_ST = 2;
     const bentFreq = freq * Math.pow(2, pitchRef.current * BEND_ST / 12);
+    // Monophonic: if another note is still sounding (e.g. sustained by HOLD),
+    // release it first. Otherwise each new key piles up in the engine's held
+    // list and keeps the gate open, so the sound never stops when HOLD is
+    // switched back off ("it still holds").
+    if (heldMidiRef.current !== null && heldMidiRef.current !== midi && heldFreqRef.current > 0) {
+      onNote(heldFreqRef.current, false);
+    }
     heldFreqRef.current = bentFreq;   // store bentFreq so release can match it
     heldMidiRef.current = midi;
     setActiveNote(midi);
