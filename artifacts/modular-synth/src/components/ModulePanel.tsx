@@ -487,7 +487,7 @@ function PianoKeyboard({ octave, onKeyPress }: {
   };
   const release = () => { setActiveNote(null); onKeyPress(0, false); };
   return (
-    <div className="relative w-full" style={{ height: 72 }}>
+    <div className="relative w-full" style={{ height: 72, zIndex: 40 }}>
       <div className="flex h-full gap-px">
         {NOTE_WHITES.map((semitone, i) => {
           const midi = octaveBase + semitone;
