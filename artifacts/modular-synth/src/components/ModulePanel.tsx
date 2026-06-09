@@ -1343,19 +1343,19 @@ export default function ModulePanel({
                           const inPort  = inPorts.find(p => p.id === `in${n}`);
                           return (
                             <div key={n} style={{
-                              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
-                              padding: '3px 2px', background: '#181818',
+                              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
+                              padding: '2px 1px', background: '#181818',
                               border: '1px solid #282828', borderRadius: 3, flex: 1, minWidth: 0,
                             }}>
-                              <span style={{ fontSize: 6, color: accent, fontWeight: 700, letterSpacing: '0.06em' }}>CH{n}</span>
+                              <span style={{ fontSize: 6, color: accent, fontWeight: 700, letterSpacing: '0.04em' }}>CH{n}</span>
                               {gainDef && <Knob def={gainDef} value={module.params[gainId] ?? gainDef.default}
                                 onChange={v => onParamChange(module.id, gainId, v)} size="sm" />}
                               {hiDef && <Knob def={hiDef} value={module.params[hiId] ?? hiDef.default}
-                                onChange={v => onParamChange(module.id, hiId, v)} size="sm" />}
+                                onChange={v => onParamChange(module.id, hiId, v)} size="xs" />}
                               {midDef && <Knob def={midDef} value={module.params[midId] ?? midDef.default}
-                                onChange={v => onParamChange(module.id, midId, v)} size="sm" />}
+                                onChange={v => onParamChange(module.id, midId, v)} size="xs" />}
                               {loDef && <Knob def={loDef} value={module.params[loId] ?? loDef.default}
-                                onChange={v => onParamChange(module.id, loId, v)} size="sm" />}
+                                onChange={v => onParamChange(module.id, loId, v)} size="xs" />}
                               {inPort && <PortWithLabel {...portProps(inPort)} />}
                             </div>
                           );

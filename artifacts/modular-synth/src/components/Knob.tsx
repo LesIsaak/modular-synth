@@ -5,7 +5,7 @@ interface KnobProps {
   def: KnobDef;
   value: number;
   onChange: (val: number) => void;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
   /** When set, the knob shows a live cyan CV indicator sweeping with the signal */
   cvGetLevel?: () => number;
 }
@@ -38,7 +38,7 @@ export default function Knob({ def, value, onChange, size = 'md', cvGetLevel }: 
   const cvArcRef    = useRef<SVGCircleElement>(null);
   const cvRafRef    = useRef(0);
 
-  const sizeMap = { sm: 32, md: 40, lg: 48 };
+  const sizeMap = { xs: 22, sm: 32, md: 40, lg: 48 };
   const px = sizeMap[size];
 
   useEffect(() => {
