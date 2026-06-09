@@ -1344,8 +1344,9 @@ export default function ModulePanel({
                           return (
                             <div key={n} style={{
                               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
-                              padding: '2px 1px', background: '#181818',
+                              padding: '2px 1px 6px', background: '#181818',
                               border: '1px solid #282828', borderRadius: 3, flex: 1, minWidth: 0,
+                              height: '100%',
                             }}>
                               <span style={{ fontSize: 6, color: accent, fontWeight: 700, letterSpacing: '0.04em' }}>CH{n}</span>
                               {gainDef && <Knob def={gainDef} value={module.params[gainId] ?? gainDef.default}
@@ -1356,7 +1357,7 @@ export default function ModulePanel({
                                 onChange={v => onParamChange(module.id, midId, v)} size="xs" />}
                               {loDef && <Knob def={loDef} value={module.params[loId] ?? loDef.default}
                                 onChange={v => onParamChange(module.id, loId, v)} size="xs" />}
-                              {inPort && <PortWithLabel {...portProps(inPort)} />}
+                              {inPort && <div style={{ marginTop: 'auto' }}><PortWithLabel {...portProps(inPort)} /></div>}
                             </div>
                           );
                         })}
