@@ -2618,27 +2618,36 @@ export function createAudioModule(
       input.connect(delay);
       const { out, dryG, wetG } = wetDry(ctx, input, delay, p.mix ?? 1);
       // shift_cv: semitones is not an AudioParam so we poll via AnalyserNode
-      const shiftCvAn = ctx.createAnalyser(); shiftCvAn.fftSize = 256;
-      const shiftCvBuf = new Float32Array(shiftCvAn.fftSize);
+      // Use an intermediate GainNode so the AnalyserNode is downstream of a connected node
+      const shiftCvIn = ctx.createGain(); shiftCvIn.gain.value = 1;
+      const shiftCvAn = ctx.createAnalyser(); shiftCvAn.fftSize = 32;
+      shiftCvIn.connect(shiftCvAn);
+      const shiftCvBuf = new Float32Array(1);
       const shiftPollId = setInterval(() => {
-        shiftCvAn.getFloatTimeDomainData(shiftCvBuf);
-        const cv = shiftCvBuf[0];
-        const total = (p.semitones ?? 0) + cv * 24;
-        const r = Math.pow(2, Math.abs(total) / 12) - 1;
-        lfo.frequency.value = r * 10 + 0.001;
-        lfoG.gain.value = total >= 0 ? 0.02 : -0.02;
+        try {
+          shiftCvAn.getFloatTimeDomainData(shiftCvBuf);
+          const cv = shiftCvBuf[0];
+          if (!isFinite(cv)) return;
+          const total = (p.semitones ?? 0) + cv * 24;
+          const r = Math.pow(2, Math.abs(total) / 12) - 1;
+          const freq = r * 10 + 0.001;
+          if (!isFinite(freq) || freq <= 0) return;
+          lfo.frequency.value = Math.min(ctx.sampleRate / 2, freq);
+          lfoG.gain.value = total >= 0 ? 0.02 : -0.02;
+        } catch (_) {}
       }, 32);
       return {
         outputs: new Map([['out', out]]),
         inputs: new Map([
           ['audio_in', { node: input }],
-          ['shift_cv', { node: shiftCvAn }],
+          ['shift_cv', { node: shiftCvIn }],
         ]),
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'semitones') {
             const r = Math.pow(2, Math.abs(val) / 12) - 1;
-            lfo.frequency.value = r * 10 + 0.001;
+            const freq = r * 10 + 0.001;
+            if (isFinite(freq) && freq > 0) lfo.frequency.value = Math.min(ctx.sampleRate / 2, freq);
             lfoG.gain.value = val >= 0 ? 0.02 : -0.02;
           }
           if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
@@ -2646,7 +2655,7 @@ export function createAudioModule(
         destroy: () => {
           clearInterval(shiftPollId);
           lfo.stop(); lfo.disconnect(); dcOffset.stop(); dcOffset.disconnect();
-          [input, delay, lfoG, shiftCvAn, out, dryG, wetG].forEach(n => n.disconnect());
+          [input, delay, lfoG, shiftCvIn, shiftCvAn, out, dryG, wetG].forEach(n => { try { n.disconnect(); } catch(_){} });
         },
       };
     }

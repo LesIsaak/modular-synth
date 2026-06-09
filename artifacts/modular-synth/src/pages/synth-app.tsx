@@ -1607,7 +1607,11 @@ export default function SynthApp() {
     });
 
     if (audioCtxRef.current) {
-      audioModulesRef.current.set(id, createAudioModule(audioCtxRef.current, typeId, { ...params }));
+      try {
+        audioModulesRef.current.set(id, createAudioModule(audioCtxRef.current, typeId, { ...params }));
+      } catch (err) {
+        console.error(`[synth] createAudioModule failed for "${typeId}":`, err);
+      }
     }
   }, []);
 
@@ -1775,7 +1779,11 @@ export default function SynthApp() {
   // ─── Param / selector change ────────────────────────────────────────────────
   const handleParamChange = useCallback((moduleId: string, paramId: string, value: number) => {
     // Audio update is immediate — must not be deferred.
-    audioModulesRef.current.get(moduleId)?.setParam(paramId, value);
+    try {
+      audioModulesRef.current.get(moduleId)?.setParam(paramId, value);
+    } catch (err) {
+      console.error(`[synth] setParam failed for "${paramId}":`, err);
+    }
     if (paramId === 'glide') glideRef.current = value;
     // React state update is deferred so knob drags don't block the main thread
     // and delay Worker tick messages processed by the audio scheduler.
@@ -1972,7 +1980,13 @@ export default function SynthApp() {
 
     // Rebuild from patch
     for (const mod of patch.modules) {
-      const audio = createAudioModule(ctx, mod.typeId, { ...mod.params });
+      let audio: ReturnType<typeof createAudioModule>;
+      try {
+        audio = createAudioModule(ctx, mod.typeId, { ...mod.params });
+      } catch (err) {
+        console.error(`[synth] createAudioModule failed for "${mod.typeId}" during patch load:`, err);
+        continue;
+      }
       audioModulesRef.current.set(mod.id, audio);
       // Selectors aren't applied by the constructor — apply them now
       const typeDef = MODULE_TYPE_MAP.get(mod.typeId);
