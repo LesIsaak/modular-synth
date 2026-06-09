@@ -8,6 +8,8 @@ interface KnobProps {
   size?: 'xs' | 'sm' | 'md' | 'lg';
   /** When set, the knob shows a live cyan CV indicator sweeping with the signal */
   cvGetLevel?: () => number;
+  /** Hide the name/value label row below the knob */
+  noLabel?: boolean;
 }
 
 function formatValue(value: number, def: KnobDef): string {
@@ -20,7 +22,7 @@ function formatValue(value: number, def: KnobDef): string {
   return value.toFixed(2);
 }
 
-export default function Knob({ def, value, onChange, size = 'md', cvGetLevel }: KnobProps) {
+export default function Knob({ def, value, onChange, size = 'md', cvGetLevel, noLabel }: KnobProps) {
   const [showValue, setShowValue] = useState(false);
 
   // Local drag state — knob renders from this during drag so the parent never
@@ -233,15 +235,17 @@ export default function Knob({ def, value, onChange, size = 'md', cvGetLevel }: 
       </div>
 
       {/* Value tooltip */}
-      <div className="h-3 flex items-center justify-center">
-        {showValue ? (
-          <span className="text-[9px] text-orange-400 font-mono tabular-nums whitespace-nowrap">
-            {formatValue(displayValue, def)}{def.unit && def.unit !== 'Hz' && def.unit !== 's' && def.unit !== 'ct' ? ` ${def.unit}` : ''}
-          </span>
-        ) : (
-          <span className="text-[9px] text-gray-400 uppercase tracking-widest">{def.name}</span>
-        )}
-      </div>
+      {!noLabel && (
+        <div className="h-3 flex items-center justify-center">
+          {showValue ? (
+            <span className="text-[9px] text-orange-400 font-mono tabular-nums whitespace-nowrap">
+              {formatValue(displayValue, def)}{def.unit && def.unit !== 'Hz' && def.unit !== 's' && def.unit !== 'ct' ? ` ${def.unit}` : ''}
+            </span>
+          ) : (
+            <span className="text-[9px] text-gray-400 uppercase tracking-widest">{def.name}</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -1328,8 +1328,8 @@ export default function ModulePanel({
                 {isMixer && (() => {
                   const NUM_CH = 6;
                   return (
-                    <>
-                      <div style={{ display: 'flex', gap: 2 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                      <div style={{ display: 'flex', gap: 2, flex: 1, minHeight: 0 }}>
                         {Array.from({ length: NUM_CH }, (_, i) => {
                           const n = i + 1;
                           const gainId = `ch${n}`;
@@ -1344,29 +1344,47 @@ export default function ModulePanel({
                           return (
                             <div key={n} style={{
                               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
-                              padding: '2px 1px 6px', background: '#181818',
+                              padding: '2px 1px 4px', background: '#181818',
                               border: '1px solid #282828', borderRadius: 3, flex: 1, minWidth: 0,
-                              height: '100%',
                             }}>
-                              <span style={{ fontSize: 6, color: accent, fontWeight: 700, letterSpacing: '0.04em' }}>CH{n}</span>
+                              <span style={{ fontSize: 6, color: accent, fontWeight: 700, letterSpacing: '0.04em', flexShrink: 0 }}>CH{n}</span>
                               {gainDef && <Knob def={gainDef} value={module.params[gainId] ?? gainDef.default}
                                 onChange={v => onParamChange(module.id, gainId, v)} size="sm" />}
-                              {hiDef && <Knob def={hiDef} value={module.params[hiId] ?? hiDef.default}
-                                onChange={v => onParamChange(module.id, hiId, v)} size="xs" />}
-                              {midDef && <Knob def={midDef} value={module.params[midId] ?? midDef.default}
-                                onChange={v => onParamChange(module.id, midId, v)} size="xs" />}
-                              {loDef && <Knob def={loDef} value={module.params[loId] ?? loDef.default}
-                                onChange={v => onParamChange(module.id, loId, v)} size="xs" />}
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0, flexShrink: 0 }}>
+                                {hiDef && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
+                                    <span style={{ fontSize: 5, color: '#555', lineHeight: 1, marginBottom: 1 }}>H</span>
+                                    <Knob def={hiDef} value={module.params[hiId] ?? hiDef.default}
+                                      onChange={v => onParamChange(module.id, hiId, v)} size="xs" noLabel />
+                                  </div>
+                                )}
+                                {midDef && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
+                                    <span style={{ fontSize: 5, color: '#555', lineHeight: 1, marginBottom: 1 }}>M</span>
+                                    <Knob def={midDef} value={module.params[midId] ?? midDef.default}
+                                      onChange={v => onParamChange(module.id, midId, v)} size="xs" noLabel />
+                                  </div>
+                                )}
+                                {loDef && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
+                                    <span style={{ fontSize: 5, color: '#555', lineHeight: 1, marginBottom: 1 }}>L</span>
+                                    <Knob def={loDef} value={module.params[loId] ?? loDef.default}
+                                      onChange={v => onParamChange(module.id, loId, v)} size="xs" noLabel />
+                                  </div>
+                                )}
+                              </div>
                               {inPort && <div style={{ marginTop: 'auto' }}><PortWithLabel {...portProps(inPort)} /></div>}
                             </div>
                           );
                         })}
                       </div>
-                      <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #2a2a2a, transparent)', margin: '4px 0 3px' }} />
-                      <div style={{ display: 'flex', justifyContent: 'center', gap: 4 }}>
-                        {outPorts.map(port => <PortWithLabel key={port.id} {...portProps(port)} />)}
+                      <div style={{ flexShrink: 0 }}>
+                        <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #2a2a2a, transparent)', margin: '3px 0 3px' }} />
+                        <div style={{ display: 'flex', justifyContent: 'center', gap: 4 }}>
+                          {outPorts.map(port => <PortWithLabel key={port.id} {...portProps(port)} />)}
+                        </div>
                       </div>
-                    </>
+                    </div>
                   );
                 })()}
                 {isOutput && <OutputMeter analyser={analyser} />}
