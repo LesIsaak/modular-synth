@@ -2578,7 +2578,7 @@ export function createAudioModule(
       const input = ctx.createGain(); input.gain.value = 1;
       const { out, dryG, wetG } = wetDry(ctx, input, ring, p.mix ?? 1);
       input.connect(ring);
-      const freqCv = ctx.createConstantSource(); freqCv.offset.value = p.freq ?? 440; freqCv.start();
+      const freqCv = ctx.createConstantSource(); freqCv.offset.value = 0; freqCv.start();
       freqCv.connect(carrier.frequency);
       const carrierIn = ctx.createGain(); carrierIn.gain.value = 1;
       carrierIn.connect(ring.gain);
@@ -2617,9 +2617,23 @@ export function createAudioModule(
       lfo.start();
       input.connect(delay);
       const { out, dryG, wetG } = wetDry(ctx, input, delay, p.mix ?? 1);
+      // shift_cv: semitones is not an AudioParam so we poll via AnalyserNode
+      const shiftCvAn = ctx.createAnalyser(); shiftCvAn.fftSize = 256;
+      const shiftCvBuf = new Float32Array(shiftCvAn.fftSize);
+      const shiftPollId = setInterval(() => {
+        shiftCvAn.getFloatTimeDomainData(shiftCvBuf);
+        const cv = shiftCvBuf[0];
+        const total = (p.semitones ?? 0) + cv * 24;
+        const r = Math.pow(2, Math.abs(total) / 12) - 1;
+        lfo.frequency.value = r * 10 + 0.001;
+        lfoG.gain.value = total >= 0 ? 0.02 : -0.02;
+      }, 32);
       return {
         outputs: new Map([['out', out]]),
-        inputs: new Map([['audio_in', { node: input }]]),
+        inputs: new Map([
+          ['audio_in', { node: input }],
+          ['shift_cv', { node: shiftCvAn }],
+        ]),
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'semitones') {
@@ -2630,8 +2644,9 @@ export function createAudioModule(
           if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
         },
         destroy: () => {
+          clearInterval(shiftPollId);
           lfo.stop(); lfo.disconnect(); dcOffset.stop(); dcOffset.disconnect();
-          [input, delay, lfoG, out, dryG, wetG].forEach(n => n.disconnect());
+          [input, delay, lfoG, shiftCvAn, out, dryG, wetG].forEach(n => n.disconnect());
         },
       };
     }
@@ -2685,10 +2700,14 @@ export function createAudioModule(
       // q_cv adds to each band's Q (BiquadFilter.Q is an AudioParam)
       const qCv = ctx.createConstantSource(); qCv.offset.value = 0; qCv.start();
       bands.forEach(b => qCv.connect(b.Q));
+      // freq_cv adds a Hz offset to all band frequencies (BiquadFilter.frequency is an AudioParam)
+      const freqCvR = ctx.createConstantSource(); freqCvR.offset.value = 0; freqCvR.start();
+      bands.forEach(b => freqCvR.connect(b.frequency));
       return {
         outputs: new Map([['out', out]]),
         inputs: new Map([
           ['audio_in', { node: input }],
+          ['freq_cv', { node: freqCvR, param: freqCvR.offset }],
           ['q_cv', { node: qCv, param: qCv.offset }],
         ]),
         setParam: (id, val) => {
@@ -2699,6 +2718,7 @@ export function createAudioModule(
         },
         destroy: () => {
           try { qCv.stop(); } catch(_){} qCv.disconnect();
+          try { freqCvR.stop(); } catch(_){} freqCvR.disconnect();
           [input, out, dry, ...bands].forEach(n => { try { n.disconnect(); } catch(_){} });
         },
       };
@@ -2709,12 +2729,17 @@ export function createAudioModule(
       const numBands = Math.round(p.bands ?? 8);
       const carrier = ctx.createGain(); carrier.gain.value = 1;
       const modulator = ctx.createGain(); modulator.gain.value = 1;
+      const mixGain = ctx.createGain(); mixGain.gain.value = p.mix ?? 1;
       const out = ctx.createGain(); out.gain.value = 1;
+      mixGain.connect(out);
       // Frequency bands from 80Hz to 8kHz (log spaced)
       const freqs = Array.from({ length: numBands }, (_, i) =>
         80 * Math.pow(8000 / 80, i / (numBands - 1))
       );
-      const bandGains: GainNode[] = [];
+      const allBandNodes: AudioNode[] = [];
+      const smoothFilters: BiquadFilterNode[] = [];
+      const fc = new Float32Array(512);
+      for (let i = 0; i < 512; i++) fc[i] = Math.abs((i / 256) - 1);
       freqs.forEach((freq) => {
         const mBP = ctx.createBiquadFilter(); mBP.type = 'bandpass';
         mBP.frequency.value = freq; mBP.Q.value = 3;
@@ -2722,15 +2747,14 @@ export function createAudioModule(
         cBP.frequency.value = freq; cBP.Q.value = 3;
         const env = ctx.createGain(); env.gain.value = 0;
         const fullWave = ctx.createWaveShaper();
-        const fc = new Float32Array(512);
-        for (let i = 0; i < 512; i++) fc[i] = Math.abs((i / 256) - 1);
         fullWave.curve = fc;
         const smooth = ctx.createBiquadFilter(); smooth.type = 'lowpass';
-        smooth.frequency.value = 1 / (p.release ?? 0.1);
+        smooth.frequency.value = Math.min(ctx.sampleRate / 2 - 1, 1 / (p.release ?? 0.1));
         modulator.connect(mBP); mBP.connect(fullWave); fullWave.connect(smooth);
         smooth.connect(env.gain);
-        carrier.connect(cBP); cBP.connect(env); env.connect(out);
-        bandGains.push(env);
+        carrier.connect(cBP); cBP.connect(env); env.connect(mixGain);
+        allBandNodes.push(mBP, cBP, env, fullWave, smooth);
+        smoothFilters.push(smooth);
       });
       return {
         outputs: new Map([['out', out]]),
@@ -2738,8 +2762,17 @@ export function createAudioModule(
           ['carrier', { node: carrier }],
           ['modulator', { node: modulator }],
         ]),
-        setParam: (id, val) => { p[id] = val; },
-        destroy: () => { [carrier, modulator, out, ...bandGains].forEach(n => n.disconnect()); },
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'mix') mixGain.gain.value = val;
+          if (id === 'release') {
+            const f = Math.min(ctx.sampleRate / 2 - 1, 1 / Math.max(0.001, val));
+            smoothFilters.forEach(s => { s.frequency.value = f; });
+          }
+        },
+        destroy: () => {
+          [carrier, modulator, mixGain, out, ...allBandNodes].forEach(n => { try { n.disconnect(); } catch(_){} });
+        },
       };
     }
 
