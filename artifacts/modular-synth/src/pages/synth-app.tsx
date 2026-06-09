@@ -1218,9 +1218,11 @@ export default function SynthApp() {
   const [cables,       setCables]       = useState<Cable[]>(DEFAULT_CABLES);
   const cablesRef = useRef(cables);
   cablesRef.current = cables;
-  // Bumped after every modules commit so PatchCables re-renders once port refs are populated
+  // Bumped after every modules commit (or when the rack first appears) so PatchCables
+  // re-renders once port refs are populated. `started` must be in deps so the default
+  // startup path (where setModules is never called) still triggers a re-render.
   const [cableLayoutVersion, setCableLayoutVersion] = useState(0);
-  useLayoutEffect(() => { setCableLayoutVersion(v => v + 1); }, [modules]);
+  useLayoutEffect(() => { setCableLayoutVersion(v => v + 1); }, [modules, started]);
   const [pendingCable, setPendingCable] = useState<PendingCable | null>(null);
   const pendingCableRef = useRef<PendingCable | null>(null);
   pendingCableRef.current = pendingCable;
