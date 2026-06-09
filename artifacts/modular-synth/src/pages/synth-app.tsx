@@ -2704,7 +2704,7 @@ export default function SynthApp() {
               key={mod.id}
               data-mod="1"
               className="absolute"
-              style={{ left: mod.x, top: mod.y }}
+              style={{ left: mod.x, top: mod.y, zIndex: mod.typeId === 'poly_step' ? 5 : 1 }}
               onMouseEnter={() => setFocusedModuleId(mod.id)}
               onMouseLeave={() => setFocusedModuleId(prev => prev === mod.id ? null : prev)}
             >
