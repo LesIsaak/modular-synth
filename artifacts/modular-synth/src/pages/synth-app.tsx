@@ -1064,7 +1064,6 @@ function useMIDI(
 
 // ─── Minimap ──────────────────────────────────────────────────────────────────
 const MINI_W = 164;
-const MINI_H = Math.round(MINI_W * CONTENT_H / CONTENT_W); // ≈205
 
 function Minimap({
   modules,
@@ -1073,8 +1072,14 @@ function Minimap({
   modules: ModuleInstance[];
   rackRef: React.RefObject<HTMLDivElement | null>;
 }) {
-  const scaleX = MINI_W / CONTENT_W;
-  const scaleY = MINI_H / CONTENT_H;
+  // Uniform scale — width is fixed; height grows with the lowest module row
+  const scale = MINI_W / CONTENT_W;
+  const usedH = modules.length
+    ? Math.max(...modules.map(m => m.y + (MODULE_TYPE_MAP.get(m.typeId)?.height ?? SLOT_H)))
+    : SLOT_H;
+  const effectiveH = Math.max(SLOT_H * 2, Math.min(CONTENT_H, usedH + SLOT_H));
+  const miniH = Math.max(60, Math.round(effectiveH * scale));
+
   const [scroll, setScroll]   = useState({ left: 0, top: 0 });
   const [viewSize, setViewSize] = useState({ w: 0, h: 0 });
   const miniDragRef = useRef(false);
@@ -1101,18 +1106,18 @@ function Minimap({
     const rect = e.currentTarget.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-    el.scrollLeft = Math.max(0, mx / scaleX - viewSize.w / 2);
-    el.scrollTop  = Math.max(0, my / scaleY - Math.max(0, viewSize.h - KB_H) / 2);
+    el.scrollLeft = Math.max(0, mx / scale - viewSize.w / 2);
+    el.scrollTop  = Math.max(0, my / scale - Math.max(0, viewSize.h - KB_H) / 2);
   };
 
-  const vpW = Math.min(MINI_W, viewSize.w * scaleX);
-  const vpH = Math.min(MINI_H, Math.max(0, viewSize.h - KB_H) * scaleY);
+  const vpW = Math.min(MINI_W, viewSize.w * scale);
+  const vpH = Math.min(miniH, Math.max(0, viewSize.h - KB_H) * scale);
 
   return (
     <div
       style={{
         position: 'absolute', bottom: 12, right: 12,
-        width: MINI_W, height: MINI_H,
+        width: MINI_W, height: miniH,
         background: 'rgba(8,8,8,0.93)',
         border: '1px solid #2a2a2a',
         borderRadius: 4,
@@ -1128,10 +1133,10 @@ function Minimap({
       onMouseLeave={() => { miniDragRef.current = false; }}
     >
       {/* Row grid lines */}
-      {Array.from({ length: Math.ceil(CONTENT_H / SLOT_H) }, (_, i) => (
+      {Array.from({ length: Math.ceil(effectiveH / SLOT_H) }, (_, i) => (
         <div key={i} style={{
           position: 'absolute', left: 0, right: 0,
-          top: Math.round(i * SLOT_H * scaleY), height: 1,
+          top: Math.round(i * SLOT_H * scale), height: 1,
           background: '#181818', pointerEvents: 'none',
         }} />
       ))}
@@ -1140,14 +1145,15 @@ function Minimap({
       {modules.map(m => {
         const def   = MODULE_TYPE_MAP.get(m.typeId);
         const mw    = def?.width ?? SLOT_W;
+        const mh    = def?.height ?? SLOT_H;
         const color = CATEGORY_COLORS[def?.category ?? ''] ?? '#444';
         return (
           <div key={m.id} style={{
             position: 'absolute',
-            left:   Math.round(m.x * scaleX),
-            top:    Math.round(m.y * scaleY),
-            width:  Math.max(2, Math.round(mw * scaleX) - 1),
-            height: Math.max(2, Math.round(SLOT_H * scaleY) - 1),
+            left:   Math.round(m.x * scale),
+            top:    Math.round(m.y * scale),
+            width:  Math.max(2, Math.round(mw * scale) - 1),
+            height: Math.max(2, Math.round(mh * scale) - 1),
             background: color, opacity: 0.8, borderRadius: 1,
             pointerEvents: 'none',
           }} />
@@ -1157,8 +1163,8 @@ function Minimap({
       {/* Viewport rect */}
       <div style={{
         position: 'absolute',
-        left:   Math.round(scroll.left * scaleX),
-        top:    Math.round(scroll.top  * scaleY),
+        left:   Math.round(scroll.left * scale),
+        top:    Math.round(scroll.top  * scale),
         width:  vpW, height: vpH,
         border: '1px solid rgba(232,125,39,0.9)',
         background: 'rgba(232,125,39,0.07)',
