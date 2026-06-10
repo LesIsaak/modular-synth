@@ -2824,73 +2824,83 @@ export function createAudioModule(
     }
 
     case 'vocoder': {
-      // Pure audio-graph band vocoder — no JavaScript polling, no AnalyserNode.
+      // Band vocoder: per-band AnalyserNode reads modulator amplitude; JS exponential
+      // envelope drives the corresponding carrier band gain.
       //
-      // Chrome's audio graph optimiser prunes GainNode(gain=0) branches, which is why
-      // the "zero-gain sink" approach for AnalyserNode activation does not work.
-      // Instead, the entire envelope follower runs at audio rate:
+      // CRITICAL: mSnk.gain must be 0.001 (NOT 0).
+      //   Chrome's silence-propagation optimiser marks any GainNode whose gain is
+      //   provably zero as "silent" and skips processing its entire upstream subgraph.
+      //   gain=0 → mAn is never processed → getFloatTimeDomainData() always returns
+      //   zeros → env stays 0 → no carrier output.
+      //   gain=0.001 (-60 dB) is non-zero, so Chrome must process the branch.
+      //   The resulting modulator bleed into `out` is ≈ -42 dB (8 bands × 0.001),
+      //   which is below the perceptible threshold in normal use.
       //
-      //   modulator → mBP (bandpass) → mRect (half-wave rectify × π) → mLP (lowpass) → env.gain
-      //   carrier   → cBP (bandpass) → env (GainNode) → mixGain → out
-      //
-      // mLP connects to env.gain (an AudioParam).  Because env is in the active graph
-      // (env → mixGain → out → destination), the spec requires mLP (and thus mRect,
-      // mBP, modulator) to be processed — no sink tricks needed.
-      //
-      // Half-wave rectify × π: DC of half-wave-rectified sine of amplitude A = A/π,
-      // so multiplying by π restores the DC to A after the lowpass.
-      // The lowpass cutoff sets the envelope time constant; RELEASE param adjusts it.
+      //   The pure audio-rate WaveShaper+BiquadLP approach has two fatal flaws:
+      //     1. env.gain.value=0 also triggers Chrome's silence propagation, stopping
+      //        the mLP → env.gain audio-rate connection from ever being evaluated.
+      //     2. BiquadFilter LP cutoffs below ~10 Hz have degenerate coefficients
+      //        (1−cos(ω₀) ≈ ω₀²/2 → single-precision underflow), producing no output.
       const numBands  = Math.max(1, Math.round(p.bands ?? 8));
       const carrier   = ctx.createGain(); carrier.gain.value   = 1;
       const modulator = ctx.createGain(); modulator.gain.value = 1;
       const mixGain   = ctx.createGain(); mixGain.gain.value   = p.mix ?? 1;
       const out       = ctx.createGain(); out.gain.value       = 1;
       mixGain.connect(out);
-      // Dry carrier: audible at MIX=0; fades as vocoder effect fades in.
+      // Dry carrier bypass: carrier audible at MIX=0; fades as vocoder effect increases.
       const carDry = ctx.createGain(); carDry.gain.value = 1 - (p.mix ?? 1);
       carrier.connect(carDry); carDry.connect(out);
-
-      // Half-wave rectifier curve: maps [-1, +1] → [0, π]
-      // (positive half scaled by π; negative half clamped to 0)
-      const HW_N = 4096;
-      const hwCurve = new Float32Array(HW_N);
-      for (let i = 0; i < HW_N; i++) {
-        const x = (i / (HW_N - 1)) * 2 - 1; // [-1, +1]
-        hwCurve[i] = Math.max(0, x) * Math.PI;
-      }
 
       const freqs = Array.from({ length: numBands }, (_, i) =>
         80 * Math.pow(8000 / 80, i / Math.max(1, numBands - 1))
       );
 
-      // Release param → LP cutoff frequency (higher = faster envelope, shorter release)
-      const relToHz = (rel: number) =>
-        Math.min(500, Math.max(5, 1 / Math.max(0.002, rel)));
-
-      const smoothFilters: BiquadFilterNode[] = [];
-      const allNodes: AudioNode[] = [carrier, modulator, mixGain, out, carDry];
+      const envGains: GainNode[]                  = [];
+      const modAns:   AnalyserNode[]              = [];
+      const modBufs:  Float32Array<ArrayBuffer>[] = [];
+      const allNodes: AudioNode[]                 = [carrier, modulator, mixGain, out, carDry];
 
       freqs.forEach(freq => {
-        // ── Modulator analysis (audio-rate envelope follower) ──────────────────
-        const mBP   = ctx.createBiquadFilter(); mBP.type = 'bandpass';
+        // Modulator: BPF → AnalyserNode → tiny-gain sink (0.001) → out
+        const mBP  = ctx.createBiquadFilter(); mBP.type = 'bandpass';
         mBP.frequency.value = freq; mBP.Q.value = 3;
-        const mRect = ctx.createWaveShaper(); mRect.curve = hwCurve;
-        const mLP   = ctx.createBiquadFilter(); mLP.type = 'lowpass';
-        mLP.frequency.value = relToHz(p.release ?? 0.3);
-        mLP.Q.value = 0.5; // slightly overdamped — no resonance ringing on the envelope
+        const mAn  = ctx.createAnalyser(); mAn.fftSize = 256;
+        const mSnk = ctx.createGain(); mSnk.gain.value = 0.001; // -60 dB — forces Chrome to process mAn
+        modulator.connect(mBP); mBP.connect(mAn); mAn.connect(mSnk); mSnk.connect(out);
 
-        // ── Carrier synthesis ──────────────────────────────────────────────────
+        // Carrier: BPF → GainNode (gain driven by JS envelope) → mixGain
         const cBP = ctx.createBiquadFilter(); cBP.type = 'bandpass';
         cBP.frequency.value = freq; cBP.Q.value = 3;
-        // env.gain.value = 0 (nominal); audio-rate signal from mLP drives it.
         const env = ctx.createGain(); env.gain.value = 0;
-
-        modulator.connect(mBP); mBP.connect(mRect); mRect.connect(mLP); mLP.connect(env.gain);
         carrier.connect(cBP); cBP.connect(env); env.connect(mixGain);
 
-        smoothFilters.push(mLP);
-        allNodes.push(mBP, mRect, mLP, cBP, env);
+        envGains.push(env);
+        modAns.push(mAn);
+        modBufs.push(new Float32Array(new ArrayBuffer(256 * 4)));
+        allNodes.push(mBP, mAn, mSnk, cBP, env);
       });
+
+      // Per-band exponential envelope: instant attack, exponential release.
+      // Coefficient: exp(−1 / (sampleRate × releaseTime / fftSize))
+      const envelopes   = new Float32Array(numBands);
+      const makeCoeff   = (rel: number) =>
+        Math.exp(-1 / Math.max(1, ctx.sampleRate * Math.max(0.001, rel) / 256));
+      let releaseCoeff  = makeCoeff(p.release ?? 0.1);
+
+      const vocoderPollId = setInterval(() => {
+        try {
+          modAns.forEach((an, i) => {
+            an.getFloatTimeDomainData(modBufs[i]);
+            let peak = 0;
+            for (let s = 0; s < modBufs[i].length; s++) {
+              const a = Math.abs(modBufs[i][s]);
+              if (a > peak) peak = a;
+            }
+            envelopes[i] = peak >= envelopes[i] ? peak : envelopes[i] * releaseCoeff;
+            envGains[i].gain.value = Math.min(1, envelopes[i]);
+          });
+        } catch (_) {}
+      }, 32);
 
       return {
         outputs: new Map([['out', out]]),
@@ -2900,16 +2910,11 @@ export function createAudioModule(
         ]),
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'mix') {
-            mixGain.gain.value = val;
-            carDry.gain.value  = 1 - val;
-          }
-          if (id === 'release') {
-            const f = relToHz(val);
-            smoothFilters.forEach(lp => { lp.frequency.value = f; });
-          }
+          if (id === 'mix') { mixGain.gain.value = val; carDry.gain.value = 1 - val; }
+          if (id === 'release') releaseCoeff = makeCoeff(val);
         },
         destroy: () => {
+          clearInterval(vocoderPollId);
           allNodes.forEach(n => { try { n.disconnect(); } catch(_){} });
         },
       };
