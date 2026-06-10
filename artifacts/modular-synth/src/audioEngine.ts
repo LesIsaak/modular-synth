@@ -2603,59 +2603,110 @@ export function createAudioModule(
     }
 
     case 'pitch_shift': {
-      // Sawtooth-LFO delay-based pitch shift approximation
+      // Two-voice crossfaded delay-based pitch shifter — eliminates the sawtooth-reset click
+      // by having voices 180° apart and using a raised-cosine gain window on each voice.
+      //
+      // Correct LFO frequency formula for delay modulation:
+      //   pitch_ratio = 1 / (1 − 2*delayAmt*lfoFreq)
+      //   lfoFreq = (1 − 2^(−|semis|/12)) / (2*delayAmt)
+      const DELAY_AMT = 0.025; // ±25 ms modulation per voice
+      const DC_OFF    = 0.04;  // centre delay time (must be > DELAY_AMT)
+
+      const computeFreq = (s: number) => {
+        const f = (1 - Math.pow(2, -Math.abs(s) / 12)) / (2 * DELAY_AMT);
+        return Math.min(ctx.sampleRate / 2, Math.max(0.1, f));
+      };
+      const semis   = p.semitones ?? 0;
+      let   lfoFreq = computeFreq(semis);
+      const delayDir = (s: number) => (s >= 0 ? -DELAY_AMT : DELAY_AMT); // negative = pitch up
+
       const input = ctx.createGain(); input.gain.value = 1;
-      const delay = ctx.createDelay(0.5); delay.delayTime.value = 0.01;
-      const lfo = ctx.createOscillator(); lfo.type = 'sawtooth';
-      // Pitch shift by semitones: positive = up (faster lfo), negative = down
-      const semis = p.semitones ?? 0;
-      const rate = Math.pow(2, Math.abs(semis) / 12) - 1;
-      lfo.frequency.value = rate * 10 + 0.001;
-      const lfoG = ctx.createGain(); lfoG.gain.value = semis >= 0 ? 0.02 : -0.02;
-      const dcOffset = ctx.createConstantSource(); dcOffset.offset.value = 0.03; dcOffset.start();
-      lfo.connect(lfoG); lfoG.connect(delay.delayTime); dcOffset.connect(delay.delayTime);
-      lfo.start();
-      input.connect(delay);
-      const { out, dryG, wetG } = wetDry(ctx, input, delay, p.mix ?? 1);
-      // shift_cv: semitones is not an AudioParam so we poll via AnalyserNode
-      // Use an intermediate GainNode so the AnalyserNode is downstream of a connected node
+
+      // ── Voice 1 (sawtooth starts NOW → phase 0) ──────────────────────────────
+      const delay1 = ctx.createDelay(0.5); delay1.delayTime.value = DC_OFF;
+      const lfo1   = ctx.createOscillator(); lfo1.type = 'sawtooth'; lfo1.frequency.value = lfoFreq;
+      const lfoG1  = ctx.createGain(); lfoG1.gain.value = delayDir(semis);
+      const dc1    = ctx.createConstantSource(); dc1.offset.value = DC_OFF; dc1.start();
+      lfo1.connect(lfoG1); lfoG1.connect(delay1.delayTime); dc1.connect(delay1.delayTime);
+      input.connect(delay1);
+
+      // ── Voice 2 (sawtooth 180° ahead = started half-period ago) ──────────────
+      const delay2 = ctx.createDelay(0.5); delay2.delayTime.value = DC_OFF;
+      const lfo2   = ctx.createOscillator(); lfo2.type = 'sawtooth'; lfo2.frequency.value = lfoFreq;
+      const lfoG2  = ctx.createGain(); lfoG2.gain.value = delayDir(semis);
+      const dc2    = ctx.createConstantSource(); dc2.offset.value = DC_OFF; dc2.start();
+      lfo2.connect(lfoG2); lfoG2.connect(delay2.delayTime); dc2.connect(delay2.delayTime);
+      input.connect(delay2);
+
+      // ── Raised-cosine crossfade window ────────────────────────────────────────
+      // w1 = 0.5 − 0.5·cos(ωt) → 0 when v1 resets (phase=0), 1 at v1 midpoint
+      // w2 = 0.5 + 0.5·cos(ωt) → 1 when v1 resets (= v2 midpoint)
+      // cosLFO is a sine started ¼-period before now, so at t=0 it outputs cos(0)=1.
+      const cosLFO  = ctx.createOscillator(); cosLFO.type = 'sine'; cosLFO.frequency.value = lfoFreq;
+      const cosG1   = ctx.createGain(); cosG1.gain.value = -0.5;  // -0.5·cos → w1 = 0 at reset
+      const cosG2   = ctx.createGain(); cosG2.gain.value =  0.5;  // +0.5·cos → w2 = 1 at reset
+      const wBase1  = ctx.createConstantSource(); wBase1.offset.value = 0.5; wBase1.start();
+      const wBase2  = ctx.createConstantSource(); wBase2.offset.value = 0.5; wBase2.start();
+
+      const win1 = ctx.createGain(); win1.gain.value = 0;  // intrinsic; driven entirely by sources
+      const win2 = ctx.createGain(); win2.gain.value = 0;
+      cosLFO.connect(cosG1); cosG1.connect(win1.gain); wBase1.connect(win1.gain);
+      cosLFO.connect(cosG2); cosG2.connect(win2.gain); wBase2.connect(win2.gain);
+      delay1.connect(win1); delay2.connect(win2);
+
+      const merged = ctx.createGain(); merged.gain.value = 1;
+      win1.connect(merged); win2.connect(merged);
+
+      const { out, dryG, wetG } = wetDry(ctx, input, merged, p.mix ?? 1);
+
+      // Start oscillators with correct phase offsets
+      const now = ctx.currentTime;
+      lfo1.start(now);
+      lfo2.start(Math.max(0, now - 0.5 / lfoFreq));        // 180° phase ahead of v1
+      cosLFO.start(Math.max(0, now - 0.25 / lfoFreq));     // outputs cos(ωt) = sin(ωt + π/2)
+
+      // ── Shift-CV via AnalyserNode polling ─────────────────────────────────────
       const shiftCvIn = ctx.createGain(); shiftCvIn.gain.value = 1;
       const shiftCvAn = ctx.createAnalyser(); shiftCvAn.fftSize = 32;
       shiftCvIn.connect(shiftCvAn);
-      const shiftCvBuf = new Float32Array(1);
+      const shiftBuf = new Float32Array(1);
+
+      const applyShift = (s: number) => {
+        const f  = computeFreq(s);
+        const dd = delayDir(s);
+        lfo1.frequency.value = f; lfo2.frequency.value = f; cosLFO.frequency.value = f;
+        lfoG1.gain.value = dd; lfoG2.gain.value = dd;
+      };
+
       const shiftPollId = setInterval(() => {
         try {
-          shiftCvAn.getFloatTimeDomainData(shiftCvBuf);
-          const cv = shiftCvBuf[0];
+          shiftCvAn.getFloatTimeDomainData(shiftBuf);
+          const cv = shiftBuf[0];
           if (!isFinite(cv)) return;
-          const total = (p.semitones ?? 0) + cv * 24;
-          const r = Math.pow(2, Math.abs(total) / 12) - 1;
-          const freq = r * 10 + 0.001;
-          if (!isFinite(freq) || freq <= 0) return;
-          lfo.frequency.value = Math.min(ctx.sampleRate / 2, freq);
-          lfoG.gain.value = total >= 0 ? 0.02 : -0.02;
+          applyShift((p.semitones ?? 0) + cv * 24);
         } catch (_) {}
       }, 32);
+
       return {
         outputs: new Map([['out', out]]),
         inputs: new Map([
-          ['audio_in', { node: input }],
-          ['shift_cv', { node: shiftCvIn }],
+          ['audio_in',  { node: input }],
+          ['shift_cv',  { node: shiftCvIn }],
         ]),
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'semitones') {
-            const r = Math.pow(2, Math.abs(val) / 12) - 1;
-            const freq = r * 10 + 0.001;
-            if (isFinite(freq) && freq > 0) lfo.frequency.value = Math.min(ctx.sampleRate / 2, freq);
-            lfoG.gain.value = val >= 0 ? 0.02 : -0.02;
-          }
+          if (id === 'semitones') applyShift(val);
           if (id === 'mix') { dryG.gain.value = 1 - val; wetG.gain.value = val; }
         },
         destroy: () => {
           clearInterval(shiftPollId);
-          lfo.stop(); lfo.disconnect(); dcOffset.stop(); dcOffset.disconnect();
-          [input, delay, lfoG, shiftCvIn, shiftCvAn, out, dryG, wetG].forEach(n => { try { n.disconnect(); } catch(_){} });
+          try { lfo1.stop(); } catch(_){}
+          try { lfo2.stop(); } catch(_){}
+          try { cosLFO.stop(); } catch(_){}
+          [input, delay1, lfoG1, dc1, delay2, lfoG2, dc2,
+           cosLFO, cosG1, cosG2, wBase1, wBase2, win1, win2, merged,
+           shiftCvIn, shiftCvAn, out, dryG, wetG,
+          ].forEach(n => { try { n.disconnect(); } catch(_){} });
         },
       };
     }
@@ -2694,93 +2745,135 @@ export function createAudioModule(
 
     case 'resonator': {
       const input = ctx.createGain(); input.gain.value = 1;
-      const out = ctx.createGain(); out.gain.value = 1;
-      const numHarmonics = Math.round(p.harmonics ?? 4);
-      const baseFreq = p.freq ?? 440;
-      const bands: BiquadFilterNode[] = [];
+      const out   = ctx.createGain(); out.gain.value   = 1;
+      const numHarmonics = Math.max(1, Math.round(p.harmonics ?? 4));
+      const baseFreq     = p.freq ?? 440;
+      const mix0         = p.mix  ?? 0.7;
+      const bands:     BiquadFilterNode[] = [];
+      const bandGains: GainNode[]         = [];   // stored so setParam('mix') can update them
       for (let h = 1; h <= numHarmonics; h++) {
         const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
-        bp.frequency.value = baseFreq * h; bp.Q.value = p.q ?? 20;
-        const g = ctx.createGain(); g.gain.value = (p.mix ?? 0.7) / numHarmonics / h;
-        input.connect(bp); bp.connect(g); g.connect(out); bands.push(bp);
+        bp.frequency.value = baseFreq * h;
+        bp.Q.value = p.q ?? 20;
+        const g = ctx.createGain(); g.gain.value = mix0 / numHarmonics / h;
+        input.connect(bp); bp.connect(g); g.connect(out);
+        bands.push(bp); bandGains.push(g);
       }
-      const dry = ctx.createGain(); dry.gain.value = 1 - (p.mix ?? 0.7);
+      const dry = ctx.createGain(); dry.gain.value = 1 - mix0;
       input.connect(dry); dry.connect(out);
-      // q_cv adds to each band's Q (BiquadFilter.Q is an AudioParam)
+      // q_cv: adds to each band's Q (AudioParam modulation)
       const qCv = ctx.createConstantSource(); qCv.offset.value = 0; qCv.start();
       bands.forEach(b => qCv.connect(b.Q));
-      // freq_cv adds a Hz offset to all band frequencies (BiquadFilter.frequency is an AudioParam)
+      // freq_cv: adds a Hz offset to all band frequencies (AudioParam modulation)
       const freqCvR = ctx.createConstantSource(); freqCvR.offset.value = 0; freqCvR.start();
       bands.forEach(b => freqCvR.connect(b.frequency));
       return {
         outputs: new Map([['out', out]]),
         inputs: new Map([
           ['audio_in', { node: input }],
-          ['freq_cv', { node: freqCvR, param: freqCvR.offset }],
-          ['q_cv', { node: qCv, param: qCv.offset }],
+          ['freq_cv',  { node: freqCvR, param: freqCvR.offset }],
+          ['q_cv',     { node: qCv,     param: qCv.offset }],
         ]),
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'freq') bands.forEach((b, i) => { b.frequency.value = val * (i + 1); });
-          if (id === 'q') bands.forEach(b => { b.Q.value = val; });
-          if (id === 'mix') dry.gain.value = 1 - val;
+          if (id === 'q')    bands.forEach(b => { b.Q.value = val; });
+          if (id === 'mix') {
+            dry.gain.value = 1 - val;
+            // Also update every band gain — previously these were never stored so mix was broken
+            bandGains.forEach((g, i) => { g.gain.value = val / numHarmonics / (i + 1); });
+          }
         },
         destroy: () => {
           try { qCv.stop(); } catch(_){} qCv.disconnect();
           try { freqCvR.stop(); } catch(_){} freqCvR.disconnect();
-          [input, out, dry, ...bands].forEach(n => { try { n.disconnect(); } catch(_){} });
+          [...bands, ...bandGains, input, out, dry].forEach(n => { try { n.disconnect(); } catch(_){} });
         },
       };
     }
 
     case 'vocoder': {
-      // Simplified band vocoder: carrier shaped by modulator band envelopes
-      const numBands = Math.round(p.bands ?? 8);
-      const carrier = ctx.createGain(); carrier.gain.value = 1;
+      // Band vocoder: modulator's per-band amplitude (via AnalyserNode polling + exponential
+      // envelope) gates the corresponding carrier band.  AnalyserNode polling avoids the
+      // numerically-unstable 10 Hz BiquadFilter-as-envelope-follower approach.
+      const numBands = Math.max(1, Math.round(p.bands ?? 8));
+      const carrier   = ctx.createGain(); carrier.gain.value   = 1;
       const modulator = ctx.createGain(); modulator.gain.value = 1;
-      const mixGain = ctx.createGain(); mixGain.gain.value = p.mix ?? 1;
-      const out = ctx.createGain(); out.gain.value = 1;
+      const mixGain   = ctx.createGain(); mixGain.gain.value   = p.mix ?? 1;
+      const out       = ctx.createGain(); out.gain.value       = 1;
       mixGain.connect(out);
-      // Frequency bands from 80Hz to 8kHz (log spaced)
+
       const freqs = Array.from({ length: numBands }, (_, i) =>
-        80 * Math.pow(8000 / 80, i / (numBands - 1))
+        80 * Math.pow(8000 / 80, i / Math.max(1, numBands - 1))
       );
-      const allBandNodes: AudioNode[] = [];
-      const smoothFilters: BiquadFilterNode[] = [];
-      const fc = new Float32Array(512);
-      for (let i = 0; i < 512; i++) fc[i] = Math.abs((i / 256) - 1);
-      freqs.forEach((freq) => {
+
+      const envGains:  GainNode[]                    = [];
+      const modAns:    AnalyserNode[]                = [];
+      const modBufs:   Float32Array<ArrayBuffer>[]   = [];
+      const allNodes:  AudioNode[]    = [carrier, modulator, mixGain, out];
+
+      freqs.forEach(freq => {
+        // Modulator analysis: BPF → AnalyserNode (not in output chain; polled in JS)
         const mBP = ctx.createBiquadFilter(); mBP.type = 'bandpass';
         mBP.frequency.value = freq; mBP.Q.value = 3;
+        const mAn = ctx.createAnalyser(); mAn.fftSize = 32;
+        modulator.connect(mBP); mBP.connect(mAn);
+
+        // Carrier synthesis: BPF → GainNode whose gain is driven by the envelope
         const cBP = ctx.createBiquadFilter(); cBP.type = 'bandpass';
         cBP.frequency.value = freq; cBP.Q.value = 3;
         const env = ctx.createGain(); env.gain.value = 0;
-        const fullWave = ctx.createWaveShaper();
-        fullWave.curve = fc;
-        const smooth = ctx.createBiquadFilter(); smooth.type = 'lowpass';
-        smooth.frequency.value = Math.min(ctx.sampleRate / 2 - 1, 1 / (p.release ?? 0.1));
-        modulator.connect(mBP); mBP.connect(fullWave); fullWave.connect(smooth);
-        smooth.connect(env.gain);
         carrier.connect(cBP); cBP.connect(env); env.connect(mixGain);
-        allBandNodes.push(mBP, cBP, env, fullWave, smooth);
-        smoothFilters.push(smooth);
+
+        envGains.push(env);
+        modAns.push(mAn);
+        modBufs.push(new Float32Array(new ArrayBuffer(mAn.fftSize * 4)));
+        allNodes.push(mBP, mAn, cBP, env);
       });
+
+      // Per-band exponential envelope state
+      const envelopes   = new Float32Array(numBands);
+      // Release coeff: exp(−1 / (sampleRate * releaseTime / fftSize))
+      // poll interval ≈ fftSize / sampleRate seconds
+      const makeCoeff = (rel: number) =>
+        Math.exp(-1 / Math.max(1, ctx.sampleRate * Math.max(0.001, rel) / 32));
+      let releaseCoeff = makeCoeff(p.release ?? 0.1);
+
+      const vocoderPollId = setInterval(() => {
+        try {
+          modAns.forEach((an, i) => {
+            an.getFloatTimeDomainData(modBufs[i]);
+            // Peak-detect the buffer
+            let peak = 0;
+            for (let s = 0; s < modBufs[i].length; s++) {
+              const a = Math.abs(modBufs[i][s]);
+              if (a > peak) peak = a;
+            }
+            // Instant attack, exponential release
+            if (peak >= envelopes[i]) {
+              envelopes[i] = peak;
+            } else {
+              envelopes[i] *= releaseCoeff;
+            }
+            envGains[i].gain.value = Math.min(1, envelopes[i]);
+          });
+        } catch (_) {}
+      }, 32);
+
       return {
         outputs: new Map([['out', out]]),
-        inputs: new Map([
-          ['carrier', { node: carrier }],
+        inputs:  new Map([
+          ['carrier',   { node: carrier }],
           ['modulator', { node: modulator }],
         ]),
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'mix') mixGain.gain.value = val;
-          if (id === 'release') {
-            const f = Math.min(ctx.sampleRate / 2 - 1, 1 / Math.max(0.001, val));
-            smoothFilters.forEach(s => { s.frequency.value = f; });
-          }
+          if (id === 'mix')     mixGain.gain.value = val;
+          if (id === 'release') releaseCoeff = makeCoeff(val);
         },
         destroy: () => {
-          [carrier, modulator, mixGain, out, ...allBandNodes].forEach(n => { try { n.disconnect(); } catch(_){} });
+          clearInterval(vocoderPollId);
+          allNodes.forEach(n => { try { n.disconnect(); } catch(_){} });
         },
       };
     }
