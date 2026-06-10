@@ -2887,26 +2887,17 @@ export function createAudioModule(
         Math.exp(-1 / Math.max(1, ctx.sampleRate * Math.max(0.001, rel) / 256));
       let releaseCoeff  = makeCoeff(p.release ?? 0.1);
 
-      let _vDbgCount = 0;
       const vocoderPollId = setInterval(() => {
-        try {
-          let maxPeakAcrossBands = 0;
-          modAns.forEach((an, i) => {
-            an.getFloatTimeDomainData(modBufs[i]);
-            let peak = 0;
-            for (let s = 0; s < modBufs[i].length; s++) {
-              const a = Math.abs(modBufs[i][s]);
-              if (a > peak) peak = a;
-            }
-            if (peak > maxPeakAcrossBands) maxPeakAcrossBands = peak;
-            envelopes[i] = peak >= envelopes[i] ? peak : envelopes[i] * releaseCoeff;
-            envGains[i].gain.value = Math.min(1, envelopes[i]);
-          });
-          if (_vDbgCount < 20) {
-            console.log(`[vocoder] tick=${_vDbgCount} bands=${modAns.length} maxPeak=${maxPeakAcrossBands.toFixed(4)} env0=${envelopes[0]?.toFixed(4)} envGain0=${envGains[0]?.gain.value.toFixed(4)}`);
-            _vDbgCount++;
+        modAns.forEach((an, i) => {
+          an.getFloatTimeDomainData(modBufs[i]);
+          let peak = 0;
+          for (let s = 0; s < modBufs[i].length; s++) {
+            const a = Math.abs(modBufs[i][s]);
+            if (a > peak) peak = a;
           }
-        } catch (e) { console.error('[vocoder] poll error', e); }
+          envelopes[i] = peak >= envelopes[i] ? peak : envelopes[i] * releaseCoeff;
+          envGains[i].gain.value = Math.min(1, envelopes[i]);
+        });
       }, 32);
 
       return {
