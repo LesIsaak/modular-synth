@@ -547,12 +547,15 @@ export function createAudioModule(
       f.type = defaultType[typeId] ?? 'lowpass';
       f.frequency.value = p.cutoff ?? 1000;
       f.Q.value = typeId === 'filter_lp6' ? 0.5 : (p.res ?? 1);
+      // RES CV scaler: maps a normalized (0..1) CV source (e.g. mod wheel)
+      // up into the Q range so resonance modulation is musically audible.
+      const resScale = ctx.createGain(); resScale.gain.value = RES_CV_SCALE; resScale.connect(f.Q);
       return {
         outputs: new Map([['out', f]]),
         inputs: new Map([
           ['audio_in', { node: f }],
           ['cutoff_cv', { node: f, param: f.frequency }],
-          ['res_cv', { node: f, param: f.Q }],
+          ['res_cv', { node: resScale }],
           ['fm_in', { node: f }],
         ]),
         setParam: (id, val) => {
@@ -564,7 +567,7 @@ export function createAudioModule(
         setSelector: (id, val) => {
           if (id === 'type') f.type = typeMap[Math.round(val)] ?? 'lowpass';
         },
-        destroy: () => f.disconnect(),
+        destroy: () => { f.disconnect(); resScale.disconnect(); },
       };
     }
 
