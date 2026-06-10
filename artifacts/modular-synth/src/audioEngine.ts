@@ -2606,15 +2606,26 @@ export function createAudioModule(
       // Two-voice crossfaded delay-based pitch shifter — eliminates the sawtooth-reset click
       // by having voices 180° apart and using a raised-cosine gain window on each voice.
       //
-      // Correct LFO frequency formula for delay modulation:
-      //   pitch_ratio = 1 / (1 − 2*delayAmt*lfoFreq)
-      //   lfoFreq = (1 − 2^(−|semis|/12)) / (2*delayAmt)
-      const DELAY_AMT = 0.025; // ±25 ms modulation per voice
-      const DC_OFF    = 0.04;  // centre delay time (must be > DELAY_AMT)
+      // Delay-modulation pitch shift (Doppler principle):
+      //   f_out = f_in * (1 + v)  where v = rate of delay decrease (pitch up)
+      //   f_out = f_in * (1 - v') where v' = rate of delay increase (pitch down)
+      //
+      //   Pitch UP   by n semitones: ratio = 2^(n/12),     lfoFreq = (ratio - 1) / (2*DELAY_AMT)
+      //   Pitch DOWN by n semitones: ratio = 2^(-n/12),    lfoFreq = (1 - ratio) / (2*DELAY_AMT)
+      //
+      // delayTime.value is kept at 0; DC comes entirely from dc ConstantSources
+      // to avoid doubling the DC offset.
+      const DELAY_AMT = 0.020; // ±20 ms modulation per voice
+      const DC_OFF    = 0.030; // centre delay (must be > DELAY_AMT)
 
       const computeFreq = (s: number) => {
-        const f = (1 - Math.pow(2, -Math.abs(s) / 12)) / (2 * DELAY_AMT);
-        return Math.min(ctx.sampleRate / 2, Math.max(0.1, f));
+        if (Math.abs(s) < 0.001) return 0.1;
+        const absS = Math.abs(s);
+        // UP: ratio-1 = 2^(n/12)-1;  DOWN: 1-ratio = 1-2^(-n/12)
+        const delta = s >= 0
+          ? Math.pow(2, absS / 12) - 1
+          : 1 - Math.pow(2, -absS / 12);
+        return Math.min(ctx.sampleRate / 4, Math.max(0.1, delta / (2 * DELAY_AMT)));
       };
       const semis   = p.semitones ?? 0;
       let   lfoFreq = computeFreq(semis);
@@ -2623,7 +2634,8 @@ export function createAudioModule(
       const input = ctx.createGain(); input.gain.value = 1;
 
       // ── Voice 1 (sawtooth starts NOW → phase 0) ──────────────────────────────
-      const delay1 = ctx.createDelay(0.5); delay1.delayTime.value = DC_OFF;
+      // delayTime.value = 0; DC provided solely by dc1 ConstantSource to avoid doubling.
+      const delay1 = ctx.createDelay(0.5); delay1.delayTime.value = 0;
       const lfo1   = ctx.createOscillator(); lfo1.type = 'sawtooth'; lfo1.frequency.value = lfoFreq;
       const lfoG1  = ctx.createGain(); lfoG1.gain.value = delayDir(semis);
       const dc1    = ctx.createConstantSource(); dc1.offset.value = DC_OFF; dc1.start();
@@ -2631,7 +2643,7 @@ export function createAudioModule(
       input.connect(delay1);
 
       // ── Voice 2 (sawtooth 180° ahead = started half-period ago) ──────────────
-      const delay2 = ctx.createDelay(0.5); delay2.delayTime.value = DC_OFF;
+      const delay2 = ctx.createDelay(0.5); delay2.delayTime.value = 0;
       const lfo2   = ctx.createOscillator(); lfo2.type = 'sawtooth'; lfo2.frequency.value = lfoFreq;
       const lfoG2  = ctx.createGain(); lfoG2.gain.value = delayDir(semis);
       const dc2    = ctx.createConstantSource(); dc2.offset.value = DC_OFF; dc2.start();
@@ -2807,6 +2819,10 @@ export function createAudioModule(
       const mixGain   = ctx.createGain(); mixGain.gain.value   = p.mix ?? 1;
       const out       = ctx.createGain(); out.gain.value       = 1;
       mixGain.connect(out);
+      // Dry carrier path: lets the carrier pass through even without modulator connected,
+      // so the user can hear signal and verify routing is correct.
+      const carDry = ctx.createGain(); carDry.gain.value = 1 - (p.mix ?? 1);
+      carrier.connect(carDry); carDry.connect(out);
 
       const freqs = Array.from({ length: numBands }, (_, i) =>
         80 * Math.pow(8000 / 80, i / Math.max(1, numBands - 1))
@@ -2815,7 +2831,7 @@ export function createAudioModule(
       const envGains:  GainNode[]                    = [];
       const modAns:    AnalyserNode[]                = [];
       const modBufs:   Float32Array<ArrayBuffer>[]   = [];
-      const allNodes:  AudioNode[]    = [carrier, modulator, mixGain, out];
+      const allNodes:  AudioNode[]    = [carrier, modulator, mixGain, out, carDry];
 
       freqs.forEach(freq => {
         // Modulator analysis: BPF → AnalyserNode → zero-gain sink → out
@@ -2824,7 +2840,7 @@ export function createAudioModule(
         // always returns zeros (silence → env stays 0 → no carrier output).
         const mBP  = ctx.createBiquadFilter(); mBP.type = 'bandpass';
         mBP.frequency.value = freq; mBP.Q.value = 3;
-        const mAn  = ctx.createAnalyser(); mAn.fftSize = 32;
+        const mAn  = ctx.createAnalyser(); mAn.fftSize = 256; // 256 samples = 5.8ms, captures half-cycle at 80Hz
         const mSnk = ctx.createGain(); mSnk.gain.value = 0; // silent but keeps node active
         modulator.connect(mBP); mBP.connect(mAn); mAn.connect(mSnk); mSnk.connect(out);
 
@@ -2836,7 +2852,7 @@ export function createAudioModule(
 
         envGains.push(env);
         modAns.push(mAn);
-        modBufs.push(new Float32Array(new ArrayBuffer(mAn.fftSize * 4)));
+        modBufs.push(new Float32Array(new ArrayBuffer(256 * 4))); // 256 floats = fftSize
         allNodes.push(mBP, mAn, mSnk, cBP, env);
       });
 
@@ -2877,7 +2893,10 @@ export function createAudioModule(
         ]),
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'mix')     mixGain.gain.value = val;
+          if (id === 'mix') {
+            mixGain.gain.value = val;
+            carDry.gain.value  = 1 - val; // dry carrier fades out as vocoder effect fades in
+          }
           if (id === 'release') releaseCoeff = makeCoeff(val);
         },
         destroy: () => {
