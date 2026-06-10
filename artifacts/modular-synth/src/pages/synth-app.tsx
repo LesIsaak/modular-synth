@@ -600,20 +600,26 @@ const FixedKeyboardPanel = memo(function FixedKeyboardPanel({
   const pressKey = (semitone: number, octOff = 0) => {
     if (!started) return;
     const midi = (octave + octOff) * 12 + 12 + semitone;
+    if (heldMidiRef.current === midi) return;   // this note is already sounding (e.g. mouse re-enter) — no-op
     const freq = midiToHz(midi);
     const BEND_ST = 2;
     const bentFreq = freq * Math.pow(2, pitchRef.current * BEND_ST / 12);
-    // Monophonic: if another note is still sounding (e.g. sustained by HOLD),
-    // release it first. Otherwise each new key piles up in the engine's held
-    // list and keeps the gate open, so the sound never stops when HOLD is
-    // switched back off ("it still holds").
-    if (heldMidiRef.current !== null && heldMidiRef.current !== midi && heldFreqRef.current > 0) {
-      onNote(heldFreqRef.current, false);
-    }
+
+    const prevFreq = heldFreqRef.current;
+    const hadPrev  = heldMidiRef.current !== null && prevFreq > 0;
+
+    // Press the NEW note first, then release the old one. This drives the
+    // engine's legato/glide path (held list goes [old,new] -> [new]), keeping
+    // the gate open while the pitch slides. Releasing the old note first would
+    // schedule a noteOff and noteOn at the same audio timestamp, which cancel
+    // each other out — that made gliding (drag across keys) produce no sound.
+    // We still release the old note right after, so notes never pile up in the
+    // held list (the HOLD-mode "it still holds" guarantee is preserved).
     heldFreqRef.current = bentFreq;   // store bentFreq so release can match it
     heldMidiRef.current = midi;
     setActiveNote(midi);
     onNote(bentFreq, true);
+    if (hadPrev) onNote(prevFreq, false);
   };
 
   const releaseKey = (midi: number) => {
