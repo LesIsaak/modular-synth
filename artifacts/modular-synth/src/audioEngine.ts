@@ -2603,22 +2603,28 @@ export function createAudioModule(
     }
 
     case 'pitch_shift': {
-      // Single-voice delay-line pitch shifter with lowpass-smoothed sawtooth reset.
+      // Two-voice crossfaded delay-line pitch shifter with correct phase alignment.
       //
-      // The two-voice crossfade approach produces comb-filter rattles because both
-      // delay lines are active simultaneously with different delay times.  This
-      // single-voice approach instead softens the sawtooth reset discontinuity with
-      // a lowpass filter at SMOOTH_MULT × lfoFreq, turning the hard click into a
-      // brief smooth glide that is ~6% of the period and largely inaudible.
+      // KEY FIX vs previous attempts:
+      //   • Chrome ignores past-timestamp oscillator.start() — starting lfo2 at
+      //     "now - T/2" just starts it at time 0 with phase 0 (same as lfo1), so
+      //     both voices reset simultaneously → periodic crack/silence.
+      //   • Fix: bake the 180° offset into the PeriodicWave Fourier coefficients so
+      //     both oscillators start at ctx.currentTime with correct relative phase.
       //
-      // Doppler formula:
-      //   Pitch UP   by n semitones: lfoFreq = (2^(n/12)  − 1) / (2 × DELAY_AMT)
-      //   Pitch DOWN by n semitones: lfoFreq = (1 − 2^(−n/12)) / (2 × DELAY_AMT)
+      // Phase maths (PeriodicWave uses f(θ) = Σ[real[n]·cos(nθ) + imag[n]·sin(nθ)]):
+      //   Sawtooth phase 0: f(θ) = -2/π Σ sin(nθ)/n → imag[n] = -2/(nπ), real[n]=0
+      //   Sawtooth phase π: sin(nθ+nπ) = (-1)^n·sin(nθ)
+      //                     → imag[n] = (-1)^n × (-2/(nπ)) = (-1)^(n+1) × 2/(nπ)
+      //   Cosine window:    f(θ) = cos(θ)              → real[1] = 1, rest = 0
       //
-      // delayTime.value = 0; all DC offset comes from a ConstantSource to avoid doubling.
-      const DELAY_AMT   = 0.020; // ±20 ms modulation
-      const DC_OFF      = 0.030; // centre delay (must be > DELAY_AMT)
-      const SMOOTH_MULT = 16;    // LP cutoff = lfoFreq × SMOOTH_MULT
+      // At voice-1 reset (θ=2π): cosLFO=cos(2π)=1, win1=0 (silent ✓), win2=1 ✓
+      // At voice-2 reset (θ=π):  cosLFO=cos(π)=-1, win2=0 (silent ✓), win1=1 ✓
+      //
+      // Delay difference between voices is constant ≈ ±DELAY_AMT → comb notch fixed
+      // at 1/(2×DELAY_AMT) = 25 Hz (sub-bass, inaudible for typical audio content).
+      const DELAY_AMT = 0.020; // ±20 ms delay modulation per voice
+      const DC_OFF    = 0.030; // centre delay (must exceed DELAY_AMT)
 
       const computeFreq = (s: number) => {
         if (Math.abs(s) < 0.001) return 0.1;
@@ -2627,36 +2633,73 @@ export function createAudioModule(
         return Math.min(ctx.sampleRate / 4, Math.max(0.1, delta / (2 * DELAY_AMT)));
       };
 
+      // Build PeriodicWave objects (64 harmonics for clean sawtooth shape)
+      const N = 64;
+      const r0 = new Float32Array(N), i0 = new Float32Array(N);
+      const rP = new Float32Array(N), iP = new Float32Array(N);
+      for (let n = 1; n < N; n++) {
+        i0[n] = -2 / (n * Math.PI);                            // phase 0 sawtooth
+        iP[n] = (n % 2 === 0 ? -1 : 1) * 2 / (n * Math.PI);  // phase π sawtooth
+      }
+      const rC = new Float32Array(2); rC[1] = 1;               // cosine (real[1]=1)
+      const iC = new Float32Array(2);
+      const saw0Wave = ctx.createPeriodicWave(r0, i0);
+      const sawPWave = ctx.createPeriodicWave(rP, iP);
+      const cosWave  = ctx.createPeriodicWave(rC, iC);
+
       const semis   = p.semitones ?? 0;
+      let   lfoFreq = computeFreq(semis);
       const input   = ctx.createGain(); input.gain.value = 1;
-      const delay   = ctx.createDelay(0.5); delay.delayTime.value = 0;
 
-      const lfo       = ctx.createOscillator(); lfo.type = 'sawtooth';
-      lfo.frequency.value = computeFreq(semis);
-      const lfoSmooth = ctx.createBiquadFilter(); lfoSmooth.type = 'lowpass';
-      lfoSmooth.frequency.value = Math.min(ctx.sampleRate / 2 - 1, computeFreq(semis) * SMOOTH_MULT);
-      lfoSmooth.Q.value = 0; // Butterworth — no resonance overshoot
-      const lfoG  = ctx.createGain(); lfoG.gain.value = semis >= 0 ? -DELAY_AMT : DELAY_AMT;
-      const dc    = ctx.createConstantSource(); dc.offset.value = DC_OFF; dc.start();
+      // Voice 1: sawtooth at phase 0 — resets at END of each period (gain=0 at reset ✓)
+      const delay1 = ctx.createDelay(0.5); delay1.delayTime.value = 0;
+      const lfo1   = ctx.createOscillator(); lfo1.setPeriodicWave(saw0Wave); lfo1.frequency.value = lfoFreq;
+      const lfoG1  = ctx.createGain(); lfoG1.gain.value = semis >= 0 ? -DELAY_AMT : DELAY_AMT;
+      const dc1    = ctx.createConstantSource(); dc1.offset.value = DC_OFF; dc1.start();
+      lfo1.connect(lfoG1); lfoG1.connect(delay1.delayTime); dc1.connect(delay1.delayTime);
+      input.connect(delay1);
 
-      lfo.connect(lfoSmooth); lfoSmooth.connect(lfoG); lfoG.connect(delay.delayTime);
-      dc.connect(delay.delayTime);
-      input.connect(delay);
+      // Voice 2: sawtooth at phase π — resets at MID-period of voice 1 (gain=0 at reset ✓)
+      const delay2 = ctx.createDelay(0.5); delay2.delayTime.value = 0;
+      const lfo2   = ctx.createOscillator(); lfo2.setPeriodicWave(sawPWave); lfo2.frequency.value = lfoFreq;
+      const lfoG2  = ctx.createGain(); lfoG2.gain.value = semis >= 0 ? -DELAY_AMT : DELAY_AMT;
+      const dc2    = ctx.createConstantSource(); dc2.offset.value = DC_OFF; dc2.start();
+      lfo2.connect(lfoG2); lfoG2.connect(delay2.delayTime); dc2.connect(delay2.delayTime);
+      input.connect(delay2);
 
-      const { out, dryG, wetG } = wetDry(ctx, input, delay, p.mix ?? 1);
-      lfo.start();
+      // Raised-cosine crossfade windows (sum to 1 at all times):
+      //   win1 = 0.5 − 0.5·cos(θ),  win2 = 0.5 + 0.5·cos(θ)
+      const cosLFO = ctx.createOscillator(); cosLFO.setPeriodicWave(cosWave); cosLFO.frequency.value = lfoFreq;
+      const cosG1  = ctx.createGain(); cosG1.gain.value = -0.5;
+      const cosG2  = ctx.createGain(); cosG2.gain.value =  0.5;
+      const wBase1 = ctx.createConstantSource(); wBase1.offset.value = 0.5; wBase1.start();
+      const wBase2 = ctx.createConstantSource(); wBase2.offset.value = 0.5; wBase2.start();
+      const win1   = ctx.createGain(); win1.gain.value = 0;
+      const win2   = ctx.createGain(); win2.gain.value = 0;
+      cosLFO.connect(cosG1); cosG1.connect(win1.gain); wBase1.connect(win1.gain);
+      cosLFO.connect(cosG2); cosG2.connect(win2.gain); wBase2.connect(win2.gain);
+      delay1.connect(win1); delay2.connect(win2);
 
-      // Shift-CV input (AnalyserNode polling reads the CV value, controls lfoFreq)
+      const merged = ctx.createGain(); merged.gain.value = 1;
+      win1.connect(merged); win2.connect(merged);
+
+      const { out, dryG, wetG } = wetDry(ctx, input, merged, p.mix ?? 1);
+
+      // All three oscillators start at the same moment — phase encoded in PeriodicWave
+      const now = ctx.currentTime;
+      lfo1.start(now); lfo2.start(now); cosLFO.start(now);
+
+      // Shift-CV via AnalyserNode polling
       const shiftCvIn = ctx.createGain(); shiftCvIn.gain.value = 1;
       const shiftCvAn = ctx.createAnalyser(); shiftCvAn.fftSize = 32;
       shiftCvIn.connect(shiftCvAn);
       const shiftBuf  = new Float32Array(new ArrayBuffer(32 * 4));
 
       const applyShift = (s: number) => {
-        const f = computeFreq(s);
-        lfo.frequency.value       = f;
-        lfoSmooth.frequency.value = Math.min(ctx.sampleRate / 2 - 1, f * SMOOTH_MULT);
-        lfoG.gain.value           = s >= 0 ? -DELAY_AMT : DELAY_AMT;
+        const f  = computeFreq(s);
+        const dd = s >= 0 ? -DELAY_AMT : DELAY_AMT;
+        lfo1.frequency.value = f; lfo2.frequency.value = f; cosLFO.frequency.value = f;
+        lfoG1.gain.value = dd; lfoG2.gain.value = dd;
       };
 
       const shiftPollId = setInterval(() => {
@@ -2681,9 +2724,14 @@ export function createAudioModule(
         },
         destroy: () => {
           clearInterval(shiftPollId);
-          try { lfo.stop(); } catch(_){}
-          try { dc.stop(); } catch(_){}
-          [input, delay, lfo, lfoSmooth, lfoG, dc, shiftCvIn, shiftCvAn, out, dryG, wetG,
+          try { lfo1.stop(); } catch(_){}
+          try { lfo2.stop(); } catch(_){}
+          try { cosLFO.stop(); } catch(_){}
+          try { dc1.stop(); } catch(_){}
+          try { dc2.stop(); } catch(_){}
+          [input, delay1, lfoG1, dc1, delay2, lfoG2, dc2,
+           cosLFO, cosG1, cosG2, wBase1, wBase2, win1, win2, merged,
+           shiftCvIn, shiftCvAn, out, dryG, wetG,
           ].forEach(n => { try { n.disconnect(); } catch(_){} });
         },
       };
@@ -2829,7 +2877,7 @@ export function createAudioModule(
         const mRect = ctx.createWaveShaper(); mRect.curve = hwCurve;
         const mLP   = ctx.createBiquadFilter(); mLP.type = 'lowpass';
         mLP.frequency.value = relToHz(p.release ?? 0.3);
-        mLP.Q.value = 0; // Butterworth — no overshoot
+        mLP.Q.value = 0.5; // slightly overdamped — no resonance ringing on the envelope
 
         // ── Carrier synthesis ──────────────────────────────────────────────────
         const cBP = ctx.createBiquadFilter(); cBP.type = 'bandpass';
