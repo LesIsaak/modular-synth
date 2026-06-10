@@ -9,22 +9,31 @@ const ORANGE = '#e87d27';
 
 type Jack = { x: number; y: number };
 
-// Six panel jacks arranged in two rows, like a small Eurorack faceplate.
+// Panel jacks arranged in three rows, like a Eurorack faceplate.
 const JACKS: Jack[] = [
-  { x: 70,  y: 70 },
-  { x: 200, y: 60 },
-  { x: 330, y: 72 },
-  { x: 90,  y: 200 },
-  { x: 230, y: 205 },
-  { x: 350, y: 195 },
+  { x: 60,  y: 55 },
+  { x: 160, y: 48 },
+  { x: 260, y: 52 },
+  { x: 360, y: 50 },
+  { x: 110, y: 165 },
+  { x: 210, y: 160 },
+  { x: 310, y: 168 },
+  { x: 60,  y: 275 },
+  { x: 160, y: 280 },
+  { x: 260, y: 272 },
+  { x: 360, y: 278 },
 ];
 
 // Patch cables: from-jack index, to-jack index, droop amount, color, delay (s).
 const CABLES: { from: number; to: number; sag: number; color: string; delay: number }[] = [
-  { from: 0, to: 4, sag: 70,  color: ORANGE,   delay: 0.35 },
-  { from: 1, to: 3, sag: 55,  color: '#f0a85a', delay: 0.75 },
-  { from: 2, to: 5, sag: 60,  color: ORANGE,   delay: 1.15 },
-  { from: 1, to: 5, sag: 90,  color: '#c96a1a', delay: 1.55 },
+  { from: 0,  to: 5,  sag: 70,  color: ORANGE,   delay: 0.25 },
+  { from: 1,  to: 7,  sag: 95,  color: '#f0a85a', delay: 0.50 },
+  { from: 2,  to: 6,  sag: 55,  color: ORANGE,   delay: 0.75 },
+  { from: 3,  to: 9,  sag: 90,  color: '#c96a1a', delay: 1.00 },
+  { from: 4,  to: 10, sag: 80,  color: ORANGE,   delay: 1.25 },
+  { from: 5,  to: 8,  sag: 60,  color: '#f0a85a', delay: 1.50 },
+  { from: 1,  to: 6,  sag: 50,  color: '#c96a1a', delay: 1.75 },
+  { from: 7,  to: 10, sag: 45,  color: ORANGE,   delay: 2.00 },
 ];
 
 /** Quadratic bezier path that droops downward between two jacks. */
@@ -37,7 +46,7 @@ function cablePath(a: Jack, b: Jack, sag: number): string {
 export function StartAnimation() {
   return (
     <svg
-      viewBox="0 0 420 270"
+      viewBox="0 0 420 330"
       className="w-full h-full"
       preserveAspectRatio="xMidYMid meet"
       aria-hidden="true"

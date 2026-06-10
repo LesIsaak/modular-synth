@@ -2622,8 +2622,8 @@ export default function SynthApp() {
       {!started && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/95 backdrop-blur-sm overflow-hidden">
           {/* Animated patch-cable backdrop */}
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-25">
-            <div className="w-[min(820px,90vw)] max-h-full">
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-50">
+            <div className="w-[min(1200px,98vw)] max-h-full">
               <StartAnimation />
             </div>
           </div>
