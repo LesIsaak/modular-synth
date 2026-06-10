@@ -2647,7 +2647,7 @@ export default function SynthApp() {
               </div>
               <div className="text-sm text-gray-500 tracking-[0.5em] uppercase" style={{ WebkitTextStroke: '0.5px #fff', paintOrder: 'stroke fill' }}>Synthesizer</div>
             </div>
-            <div className="text-xs text-gray-600 max-w-xs text-center leading-relaxed">
+            <div className="text-xs text-gray-300 max-w-xs text-center leading-relaxed">
               A patchable modular synthesizer in the browser.
               Pre-loaded with VCO → VCF → VCA → Output.
               Use the keyboard panel at the bottom to play.
