@@ -847,6 +847,22 @@ const FixedKeyboardPanel = memo(function FixedKeyboardPanel({
               transition: 'all 0.1s', opacity: started ? 1 : 0.4,
             }}
           >↑ LOAD</button>
+          {/* RESTART button */}
+          <button
+            onClick={() => {
+              if (window.confirm('Restart the synth? Any unsaved changes to your patch will be lost.')) {
+                window.location.reload();
+              }
+            }}
+            title="Restart the synth (reloads to the start screen)"
+            data-testid="restart-button"
+            style={{
+              height: 16, padding: '0 7px', fontSize: 7, letterSpacing: '0.16em',
+              borderRadius: 2, cursor: 'pointer', fontWeight: 700, textTransform: 'uppercase',
+              border: '1px solid #7f1d1d', background: '#181818', color: '#b91c1c',
+              transition: 'all 0.1s',
+            }}
+          >⟳ RESTART</button>
           {/* UNDO button */}
           <button
             onClick={onUndo}
