@@ -708,7 +708,7 @@ export function createAudioModule(
         [300, 800, 2300],  // U
       ];
       const input = ctx.createGain(); input.gain.value = 1;
-      const out = ctx.createGain(); out.gain.value = 0.4;
+      const out = ctx.createGain(); out.gain.value = p.mix ?? 0.8;
       let bands: BiquadFilterNode[] = [];
       const setVowel = (v: number) => {
         bands.forEach(b => b.disconnect());
@@ -723,7 +723,7 @@ export function createAudioModule(
       return {
         outputs: new Map([['out', out]]),
         inputs: new Map([['audio_in', { node: input }]]),
-        setParam: (id, val) => { p[id] = val; },
+        setParam: (id, val) => { p[id] = val; if (id === 'mix') out.gain.value = val; },
         setSelector: (id, val) => { if (id === 'vowel') setVowel(val); },
         destroy: () => { input.disconnect(); bands.forEach(b => b.disconnect()); out.disconnect(); },
       };
@@ -2729,6 +2729,8 @@ export function createAudioModule(
           try { cosLFO.stop(); } catch(_){}
           try { dc1.stop(); } catch(_){}
           try { dc2.stop(); } catch(_){}
+          try { wBase1.stop(); } catch(_){}
+          try { wBase2.stop(); } catch(_){}
           [input, delay1, lfoG1, dc1, delay2, lfoG2, dc2,
            cosLFO, cosG1, cosG2, wBase1, wBase2, win1, win2, merged,
            shiftCvIn, shiftCvAn, out, dryG, wetG,
@@ -2880,8 +2882,7 @@ export function createAudioModule(
         allNodes.push(mBP, mAn, mSnk, cBP, env);
       });
 
-      // Per-band exponential envelope: instant attack, exponential release.
-      // Coefficient: exp(−1 / (sampleRate × releaseTime / fftSize))
+      // Per-band exponential envelope follower with ATTACK rise + RELEASE fall.
       const envelopes   = new Float32Array(numBands);
       // Poll at 16 ms (≈ rAF cadence).  Any shorter clogs the main-thread timer
       // queue and starves sequencer/clock setTimeout callbacks — causing global
@@ -2889,9 +2890,10 @@ export function createAudioModule(
       // makeCoeff uses the actual poll interval in seconds so the time constant
       // is correct regardless of sampleRate or fftSize.
       const POLL_MS     = 16;
-      const makeCoeff   = (rel: number) =>
-        Math.exp(-(POLL_MS / 1000) / Math.max(0.001, rel));
+      const makeCoeff   = (t: number) =>
+        Math.exp(-(POLL_MS / 1000) / Math.max(0.001, t));
       let releaseCoeff  = makeCoeff(p.release ?? 0.1);
+      let attackCoeff   = makeCoeff(p.attack ?? 0.01);
 
       const vocoderPollId = setInterval(() => {
         modAns.forEach((an, i) => {
@@ -2901,7 +2903,12 @@ export function createAudioModule(
             const a = Math.abs(modBufs[i][s]);
             if (a > peak) peak = a;
           }
-          envelopes[i] = peak >= envelopes[i] ? peak : envelopes[i] * releaseCoeff;
+          // Rising edge eases toward peak with the ATTACK time constant;
+          // falling edge decays with RELEASE.  Both coefficients are
+          // exp(−dt/τ), so a tiny τ collapses to a near-instant response.
+          envelopes[i] = peak >= envelopes[i]
+            ? peak - (peak - envelopes[i]) * attackCoeff
+            : envelopes[i] * releaseCoeff;
           envGains[i].gain.value = Math.min(1, envelopes[i]);
         });
       }, POLL_MS);
@@ -2915,6 +2922,7 @@ export function createAudioModule(
         setParam: (id, val) => {
           p[id] = val;
           if (id === 'mix') { mixGain.gain.value = val; carDry.gain.value = 1 - val; }
+          if (id === 'attack') attackCoeff = makeCoeff(val);
           if (id === 'release') releaseCoeff = makeCoeff(val);
         },
         destroy: () => {
@@ -4075,7 +4083,6 @@ export function createAudioModule(
         }
 
         deviceLabel = 'Requesting…';
-        console.log('[AUDIO TRIG] startCapture()', deviceId ?? '(default)');
 
         // Resume AudioContext if browser suspended it
         if (ctx.state === 'suspended') { try { await ctx.resume(); } catch (_) {} }
@@ -4094,7 +4101,6 @@ export function createAudioModule(
           const track = stream.getAudioTracks()[0];
           deviceLabel = track?.label ?? 'Unknown device';
           const numCh = track?.getSettings().channelCount ?? 2;
-          console.log('[AUDIO TRIG] Capture OK —', deviceLabel, numCh, 'ch');
           sourceNode = ctx.createMediaStreamSource(stream);
           splitter = ctx.createChannelSplitter(Math.max(numCh, 1));
           sourceNode.connect(splitter);
@@ -4106,7 +4112,6 @@ export function createAudioModule(
             deviceList = all
               .filter(d => d.kind === 'audioinput')
               .map(d => ({ deviceId: d.deviceId, label: d.label || `Mic ${d.deviceId.slice(0, 8)}` }));
-            console.log('[AUDIO TRIG] Devices:', deviceList.map(d => d.label));
           }).catch(() => {});
         } catch (err) {
           const msg = err instanceof DOMException

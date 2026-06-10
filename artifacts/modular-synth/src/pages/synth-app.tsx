@@ -1055,6 +1055,7 @@ function useMIDI(
 
     return () => {
       removeMidiClockListener(clockListener);
+      if (access) access.onstatechange = null;
       access?.inputs.forEach(i => { i.onmidimessage = null; });
     };
   }, []);
