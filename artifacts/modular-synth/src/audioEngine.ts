@@ -2744,29 +2744,36 @@ export function createAudioModule(
     }
 
     case 'resonator': {
+      // Peaking EQ filters in series — each boosts its harmonic frequency without
+      // attenuating the rest of the spectrum.  This makes the resonance clearly audible
+      // at any setting, unlike bandpass-based designs which capture almost no energy
+      // from typical signals at high Q values.
       const input = ctx.createGain(); input.gain.value = 1;
       const out   = ctx.createGain(); out.gain.value   = 1;
       const numHarmonics = Math.max(1, Math.round(p.harmonics ?? 4));
       const baseFreq     = p.freq ?? 440;
       const mix0         = p.mix  ?? 0.7;
-      const bands:     BiquadFilterNode[] = [];
-      const bandGains: GainNode[]         = [];   // stored so setParam('mix') can update them
+      const MAX_DB       = 24; // dB boost at mix=1
+      const bands: BiquadFilterNode[] = [];
+
+      // Chain filters in series: input → peak1 → peak2 → ... → out
+      let node: AudioNode = input;
       for (let h = 1; h <= numHarmonics; h++) {
-        const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
-        bp.frequency.value = baseFreq * h;
-        bp.Q.value = p.q ?? 20;
-        const g = ctx.createGain(); g.gain.value = mix0 / numHarmonics / h;
-        input.connect(bp); bp.connect(g); g.connect(out);
-        bands.push(bp); bandGains.push(g);
+        const bp = ctx.createBiquadFilter(); bp.type = 'peaking';
+        bp.frequency.value = Math.min(ctx.sampleRate / 2 - 1, baseFreq * h);
+        bp.Q.value  = p.q   ?? 20;
+        bp.gain.value = mix0 * MAX_DB; // BiquadFilter.gain is in dB for peaking type
+        node.connect(bp);
+        node = bp;
+        bands.push(bp);
       }
-      const dry = ctx.createGain(); dry.gain.value = 1 - mix0;
-      input.connect(dry); dry.connect(out);
-      // q_cv: adds to each band's Q (AudioParam modulation)
-      const qCv = ctx.createConstantSource(); qCv.offset.value = 0; qCv.start();
-      bands.forEach(b => qCv.connect(b.Q));
-      // freq_cv: adds a Hz offset to all band frequencies (AudioParam modulation)
+      node.connect(out);
+
+      // CV: freq_cv shifts all band centres; q_cv adjusts all Q values
+      const qCv    = ctx.createConstantSource(); qCv.offset.value    = 0; qCv.start();
       const freqCvR = ctx.createConstantSource(); freqCvR.offset.value = 0; freqCvR.start();
-      bands.forEach(b => freqCvR.connect(b.frequency));
+      bands.forEach(b => { qCv.connect(b.Q); freqCvR.connect(b.frequency); });
+
       return {
         outputs: new Map([['out', out]]),
         inputs: new Map([
@@ -2776,18 +2783,16 @@ export function createAudioModule(
         ]),
         setParam: (id, val) => {
           p[id] = val;
-          if (id === 'freq') bands.forEach((b, i) => { b.frequency.value = val * (i + 1); });
-          if (id === 'q')    bands.forEach(b => { b.Q.value = val; });
-          if (id === 'mix') {
-            dry.gain.value = 1 - val;
-            // Also update every band gain — previously these were never stored so mix was broken
-            bandGains.forEach((g, i) => { g.gain.value = val / numHarmonics / (i + 1); });
-          }
+          if (id === 'freq') bands.forEach((b, i) => {
+            b.frequency.value = Math.min(ctx.sampleRate / 2 - 1, val * (i + 1));
+          });
+          if (id === 'q')   bands.forEach(b => { b.Q.value = val; });
+          if (id === 'mix') bands.forEach(b => { b.gain.value = val * MAX_DB; });
         },
         destroy: () => {
           try { qCv.stop(); } catch(_){} qCv.disconnect();
           try { freqCvR.stop(); } catch(_){} freqCvR.disconnect();
-          [...bands, ...bandGains, input, out, dry].forEach(n => { try { n.disconnect(); } catch(_){} });
+          [input, out, ...bands].forEach(n => { try { n.disconnect(); } catch(_){} });
         },
       };
     }
@@ -2813,11 +2818,15 @@ export function createAudioModule(
       const allNodes:  AudioNode[]    = [carrier, modulator, mixGain, out];
 
       freqs.forEach(freq => {
-        // Modulator analysis: BPF → AnalyserNode (not in output chain; polled in JS)
-        const mBP = ctx.createBiquadFilter(); mBP.type = 'bandpass';
+        // Modulator analysis: BPF → AnalyserNode → zero-gain sink → out
+        // The zero-gain sink is CRITICAL: without an output connection that reaches the
+        // AudioDestination, Chrome will not process the AnalyserNode and getFloatTimeDomainData
+        // always returns zeros (silence → env stays 0 → no carrier output).
+        const mBP  = ctx.createBiquadFilter(); mBP.type = 'bandpass';
         mBP.frequency.value = freq; mBP.Q.value = 3;
-        const mAn = ctx.createAnalyser(); mAn.fftSize = 32;
-        modulator.connect(mBP); mBP.connect(mAn);
+        const mAn  = ctx.createAnalyser(); mAn.fftSize = 32;
+        const mSnk = ctx.createGain(); mSnk.gain.value = 0; // silent but keeps node active
+        modulator.connect(mBP); mBP.connect(mAn); mAn.connect(mSnk); mSnk.connect(out);
 
         // Carrier synthesis: BPF → GainNode whose gain is driven by the envelope
         const cBP = ctx.createBiquadFilter(); cBP.type = 'bandpass';
@@ -2828,7 +2837,7 @@ export function createAudioModule(
         envGains.push(env);
         modAns.push(mAn);
         modBufs.push(new Float32Array(new ArrayBuffer(mAn.fftSize * 4)));
-        allNodes.push(mBP, mAn, cBP, env);
+        allNodes.push(mBP, mAn, mSnk, cBP, env);
       });
 
       // Per-band exponential envelope state
