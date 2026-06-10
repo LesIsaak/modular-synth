@@ -2883,11 +2883,14 @@ export function createAudioModule(
       // Per-band exponential envelope: instant attack, exponential release.
       // Coefficient: exp(−1 / (sampleRate × releaseTime / fftSize))
       const envelopes   = new Float32Array(numBands);
-      // makeCoeff assumes one poll per fftSize-sample buffer (256/44100 ≈ 5.8 ms).
-      // setInterval at 6 ms matches this, so the release time constant is accurate
-      // and envelope latency is ≈3 ms average instead of ≈16 ms at 32 ms.
+      // Poll at 16 ms (≈ rAF cadence).  Any shorter clogs the main-thread timer
+      // queue and starves sequencer/clock setTimeout callbacks — causing global
+      // audio latency across all modules, not just the vocoder.
+      // makeCoeff uses the actual poll interval in seconds so the time constant
+      // is correct regardless of sampleRate or fftSize.
+      const POLL_MS     = 16;
       const makeCoeff   = (rel: number) =>
-        Math.exp(-1 / Math.max(1, ctx.sampleRate * Math.max(0.001, rel) / 256));
+        Math.exp(-(POLL_MS / 1000) / Math.max(0.001, rel));
       let releaseCoeff  = makeCoeff(p.release ?? 0.1);
 
       const vocoderPollId = setInterval(() => {
@@ -2901,7 +2904,7 @@ export function createAudioModule(
           envelopes[i] = peak >= envelopes[i] ? peak : envelopes[i] * releaseCoeff;
           envGains[i].gain.value = Math.min(1, envelopes[i]);
         });
-      }, 6);
+      }, POLL_MS);
 
       return {
         outputs: new Map([['out', out]]),
