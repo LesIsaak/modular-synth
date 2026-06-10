@@ -2,6 +2,10 @@ import { app, BrowserWindow, protocol } from 'electron';
 import fs from 'fs';
 import path from 'path';
 
+// Reduce audio latency: smaller output buffer + keep the audio service in-process.
+app.commandLine.appendSwitch('audio-buffer-size', '256');
+app.commandLine.appendSwitch('disable-features', 'AudioServiceOutOfProcess');
+
 // Must be called before app is ready
 protocol.registerSchemesAsPrivileged([
   {
@@ -53,6 +57,7 @@ const createWindow = () => {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      backgroundThrottling: false,
     },
   });
 
