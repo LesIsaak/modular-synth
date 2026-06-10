@@ -2614,14 +2614,22 @@ export default function SynthApp() {
       );
       if (!matchedKnob) continue;
 
-      const srcGetLevel = audioModulesRef.current.get(cable.fromModuleId)?.getLevel;
+      const srcMod      = audioModulesRef.current.get(cable.fromModuleId);
       const destMod     = audioModulesRef.current.get(cable.toModuleId);
-      // Prefer source's getLevel; fall back to destination's getPortLevel so
-      // modules that read CV via AnalyserNode taps (e.g. bd_drum) still show
-      // the indicator regardless of which source is patched in.
-      const toPortId = cable.toPortId;
-      const levelFn: (() => number) | undefined = srcGetLevel ??
-        (destMod?.getPortLevel ? () => destMod.getPortLevel!(toPortId) : undefined);
+      const fromPortId  = cable.fromPortId;
+      const toPortId    = cable.toPortId;
+      // Prefer the source's per-port level, but only when it actually reports a
+      // value for THIS output port (getPortLevel returns undefined for ports it
+      // doesn't handle) — so multi-output sources show the right signal (e.g.
+      // keyboard mod_out = mod wheel position, not the gate) without blanking the
+      // indicator for sources whose getPortLevel only covers their CV inputs.
+      // Then fall back to the source's generic getLevel, then the destination's
+      // getPortLevel so AnalyserNode-tap modules (e.g. bd_drum) still light up.
+      const srcHasPort = !!srcMod?.getPortLevel && srcMod.getPortLevel(fromPortId) !== undefined;
+      const levelFn: (() => number) | undefined =
+        (srcHasPort ? () => srcMod!.getPortLevel!(fromPortId) ?? 0 : undefined) ??
+        srcMod?.getLevel ??
+        (destMod?.getPortLevel ? () => destMod.getPortLevel!(toPortId) ?? 0 : undefined);
       if (!levelFn) continue;
       if (!map.has(cable.toModuleId)) map.set(cable.toModuleId, new Map());
       map.get(cable.toModuleId)!.set(matchedKnob.id, levelFn);
@@ -2639,8 +2647,12 @@ export default function SynthApp() {
       const src = audioModulesRef.current.get(cable.fromModuleId);
       if (!src) continue;
       const fromPortId = cable.fromPortId;
-      const getLevelFn: (() => number) | undefined = src.getPortLevel
-        ? () => src.getPortLevel!(fromPortId)
+      // Prefer the source's per-port level, but only when it reports a value for
+      // THIS output port (getPortLevel returns undefined for unhandled ports);
+      // otherwise fall back to the generic getLevel.
+      const srcHasPort = !!src.getPortLevel && src.getPortLevel(fromPortId) !== undefined;
+      const getLevelFn: (() => number) | undefined = srcHasPort
+        ? () => src.getPortLevel!(fromPortId) ?? 0
         : src.getLevel;
       if (!getLevelFn) continue;
       if (!map.has(cable.toModuleId)) map.set(cable.toModuleId, new Map());

@@ -17,8 +17,10 @@ export interface AudioModuleNodes {
   stepRef?: { value: number };
   /** Returns a 0–1 activity level; polled by the UI at ~60 fps for indicator LEDs */
   getLevel?: () => number;
-  /** Per-port variant of getLevel — use when the module has multiple outputs at different rates */
-  getPortLevel?: (portId: string) => number;
+  /** Per-port variant of getLevel — use when the module has multiple outputs at
+   *  different rates. Return `undefined` for ports this module doesn't report on,
+   *  so callers fall back to the generic getLevel. */
+  getPortLevel?: (portId: string) => number | undefined;
   /** Per-port gate handlers (e.g. individual drum voice triggers) */
   portNoteOn?: Map<string, (time: number, freq?: number) => void>;
   /** Gate-off counterpart to portNoteOn — called when a connected gate cable goes low */
@@ -1385,7 +1387,7 @@ export function createAudioModule(
         getLevel: () => Math.max(0, Math.min(1, cvNode.offset.value / 500)),
         getPortLevel: (portId: string) => {
           if (portId === 'depth_cv') return Math.max(0, Math.min(1, (readDepth() + 1) / 2));
-          return 0;
+          return undefined;
         },
         setParam: (id, val) => {
           p[id] = val;
@@ -3366,6 +3368,13 @@ export function createAudioModule(
         },
         setParam: () => {},
         getLevel: () => Math.max(0, 1 - (performance.now() - lastGateMs) / 200),
+        // Per-port level so knob CV indicators read the right signal:
+        // mod_out reports the live mod wheel position (0..1); other ports fall
+        // back to the gate envelope.
+        getPortLevel: (portId: string) =>
+          portId === 'mod_out'
+            ? Math.max(0, Math.min(1, modSource.offset.value))
+            : Math.max(0, 1 - (performance.now() - lastGateMs) / 200),
         destroy: () => {
           freqSource.stop();  freqSource.disconnect();
           pitchSource.stop(); pitchSource.disconnect();
@@ -3801,7 +3810,7 @@ export function createAudioModule(
         getPortLevel: (portId: string) => {
           if (portId === 'tune_cv')  return Math.max(0, Math.min(1, (tuneTap.read()  + 1) / 2));
           if (portId === 'decay_cv') return Math.max(0, Math.min(1, (decayTap.read() + 1) / 2));
-          return 0;
+          return undefined;
         },
         setParam: (id, val) => {
           p[id] = val;
