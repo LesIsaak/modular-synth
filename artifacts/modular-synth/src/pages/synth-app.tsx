@@ -595,6 +595,7 @@ const FixedKeyboardPanel = memo(function FixedKeyboardPanel({
   }, [extPitch]);
   const heldMidiRef = useRef<number | null>(null);
   const holdRef     = useRef(false);
+  const mouseDownRef = useRef(false);   // true while a mouse button is held over the keys
 
   const pressKey = (semitone: number, octOff = 0) => {
     if (!started) return;
@@ -624,6 +625,19 @@ const FixedKeyboardPanel = memo(function FixedKeyboardPanel({
     setActiveNote(null);
     onNote(freq, false);             // pass the same freq that was used in pressKey
   };
+
+  // Release whatever note is currently held (used by the global mouse-up handler).
+  // A ref keeps the window listener pointed at the latest closure without re-subscribing.
+  const releaseHeldRef = useRef<() => void>(() => {});
+  releaseHeldRef.current = () => {
+    mouseDownRef.current = false;
+    if (heldMidiRef.current !== null) releaseKey(heldMidiRef.current);
+  };
+  useEffect(() => {
+    const up = () => releaseHeldRef.current();
+    window.addEventListener('mouseup', up);
+    return () => window.removeEventListener('mouseup', up);
+  }, []);
 
   const toggleHold = () => {
     const next = !holdRef.current;
@@ -677,9 +691,8 @@ const FixedKeyboardPanel = memo(function FixedKeyboardPanel({
                   transition: 'background 0.04s',
                   userSelect: 'none',
                 }}
-                onMouseDown={e => { e.preventDefault(); pressKey(semitone, octOff); }}
-                onMouseUp={() => releaseKey(midi)}
-                onMouseLeave={() => { if (activeNote === midi) releaseKey(midi); }}
+                onMouseDown={e => { e.preventDefault(); mouseDownRef.current = true; pressKey(semitone, octOff); }}
+                onMouseEnter={() => { if (mouseDownRef.current) pressKey(semitone, octOff); }}
                 data-testid={`key-w-oct${octave + octOff}-${NOTE_NAMES[semitone]}`}
               />
             );
@@ -711,9 +724,8 @@ const FixedKeyboardPanel = memo(function FixedKeyboardPanel({
                   transition: 'background 0.04s',
                   userSelect: 'none',
                 }}
-                onMouseDown={e => { e.preventDefault(); pressKey(semitone, octOff); }}
-                onMouseUp={() => releaseKey(midi)}
-                onMouseLeave={() => { if (activeNote === midi) releaseKey(midi); }}
+                onMouseDown={e => { e.preventDefault(); mouseDownRef.current = true; pressKey(semitone, octOff); }}
+                onMouseEnter={() => { if (mouseDownRef.current) pressKey(semitone, octOff); }}
                 data-testid={`key-b-oct${octave + octOff}-${NOTE_NAMES[semitone]}`}
               />
             );
