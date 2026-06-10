@@ -231,6 +231,11 @@ export function createAudioModule(
   _timingCtx = ctx; // keep reference current so the Worker handler can convert timestamps
   const p = { ...params };
 
+  // Scales a normalized (0..1) CV source up into a filter's Q range so resonance
+  // modulation (e.g. mod wheel -> RES) is musically audible. See createAudioModule
+  // filter cases; the destination owns the scale because CV here is in natural units.
+  const RES_CV_SCALE = 12;
+
   const cancelAndHold = (param: AudioParam, t: number) => {
     if (typeof (param as AudioParam & { cancelAndHoldAtTime?: (t: number) => AudioParam }).cancelAndHoldAtTime === 'function') {
       (param as AudioParam & { cancelAndHoldAtTime: (t: number) => AudioParam }).cancelAndHoldAtTime(t);
@@ -583,12 +588,13 @@ export function createAudioModule(
         return f;
       });
       for (let i = 0; i < stages - 1; i++) filters[i].connect(filters[i + 1]);
+      const resScale = ctx.createGain(); resScale.gain.value = RES_CV_SCALE; resScale.connect(filters[0].Q);
       return {
         outputs: new Map([['out', filters[stages - 1]]]),
         inputs: new Map([
           ['audio_in', { node: filters[0] }],
           ['cutoff_cv', { node: filters[0], param: filters[0].frequency }],
-          ['res_cv', { node: filters[0], param: filters[0].Q }],
+          ['res_cv', { node: resScale }],
           ['fm_in', { node: filters[0] }],
         ]),
         setParam: (id, val) => {
@@ -597,7 +603,7 @@ export function createAudioModule(
           if (id === 'cutoff') filters.forEach(f => { f.frequency.cancelScheduledValues(t); f.frequency.setTargetAtTime(val, t, 0.008); });
           if (id === 'res')    filters.forEach(f => { f.Q.cancelScheduledValues(t); f.Q.setTargetAtTime(val / stages, t, 0.008); });
         },
-        destroy: () => filters.forEach(f => f.disconnect()),
+        destroy: () => { filters.forEach(f => f.disconnect()); resScale.disconnect(); },
       };
     }
 
@@ -634,12 +640,13 @@ export function createAudioModule(
       f.frequency.value = p.cutoff ?? 800; f.Q.value = p.res ?? 1;
       const pre = ctx.createWaveShaper(); pre.curve = softClip(p.drive ?? 2);
       pre.connect(f);
+      const resScale = ctx.createGain(); resScale.gain.value = RES_CV_SCALE; resScale.connect(f.Q);
       return {
         outputs: new Map([['out', f]]),
         inputs: new Map([
           ['audio_in', { node: pre }],
           ['cutoff_cv', { node: f, param: f.frequency }],
-          ['res_cv', { node: f, param: f.Q }],
+          ['res_cv', { node: resScale }],
           ['fm_in', { node: pre }],
         ]),
         setParam: (id, val) => {
@@ -648,7 +655,7 @@ export function createAudioModule(
           if (id === 'res') f.Q.value = val;
           if (id === 'drive') pre.curve = softClip(val);
         },
-        destroy: () => { pre.disconnect(); f.disconnect(); },
+        destroy: () => { pre.disconnect(); f.disconnect(); resScale.disconnect(); },
       };
     }
 
@@ -661,12 +668,14 @@ export function createAudioModule(
       [lp, hp, bp, notch].forEach(f => {
         f.frequency.value = p.cutoff ?? 800; f.Q.value = p.res ?? 1; input.connect(f);
       });
+      const resScale = ctx.createGain(); resScale.gain.value = RES_CV_SCALE;
+      [lp, hp, bp, notch].forEach(f => resScale.connect(f.Q));
       return {
         outputs: new Map<string, AudioNode>([['out_lp', lp], ['out_hp', hp], ['out_bp', bp], ['out_notch', notch]]),
         inputs: new Map([
           ['audio_in', { node: input }],
           ['cutoff_cv', { node: lp, param: lp.frequency }],
-          ['res_cv', { node: lp, param: lp.Q }],
+          ['res_cv', { node: resScale }],
           ['fm_in', { node: input }],
         ]),
         setParam: (id, val) => {
@@ -674,7 +683,7 @@ export function createAudioModule(
           if (id === 'cutoff') [lp, hp, bp, notch].forEach(f => { f.frequency.value = val; });
           if (id === 'res') [lp, hp, bp, notch].forEach(f => { f.Q.value = val; });
         },
-        destroy: () => { input.disconnect(); [lp, hp, bp, notch].forEach(f => f.disconnect()); },
+        destroy: () => { input.disconnect(); resScale.disconnect(); [lp, hp, bp, notch].forEach(f => f.disconnect()); },
       };
     }
 
@@ -767,12 +776,13 @@ export function createAudioModule(
       resCs.connect(lp.Q); resCs.connect(hp.Q);
 
       const morphCs = ctx.createConstantSource(); morphCs.offset.value = morph; morphCs.start();
+      const resScale = ctx.createGain(); resScale.gain.value = RES_CV_SCALE; resScale.connect(resCs.offset);
       return {
         outputs: new Map([['out', out]]),
         inputs: new Map([
           ['audio_in',  { node: inSplit }],
           ['cutoff_cv', { node: cvAmtGain }],
-          ['res_cv',    { node: resCs,   param: resCs.offset   }],
+          ['res_cv',    { node: resScale }],
           ['morph_cv',  { node: morphCs, param: morphCs.offset }],
         ]),
         setParam: (id, val) => {
@@ -786,7 +796,7 @@ export function createAudioModule(
           cutoffCs.stop(); cutoffCs.disconnect();
           resCs.stop();    resCs.disconnect();
           morphCs.stop();  morphCs.disconnect();
-          [lp, hp, lpG, hpG, out, inSplit, cvAmtGain].forEach(n => n.disconnect());
+          [lp, hp, lpG, hpG, out, inSplit, cvAmtGain, resScale].forEach(n => n.disconnect());
         },
       };
     }
