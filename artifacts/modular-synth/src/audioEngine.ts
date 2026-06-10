@@ -2883,6 +2883,9 @@ export function createAudioModule(
       // Per-band exponential envelope: instant attack, exponential release.
       // Coefficient: exp(−1 / (sampleRate × releaseTime / fftSize))
       const envelopes   = new Float32Array(numBands);
+      // makeCoeff assumes one poll per fftSize-sample buffer (256/44100 ≈ 5.8 ms).
+      // setInterval at 6 ms matches this, so the release time constant is accurate
+      // and envelope latency is ≈3 ms average instead of ≈16 ms at 32 ms.
       const makeCoeff   = (rel: number) =>
         Math.exp(-1 / Math.max(1, ctx.sampleRate * Math.max(0.001, rel) / 256));
       let releaseCoeff  = makeCoeff(p.release ?? 0.1);
@@ -2898,7 +2901,7 @@ export function createAudioModule(
           envelopes[i] = peak >= envelopes[i] ? peak : envelopes[i] * releaseCoeff;
           envGains[i].gain.value = Math.min(1, envelopes[i]);
         });
-      }, 32);
+      }, 6);
 
       return {
         outputs: new Map([['out', out]]),
