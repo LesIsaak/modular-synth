@@ -9,6 +9,7 @@ import { createAudioModule, connectAudioPorts, disconnectAudioPorts, getCurrentT
 import { MODULE_PATCH_EXAMPLES, PatchExample } from '../modulePatchExamples';
 import ModulePanel from '../components/ModulePanel';
 import IORefPanel from '../components/IORefPanel';
+import { StartAnimation } from '../components/StartAnimation';
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 const SLOT_W    = 220;  // rack slot width (snap grid)
@@ -2619,8 +2620,14 @@ export default function SynthApp() {
     <div className="flex h-screen w-full overflow-hidden bg-[#0a0a0a] font-mono select-none">
       {/* Start overlay */}
       {!started && (
-        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/95 backdrop-blur-sm">
-          <div className="text-center space-y-6">
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/95 backdrop-blur-sm overflow-hidden">
+          {/* Animated patch-cable backdrop */}
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-25">
+            <div className="w-[min(820px,90vw)] max-h-full">
+              <StartAnimation />
+            </div>
+          </div>
+          <div className="relative text-center space-y-6">
             <div className="flex justify-center mb-2">
               <svg width="72" height="72" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <rect width="180" height="180" rx="36" fill="#E87D27"/>
