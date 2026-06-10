@@ -2641,11 +2641,11 @@ export default function SynthApp() {
               </svg>
             </div>
             <div>
-              <div className="text-xs font-semibold tracking-[0.4em] uppercase mb-1" style={{ color: '#e87d27' }}>OrangeCastle</div>
-              <div className="text-4xl font-bold tracking-[0.3em] uppercase mb-2" style={{ color: '#e87d27' }}>
+              <div className="text-xs font-semibold tracking-[0.4em] uppercase mb-1" style={{ color: '#e87d27', WebkitTextStroke: '0.5px #fff', paintOrder: 'stroke fill' }}>OrangeCastle</div>
+              <div className="text-4xl font-bold tracking-[0.3em] uppercase mb-2" style={{ color: '#e87d27', WebkitTextStroke: '1.5px #fff', paintOrder: 'stroke fill' }}>
                 MODULAR
               </div>
-              <div className="text-sm text-gray-500 tracking-[0.5em] uppercase">Synthesizer</div>
+              <div className="text-sm text-gray-500 tracking-[0.5em] uppercase" style={{ WebkitTextStroke: '0.5px #fff', paintOrder: 'stroke fill' }}>Synthesizer</div>
             </div>
             <div className="text-xs text-gray-600 max-w-xs text-center leading-relaxed">
               A patchable modular synthesizer in the browser.
