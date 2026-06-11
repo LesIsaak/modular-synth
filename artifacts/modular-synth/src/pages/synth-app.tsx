@@ -2028,7 +2028,11 @@ export default function SynthApp() {
       const typeDef = MODULE_TYPE_MAP.get(mod.typeId);
       for (const sel of typeDef?.selectors ?? []) {
         const val = mod.params[sel.id] ?? sel.default;
-        audio.setSelector?.(sel.id, val);
+        try {
+          audio.setSelector?.(sel.id, val);
+        } catch (err) {
+          console.error(`[synth] setSelector "${sel.id}" failed for "${mod.typeId}" during patch load:`, err);
+        }
       }
     }
 

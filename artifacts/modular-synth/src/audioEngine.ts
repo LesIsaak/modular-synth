@@ -210,13 +210,20 @@ function makeClockTimer(getInterval: () => number, onTick: (beatIndex: number) =
   const id = ++_clockTimerSeq;
   _clockCallbacks.set(id, onTick);
   const worker = getClockWorker();
-  worker.postMessage({ type: 'create', id, intervalMs: getInterval() });
+  // Guard the whole timer class: a non-finite or non-positive interval (e.g. from a
+  // corrupted/out-of-range bpm or div param) would make the worker fire with a NaN/0
+  // delay, producing a runaway loop that freezes the tab. Clamp to a safe fallback.
+  const safeInterval = () => {
+    const ms = getInterval();
+    return Number.isFinite(ms) && ms > 0 ? ms : 1000;
+  };
+  worker.postMessage({ type: 'create', id, intervalMs: safeInterval() });
 
   return {
-    restart: () => worker.postMessage({ type: 'restart', id, intervalMs: getInterval() }),
+    restart: () => worker.postMessage({ type: 'restart', id, intervalMs: safeInterval() }),
     // Send new intervalMs without resetting the clock — current beat plays on schedule,
     // next beat uses the new tempo. Use this for BPM/div knob changes instead of destroy+create.
-    updateInterval: () => worker.postMessage({ type: 'update', id, intervalMs: getInterval() }),
+    updateInterval: () => worker.postMessage({ type: 'update', id, intervalMs: safeInterval() }),
     destroy: () => {
       worker.postMessage({ type: 'destroy', id });
       _clockCallbacks.delete(id);
@@ -264,7 +271,11 @@ export function createAudioModule(
       oscs.forEach((o, i) => o.connect(waveGains[i]));
       // main selector output
       const mainOut = ctx.createGain(); mainOut.gain.value = 1;
-      let selectedIdx = Math.round(p.wave ?? 0);
+      const clampWaveIdx = (v: number) => {
+        const n = Math.round(v);
+        return Number.isFinite(n) ? Math.max(0, Math.min(waveGains.length - 1, n)) : 0;
+      };
+      let selectedIdx = clampWaveIdx(p.wave ?? 0);
       waveGains[selectedIdx].connect(mainOut);
       return {
         outputs: new Map<string, AudioNode>([
@@ -285,7 +296,7 @@ export function createAudioModule(
         setSelector: (id, val) => {
           if (id === 'wave') {
             waveGains[selectedIdx].disconnect(mainOut);
-            selectedIdx = Math.round(val);
+            selectedIdx = clampWaveIdx(val);
             waveGains[selectedIdx].connect(mainOut);
           }
         },
@@ -1466,7 +1477,7 @@ export function createAudioModule(
 
       // div selector: 1/16 1/8 1/4 1/2 1/1  → beat fractions
       const DIV_MULTS = [0.25, 0.5, 1, 2, 4];
-      const getStepMs = () => 60000 / (p.bpm ?? 120) * DIV_MULTS[Math.round(p.div ?? 1)];
+      const getStepMs = () => 60000 / (p.bpm ?? 120) * (DIV_MULTS[Math.round(p.div ?? 1)] ?? 1);
 
       const buildSeq = (): number[] => {
         const oct = Math.round(p.octaves ?? 1);
