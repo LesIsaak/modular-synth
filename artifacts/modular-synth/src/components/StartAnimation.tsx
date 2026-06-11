@@ -1,153 +1,151 @@
 /**
- * StartAnimation — a one-shot 3-second SVG animation for the start screen.
- * Ports power on, patch cables draw in with a gravity droop, and plug tips
- * snap into the jacks with a glow pulse. Pure SVG + scoped CSS keyframes,
- * no dependencies. Sits behind the start-screen content as a faint backdrop.
+ * StartAnimation — an oscilloscope-style backdrop for the start screen.
+ * A faint graticule grid powers on, then two glowing waveforms scroll across
+ * the screen while a scan beam sweeps left-to-right, like a live CRT scope.
+ * Pure SVG + scoped CSS keyframes, no dependencies. Sits behind the
+ * start-screen content as a faint backdrop.
  */
 
 const ORANGE = '#e87d27';
+const W = 420;
+const H = 330;
+const CY = 165;
 
-type Jack = { x: number; y: number };
-
-// Panel jacks arranged in three rows, like a Eurorack faceplate.
-const JACKS: Jack[] = [
-  { x: 60,  y: 55 },
-  { x: 160, y: 48 },
-  { x: 260, y: 52 },
-  { x: 360, y: 50 },
-  { x: 110, y: 165 },
-  { x: 210, y: 160 },
-  { x: 310, y: 168 },
-  { x: 60,  y: 275 },
-  { x: 160, y: 280 },
-  { x: 260, y: 272 },
-  { x: 360, y: 278 },
-];
-
-// Patch cables: from-jack index, to-jack index, droop amount, color, delay (s).
-const CABLES: { from: number; to: number; sag: number; color: string; delay: number }[] = [
-  { from: 0,  to: 5,  sag: 70,  color: ORANGE,   delay: 0.25 },
-  { from: 1,  to: 7,  sag: 95,  color: '#f0a85a', delay: 0.50 },
-  { from: 2,  to: 6,  sag: 55,  color: ORANGE,   delay: 0.75 },
-  { from: 3,  to: 9,  sag: 90,  color: '#c96a1a', delay: 1.00 },
-  { from: 4,  to: 10, sag: 80,  color: ORANGE,   delay: 1.25 },
-  { from: 5,  to: 8,  sag: 60,  color: '#f0a85a', delay: 1.50 },
-  { from: 1,  to: 6,  sag: 50,  color: '#c96a1a', delay: 1.75 },
-  { from: 7,  to: 10, sag: 45,  color: ORANGE,   delay: 2.00 },
-];
-
-/** Quadratic bezier path that droops downward between two jacks. */
-function cablePath(a: Jack, b: Jack, sag: number): string {
-  const mx = (a.x + b.x) / 2;
-  const my = (a.y + b.y) / 2 + sag;
-  return `M ${a.x} ${a.y} Q ${mx} ${my} ${b.x} ${b.y}`;
+/**
+ * Build a scrolling scope trace. The path spans 2× the viewBox width so the
+ * group can translate by exactly one width and loop seamlessly. Wavelengths
+ * are chosen to divide the width evenly so there is no visible seam.
+ */
+function scopePath(wavelength: number, amp: number, harmonic: boolean): string {
+  const totalW = W * 2;
+  const points = 260;
+  let d = '';
+  for (let i = 0; i <= points; i++) {
+    const x = (i / points) * totalW;
+    const phase = (x / wavelength) * 2 * Math.PI;
+    const v = harmonic
+      ? 0.62 * Math.sin(phase) + 0.38 * Math.sin(2 * phase + 0.6)
+      : Math.sin(phase);
+    const y = CY - amp * v;
+    d += `${i ? ' L' : 'M'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+  }
+  return d;
 }
+
+const WAVE_MAIN = scopePath(105, 72, true);   // 4 cycles across the width
+const WAVE_SUB = scopePath(140, 44, false);   // 3 cycles across the width
+
+// Faint graticule lines.
+const V_LINES = Array.from({ length: 9 }, (_, i) => ((i + 1) * W) / 10);
+const H_LINES = Array.from({ length: 7 }, (_, i) => ((i + 1) * H) / 8);
 
 export function StartAnimation() {
   return (
     <svg
-      viewBox="0 0 420 330"
+      viewBox={`0 0 ${W} ${H}`}
       className="w-full h-full"
       preserveAspectRatio="xMidYMid meet"
       aria-hidden="true"
     >
       <style>{`
-        @keyframes oc-jack-on {
-          0%   { opacity: 0; transform: scale(0.5); }
-          60%  { opacity: 1; transform: scale(1.15); }
-          100% { opacity: 1; transform: scale(1); }
+        @keyframes oc-screen-on {
+          0%   { opacity: 0; transform: scaleY(0.04); }
+          45%  { opacity: 1; transform: scaleY(1.04); }
+          100% { opacity: 1; transform: scaleY(1); }
         }
-        @keyframes oc-cable-draw {
-          to { stroke-dashoffset: 0; }
+        @keyframes oc-grid-in { to { opacity: 1; } }
+        @keyframes oc-scroll  { to { transform: translateX(-${W}px); } }
+        @keyframes oc-beam {
+          0%   { transform: translateX(-30px); opacity: 0; }
+          8%   { opacity: 0.9; }
+          92%  { opacity: 0.9; }
+          100% { transform: translateX(${W + 30}px); opacity: 0; }
         }
-        @keyframes oc-plug-in {
-          0%   { opacity: 0; transform: scale(0); }
-          70%  { opacity: 1; transform: scale(1.4); }
-          100% { opacity: 1; transform: scale(1); }
+        @keyframes oc-flicker {
+          0%, 100% { opacity: 0.92; }
+          50%      { opacity: 1; }
         }
-        @keyframes oc-glow-pulse {
-          0%   { opacity: 0; transform: scale(0.6); }
-          50%  { opacity: 0.55; transform: scale(2.2); }
-          100% { opacity: 0; transform: scale(2.6); }
-        }
-        .oc-jack-ring  { transform-box: fill-box; transform-origin: center;
-                         opacity: 0; animation: oc-jack-on 0.5s ease-out forwards; }
-        .oc-cable      { fill: none; stroke-linecap: round;
-                         animation: oc-cable-draw 0.9s cubic-bezier(.4,.8,.4,1) forwards; }
-        .oc-plug       { transform-box: fill-box; transform-origin: center;
-                         opacity: 0; animation: oc-plug-in 0.35s cubic-bezier(.34,1.56,.64,1) forwards; }
-        .oc-glow       { transform-box: fill-box; transform-origin: center;
-                         opacity: 0; animation: oc-glow-pulse 0.6s ease-out forwards; }
+        .oc-screen { transform-box: fill-box; transform-origin: center;
+                     animation: oc-screen-on 0.8s cubic-bezier(.3,.9,.3,1) forwards; }
+        .oc-grid   { opacity: 0; animation: oc-grid-in 0.6s ease-out 0.5s forwards; }
+        .oc-wave-main { animation: oc-scroll 6s linear infinite, oc-flicker 2.6s ease-in-out infinite; }
+        .oc-wave-sub  { animation: oc-scroll 9.5s linear infinite; }
+        .oc-beam   { animation: oc-beam 3.4s cubic-bezier(.45,.05,.55,.95) infinite; }
         @media (prefers-reduced-motion: reduce) {
-          .oc-jack-ring, .oc-cable, .oc-plug, .oc-glow {
-            animation: none !important; opacity: 1 !important; stroke-dashoffset: 0 !important;
+          .oc-screen, .oc-grid, .oc-wave-main, .oc-wave-sub, .oc-beam {
+            animation: none !important; opacity: 1 !important; transform: none !important;
           }
         }
       `}</style>
 
       <defs>
-        <filter id="oc-soft-glow" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="2.5" result="b" />
+        <filter id="oc-trace-glow" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation="3" result="b" />
           <feMerge>
             <feMergeNode in="b" />
             <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>
+        <linearGradient id="oc-beam-grad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={ORANGE} stopOpacity="0" />
+          <stop offset="50%" stopColor={ORANGE} stopOpacity="0.5" />
+          <stop offset="100%" stopColor={ORANGE} stopOpacity="0" />
+        </linearGradient>
       </defs>
 
-      {/* Panel jacks (ports) */}
-      {JACKS.map((j, i) => (
-        <g key={`jack-${i}`} className="oc-jack-ring" style={{ animationDelay: `${i * 0.08}s` }}>
-          <circle cx={j.x} cy={j.y} r="13" fill="#161616" stroke="#3a3a3a" strokeWidth="2" />
-          <circle cx={j.x} cy={j.y} r="6"  fill="#0a0a0a" stroke="#555" strokeWidth="1.5" />
-          <circle cx={j.x} cy={j.y} r="2.5" fill="#2a2a2a" />
+      <g className="oc-screen">
+        {/* Graticule grid */}
+        <g className="oc-grid">
+          {V_LINES.map((x) => (
+            <line key={`v-${x}`} x1={x} y1="0" x2={x} y2={H} stroke="#262626" strokeWidth="1" />
+          ))}
+          {H_LINES.map((y) => (
+            <line key={`h-${y}`} x1="0" y1={y} x2={W} y2={y} stroke="#262626" strokeWidth="1" />
+          ))}
+          {/* Bright center axes */}
+          <line x1="0" y1={CY} x2={W} y2={CY} stroke="#3c3c3c" strokeWidth="1.5" />
+          <line x1={W / 2} y1="0" x2={W / 2} y2={H} stroke="#3c3c3c" strokeWidth="1.5" />
         </g>
-      ))}
 
-      {/* Patch cables + plug tips */}
-      {CABLES.map((c, i) => {
-        const a = JACKS[c.from];
-        const b = JACKS[c.to];
-        return (
-          <g key={`cable-${i}`}>
-            <path
-              className="oc-cable"
-              d={cablePath(a, b, c.sag)}
-              stroke={c.color}
-              strokeWidth="4"
-              pathLength={1}
-              strokeDasharray={1}
-              strokeDashoffset={1}
-              filter="url(#oc-soft-glow)"
-              style={{ animationDelay: `${c.delay}s` }}
-            />
-            {/* Glow burst + plug tip at each end, timed to when the cable lands */}
-            {[a, b].map((p, e) => (
-              <g key={`end-${i}-${e}`}>
-                <circle
-                  className="oc-glow"
-                  cx={p.x} cy={p.y} r="10"
-                  fill={c.color}
-                  style={{ animationDelay: `${c.delay + 0.7}s` }}
-                />
-                <circle
-                  className="oc-plug"
-                  cx={p.x} cy={p.y} r="7"
-                  fill={c.color}
-                  stroke="#1a1a1a" strokeWidth="2"
-                  style={{ animationDelay: `${c.delay + 0.6}s` }}
-                />
-                <circle
-                  className="oc-plug"
-                  cx={p.x} cy={p.y} r="2.5"
-                  fill="#1a1a1a"
-                  style={{ animationDelay: `${c.delay + 0.6}s` }}
-                />
-              </g>
-            ))}
-          </g>
-        );
-      })}
+        {/* Clip waveforms to the screen so scrolling never spills out */}
+        <clipPath id="oc-clip">
+          <rect x="0" y="0" width={W} height={H} />
+        </clipPath>
+
+        <g clipPath="url(#oc-clip)">
+          {/* Secondary, fainter trace */}
+          <path
+            className="oc-wave-sub"
+            d={WAVE_SUB}
+            fill="none"
+            stroke="#c96a1a"
+            strokeWidth="2.5"
+            strokeOpacity="0.45"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          {/* Main trace */}
+          <path
+            className="oc-wave-main"
+            d={WAVE_MAIN}
+            fill="none"
+            stroke={ORANGE}
+            strokeWidth="3.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            filter="url(#oc-trace-glow)"
+          />
+          {/* Sweeping scan beam */}
+          <rect
+            className="oc-beam"
+            x="-2"
+            y="0"
+            width="4"
+            height={H}
+            fill="url(#oc-beam-grad)"
+          />
+        </g>
+      </g>
     </svg>
   );
 }
