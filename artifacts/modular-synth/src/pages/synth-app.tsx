@@ -1399,6 +1399,7 @@ export default function SynthApp() {
   const audioModulesRef  = useRef<Map<string, ReturnType<typeof createAudioModule>>>(new Map());
   const gateConnRef      = useRef<Map<string, Set<string>>>(new Map());
   const heldNotesRef     = useRef<number[]>([]);
+  const activeFreqRef    = useRef<number | null>(null);   // freq currently driving the gate (null = gate off)
   const glideRef         = useRef<number>(0);
   // Tracks all keyboard module IDs so MIDI events propagate to every KB OUT instance
   const kbModuleIdsRef   = useRef<string[]>(['kb1']);
@@ -1586,19 +1587,53 @@ export default function SynthApp() {
     const triggerOn  = (time: number, f: number) => { for (const id of allGateModules) audioModulesRef.current.get(id)?.noteOn?.(time, f); };
     const triggerOff = (time: number)            => { for (const id of allGateModules) audioModulesRef.current.get(id)?.noteOff?.(time); };
 
+    const g = glideRef.current;
+    // Re-fire the gate so gate-driven modules (arpeggiator, envelopes) follow `target`.
+    // Used on a note switch when GLIDE is off; the small offset avoids off/on cancelling.
+    const retrigger = (target: number) => {
+      triggerOff(t);
+      triggerOn(t + 0.002, target);
+      activeFreqRef.current = target;
+    };
+
     if (on) {
-      if (!held.includes(freq)) held.push(freq);
-      const isFirst = held.length === 1;
-      applyPitch(freq, !isFirst);        // instant on first note, glide on legato
-      if (isFirst) triggerOn(t, freq);   // only gate-trigger ADSR on first note
+      const wasHeld = held.includes(freq);
+      if (!wasHeld) held.push(freq);
+
+      if (activeFreqRef.current === null) {
+        applyPitch(freq, false);         // first note: instant pitch, open the gate
+        triggerOn(t, freq);
+        activeFreqRef.current = freq;
+      } else if (freq === activeFreqRef.current) {
+        // already the sounding note (e.g. duplicate MIDI note-on) → nothing to do
+      } else if (g > 0) {
+        applyPitch(freq, true);          // GLIDE engaged → smooth legato, no retrigger
+        activeFreqRef.current = freq;
+      } else {
+        // No glide: re-trigger so the arp/envelope follow the new note while held.
+        // Without this, an arp only samples a note when its gate fires, so a held
+        // legato slide never reaches it and it keeps playing the first note.
+        applyPitch(freq, false);
+        retrigger(freq);
+      }
     } else {
       const idx = held.indexOf(freq);
       if (idx >= 0) held.splice(idx, 1);
 
       if (held.length === 0) {
         triggerOff(t);                   // last note released → release envelope
+        activeFreqRef.current = null;
       } else {
-        applyPitch(held[held.length - 1], true);   // return legato to last held note
+        const back = held[held.length - 1];   // last-note priority: fall back to newest held
+        if (back === activeFreqRef.current) {
+          // already sounding (e.g. keyboard's press-new-then-release-old) → no extra retrigger
+        } else if (g > 0) {
+          applyPitch(back, true);        // glide back to the held note
+          activeFreqRef.current = back;
+        } else {
+          applyPitch(back, false);
+          retrigger(back);               // re-fire so gate-driven modules follow the fallback note
+        }
       }
     }
   }, []);

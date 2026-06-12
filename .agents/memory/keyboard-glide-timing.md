@@ -25,3 +25,28 @@ leave it held) so notes never pile up in the engine's held list — that preserv
 HOLD-mode "it still holds" guarantee. Drag glide is wired via per-key
 `onMouseDown` (set mouseDownRef + pressKey) and `onMouseEnter` (pressKey if
 mouseDownRef), with a window `mouseup` releasing the held note.
+
+# Note switch must re-fire the gate when GLIDE == 0 (so arps/envelopes follow)
+
+A gate-driven module (esp. the **arpeggiator**) only samples a note when its gate
+**fires**. The legato switch above deliberately does NOT re-fire the gate, so a held
+note-switch never reaches the arp and it keeps playing the first note. Symptom:
+"switching notes on hold doesn't change the note" — but ONLY in patches that route
+the keyboard through the arp (keyboard GATE → arp, arp V/OCT → osc). In a direct
+keyboard→osc patch it looks fine because pitch (V/OCT) follows the slide regardless.
+
+**Decision (user-chosen):** when `GLIDE == 0`, a note switch re-triggers the gate so
+gate-driven modules follow the new note even while held; when `GLIDE > 0`, keep the
+smooth legato (no retrigger). **Why:** smooth pitch glide and gate-retrigger are
+mutually exclusive on one shared gate cable, so GLIDE selects the mode.
+
+**How to apply:** `handleKeyNote` tracks `activeFreqRef` = the freq currently driving
+the gate (null = gate off). Retrigger = `triggerOff(t)` then `triggerOn(t+0.002, f)`
+(the ~2ms offset avoids the same-timestamp off/on cancellation above). Guards that
+matter: (1) on note-on, only retrigger when `freq !== activeFreqRef.current` — else
+duplicate MIDI note-ons retrigger spuriously; (2) on note-off with notes still held,
+fall back to the newest held note and retrigger only if it differs from
+`activeFreqRef` — this makes the keyboard's press-new-then-release-old sequence NOT
+double-trigger (release-old's fallback already equals activeFreq, so it's skipped),
+while MIDI chord release-fallback still follows. Reset `activeFreqRef` to null
+whenever held-note state is cleared globally.
