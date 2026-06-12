@@ -185,14 +185,20 @@ function getAudioLeadMs(): number {
 function getClockWorker(): Worker {
   if (!_clockWorker) {
     _clockWorker = new Worker(new URL('./clockWorker.ts', import.meta.url), { type: 'module' });
-    _clockWorker.onmessage = (ev: MessageEvent<{ type: string; id: number; beat: number; scheduledAt: number }>) => {
+    _clockWorker.onmessage = (ev: MessageEvent<{ type: string; id: number; beat: number; scheduledAt: number; origin?: number }>) => {
       if (ev.data.type === 'tick') {
         if (_timingCtx) {
-          // Convert performance.now() timestamp → AudioContext time.
-          // The two clocks have a stable offset once the context is running.
-          const perfNowS   = performance.now() / 1000;
-          const offset     = _timingCtx.currentTime - perfNowS;
-          const scheduled  = ev.data.scheduledAt / 1000 + offset;
+          // Convert the worker's performance-clock beat time → AudioContext time.
+          // The worker and main thread can have DIFFERENT performance.timeOrigin
+          // values (a dedicated worker's origin is when it was created, not page
+          // navigation). Reconcile by shifting scheduledAt into this thread's perf
+          // timeline before mapping to audio time — otherwise the beat lands far in
+          // the past, clamps to "now" every tick, and lookahead scheduling collapses
+          // into raw main-thread jitter (audible timing jumps, worst on drums).
+          const perfNowS    = performance.now() / 1000;
+          const offset      = _timingCtx.currentTime - perfNowS;
+          const originDelta  = ((ev.data.origin ?? performance.timeOrigin) - performance.timeOrigin) / 1000;
+          const scheduled   = ev.data.scheduledAt / 1000 + originDelta + offset;
           // Clamp: can't schedule in the past; add 1 ms grace so tiny rounding never fires negative.
           _currentTickAudioTime = Math.max(_timingCtx.currentTime + 0.001, scheduled);
         }

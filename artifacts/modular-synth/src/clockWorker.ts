@@ -39,7 +39,14 @@ function schedule(id: number, entry: Entry) {
     const e = timers.get(id);
     if (!e) return;
     const scheduledAt = e.expectedAt; // exact beat time — main thread schedules audio here
-    (self as unknown as Worker).postMessage({ type: 'tick', id, beat: e.beat++, scheduledAt });
+    // `scheduledAt` is in THIS worker's performance clock. The main thread has a
+    // different performance.timeOrigin (a worker's origin is when it was created,
+    // not page navigation), so we ship our timeOrigin too and let the main thread
+    // reconcile the two clocks. Without this the converted beat time lands in the
+    // past and every beat clamps to "now", defeating lookahead = timing jitter.
+    (self as unknown as Worker).postMessage({
+      type: 'tick', id, beat: e.beat++, scheduledAt, origin: performance.timeOrigin,
+    });
     e.expectedAt += e.intervalMs;
     const nowAfter = performance.now();
     // Resync if the tab was backgrounded and clocks diverged drastically
