@@ -20,7 +20,8 @@ type InMsg =
   | { type: 'create';  id: number; intervalMs: number }
   | { type: 'destroy'; id: number }
   | { type: 'restart'; id: number; intervalMs: number }
-  | { type: 'update';  id: number; intervalMs: number }; // tempo change — no reset
+  | { type: 'update';  id: number; intervalMs: number }  // tempo change — no reset
+  | { type: 'nudge';   id: number; adjustMs: number };   // PLL phase correction — shift expectedAt without resetting beat or cancelling timer
 
 interface Entry {
   expectedAt: number;  // performance.now() ms when the next beat SHOULD sound
@@ -92,5 +93,11 @@ function schedule(id: number, entry: Entry) {
     // Current beat plays at its already-scheduled time; next beat uses the new interval.
     const e = timers.get(msg.id);
     if (e) e.intervalMs = msg.intervalMs;
+
+  } else if (msg.type === 'nudge') {
+    // PLL phase correction: shift expectedAt without resetting beat count or
+    // cancelling the pending timer.  Positive adjustMs = fire later; negative = fire earlier.
+    const e = timers.get(msg.id);
+    if (e) e.expectedAt += msg.adjustMs;
   }
 };

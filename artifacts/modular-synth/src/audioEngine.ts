@@ -173,6 +173,9 @@ let _currentTickAudioTime = 0;
 // buffer each time. We low-pass it instead so the mapping stays stable, and snap on
 // large discontinuities (a new AudioContext, or the tab being backgrounded/resumed).
 let _clockOffset = NaN;
+// Main-thread performance-clock ms of the most recently scheduled clock beat.
+// Updated on every clockWorker tick; read by the PLL phase-error calculation.
+let _lastClockBeatMainMs = 0;
 
 // Cached AudioContext reference — set on first createAudioModule call.
 let _timingCtx: AudioContext | null = null;
@@ -225,6 +228,12 @@ function getClockWorker(): Worker {
           // Clamp: can't schedule in the past; add 1 ms grace so tiny rounding never fires negative.
           _currentTickAudioTime = Math.max(_timingCtx.currentTime + 0.001, scheduled);
         }
+        // Store the scheduled beat time in main-thread performance-clock ms.
+        // Used by the PLL in SynthApp to measure phase error against incoming MIDI ticks.
+        // scheduledAt is in the worker's perf-clock; shift by the origin delta to get main-thread time.
+        _lastClockBeatMainMs = ev.data.scheduledAt +
+          (ev.data.origin ?? performance.timeOrigin) - performance.timeOrigin;
+
         try { _clockCallbacks.get(ev.data.id)?.(ev.data.beat); } catch (err) {
           console.error('[Clock] tick callback threw:', err);
         }
@@ -246,6 +255,20 @@ export function restartAllClockTimers(): void {
   for (const restart of _activeClockRestarters) restart();
 }
 
+/** Return the main-thread performance-clock ms of the most recently scheduled beat.
+ *  Compared against MIDI beat-tick arrival time to compute PLL phase error. */
+export function getLastClockBeatMainMs(): number { return _lastClockBeatMainMs; }
+
+// Registry of nudge functions — each shifts a timer's expectedAt without resetting
+// the beat counter, used by the PLL to cancel accumulated phase drift.
+const _activeClockNudgers = new Set<(adjustMs: number) => void>();
+
+/** Nudge every active clock timer by adjustMs (negative = fire earlier).
+ *  Call from the PLL phase-correction handler; keep |adjustMs| small and damped. */
+export function nudgeAllClockTimers(adjustMs: number): void {
+  for (const nudge of _activeClockNudgers) nudge(adjustMs);
+}
+
 function makeClockTimer(getInterval: () => number, onTick: (beatIndex: number) => void) {
   const id = ++_clockTimerSeq;
   _clockCallbacks.set(id, onTick);
@@ -262,6 +285,9 @@ function makeClockTimer(getInterval: () => number, onTick: (beatIndex: number) =
   const restarter = () => worker.postMessage({ type: 'restart', id, intervalMs: safeInterval() });
   _activeClockRestarters.add(restarter);
 
+  const nudger = (adjustMs: number) => worker.postMessage({ type: 'nudge', id, adjustMs });
+  _activeClockNudgers.add(nudger);
+
   return {
     restart: restarter,
     // Send new intervalMs without resetting the clock — current beat plays on schedule,
@@ -271,6 +297,7 @@ function makeClockTimer(getInterval: () => number, onTick: (beatIndex: number) =
       worker.postMessage({ type: 'destroy', id });
       _clockCallbacks.delete(id);
       _activeClockRestarters.delete(restarter);
+      _activeClockNudgers.delete(nudger);
     },
   };
 }

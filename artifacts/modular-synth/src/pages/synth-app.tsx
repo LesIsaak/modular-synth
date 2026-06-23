@@ -5,7 +5,7 @@ import {
   MODULE_TYPE_MAP, CATEGORY_ORDER, CATEGORY_LABELS, CATEGORY_COLORS,
   CABLE_COLORS, getDefaultParams, MODULE_TYPES, MODULE_DESCRIPTIONS,
 } from '../moduleDefinitions';
-import { createAudioModule, connectAudioPorts, disconnectAudioPorts, getCurrentTickAudioTime, restartAllClockTimers } from '../audioEngine';
+import { createAudioModule, connectAudioPorts, disconnectAudioPorts, getCurrentTickAudioTime, restartAllClockTimers, nudgeAllClockTimers, getLastClockBeatMainMs } from '../audioEngine';
 import { MODULE_PATCH_EXAMPLES, PatchExample } from '../modulePatchExamples';
 import ModulePanel from '../components/ModulePanel';
 import IORefPanel from '../components/IORefPanel';
@@ -980,6 +980,7 @@ function useMIDI(
   onMon:   (ev: MidiMonEvent) => void,
   onClock: (info: MidiClockInfo) => void,
   onStart: () => void,
+  onBeat:  (midiArrivalMs: number) => void,
 ): { status: MidiStatus; deviceCount: number } {
   const onNoteRef  = useRef(onNote);
   const onBendRef  = useRef(onBend);
@@ -987,12 +988,14 @@ function useMIDI(
   const onMonRef   = useRef(onMon);
   const onClockRef = useRef(onClock);
   const onStartRef = useRef(onStart);
+  const onBeatRef  = useRef(onBeat);
   onNoteRef.current  = onNote;
   onBendRef.current  = onBend;
   onModRef.current   = onMod;
   onMonRef.current   = onMon;
   onClockRef.current = onClock;
   onStartRef.current = onStart;
+  onBeatRef.current  = onBeat;
 
   const [status,      setStatus]      = useState<MidiStatus>('pending');
   const [deviceCount, setDeviceCount] = useState(0);
@@ -1011,6 +1014,7 @@ function useMIDI(
     const clockTimestamps: number[] = [];
     let clockDeviceName: string | null = null;
     let lastTickMs = 0; // performance.now() of the previous 0xF8, for discontinuity detection
+    let tickCount = 0;  // counts 0xF8 ticks since last Start (0xFA); resets on transport Start
     let smoothedPeriodMs = NaN; // EMA of the per-pulse period (ms), the stable tempo estimate
     // Throttle React updates from MIDI clock. A 0xF8 tick arrives 24× per beat
     // (~58×/sec at 145 BPM); emitting on every one rebuilds the module tree dozens
@@ -1041,6 +1045,13 @@ function useMIDI(
           smoothedPeriodMs = NaN; // re-lock the tempo estimate from scratch after a gap
         }
         lastTickMs = now;
+        tickCount++;
+        // PLL beat-boundary notification: every 24 ticks = one quarter-note beat.
+        // SynthApp compares this arrival time against the app's scheduled beat time
+        // to compute phase error and nudge all clock timers toward alignment.
+        if (getMidiClockInfo().locked && tickCount % CLOCK_PULSES_PER_BEAT === 0) {
+          onBeatRef.current(now);
+        }
         clockTimestamps.push(now);
         if (clockTimestamps.length > CLOCK_WINDOW + 1) clockTimestamps.shift();
         // Only estimate from a FULL window of clean intervals. Emitting from a
@@ -1071,22 +1082,12 @@ function useMIDI(
             if (clockDeviceName !== deviceName) clockDeviceName = deviceName;
             const deviceChanged = lastEmittedDevice !== deviceName;
 
-            // TWO separate deadbands for two separate concerns:
-            //
-            // UNLOCKED — display deadband 0.5 BPM, rate-limit 200 ms.
-            //   Keeps the UI digit from flickering due to USB jitter.
-            //
-            // LOCKED — audio correction deadband 0.05 BPM, rate-limit 1000 ms.
-            //   Display is frozen in handleMidiClock so UI stays still regardless.
-            //   But we still push live estimates to the audio engine so a systematic
-            //   offset baked in at lock time (e.g. 120.2 instead of 120.0) self-
-            //   corrects within a few seconds. Rate-limited to once per second so
-            //   one-off outlier ticks can't cause rapid phase wander.
-            const isLocked = getMidiClockInfo().locked;
-            const deadband  = isLocked ? 0.05 : 0.5;
-            const rateLimit = isLocked ? 1000 : 200;
-            const bpmChanged = Math.abs(rawBpm - lastEmittedBpm) >= deadband;
-            if ((deviceChanged || bpmChanged) && now - lastEmitMs >= rateLimit) {
+            // Single 0.5 BPM deadband for display stability.  Phase drift is now
+            // corrected by the PLL (nudgeAllClockTimers via handleMidiBeat) rather
+            // than by pushing interval updates — continuous micro-corrections caused
+            // random phase walk because each push shifted expectedAt slightly.
+            const bpmChanged = Math.abs(rawBpm - lastEmittedBpm) >= 0.5;
+            if ((deviceChanged || bpmChanged) && now - lastEmitMs >= 200) {
               // Full-precision BPM: rounding bakes a steady-state tempo error into
               // the locked interval; full precision minimises accumulated drift.
               lastEmittedBpm = rawBpm;
@@ -1108,6 +1109,7 @@ function useMIDI(
         clockTimestamps.length = 0;
         smoothedPeriodMs = NaN;
         lastTickMs = 0;
+        tickCount = 0; // reset beat counter so PLL quarter-note boundaries restart from 0
         // MIDI Start (0xFA): notify SynthApp so it can snap all clocks to beat 1.
         // Continue (0xFB) and Stop (0xFC) do NOT restart — Continue resumes from the
         // current position; Stop leaves the grid where it is.
@@ -2069,6 +2071,22 @@ export default function SynthApp() {
     restartAllClockTimers();
   }, []);
 
+  // PLL phase-correction handler — called by useMIDI every 24 MIDI ticks (= one
+  // quarter-note beat) when locked.  Compares the DAW beat arrival time against
+  // the app's scheduled beat time and nudges all clock timers by a damped fraction
+  // of the error so accumulated drift cancels without causing audible jumps.
+  const handleMidiBeat = useCallback((midiArrivalMs: number) => {
+    const appBeatMs = getLastClockBeatMainMs();
+    if (appBeatMs === 0) return; // no beat has fired yet — nothing to compare
+    const phaseError = appBeatMs - midiArrivalMs;
+    // Ignore implausibly large errors (stale data from a previous beat or a big
+    // discontinuity); the guard is 2× LOOKAHEAD_MS so we catch genuine drift only.
+    if (Math.abs(phaseError) < 2 || Math.abs(phaseError) > 240) return;
+    // 40% proportional correction per beat — converges within 3–5 beats, small
+    // enough not to create an audible jump on any individual step.
+    nudgeAllClockTimers(-phaseError * 0.4);
+  }, []);
+
   const handleFreezeKill = useCallback((moduleId: string) => {
     audioModulesRef.current.get(moduleId)?.kill?.();
   }, []);
@@ -2221,7 +2239,7 @@ export default function SynthApp() {
   }, []);
 
   // MIDI input — routes USB keyboard events + Minilab CC→knob mapping + MIDI Clock
-  const { status: midiStatus, deviceCount: midiDeviceCount } = useMIDI(handleKeyNote, handleKeyBend, handleKeyMod, handleMidiMon, handleMidiClock, handleMidiStart);
+  const { status: midiStatus, deviceCount: midiDeviceCount } = useMIDI(handleKeyNote, handleKeyBend, handleKeyMod, handleMidiMon, handleMidiClock, handleMidiStart, handleMidiBeat);
 
   // ─── Port click — cable patching ────────────────────────────────────────────
   const handlePortClick = useCallback((moduleId: string, portId: string, portType: PortType) => {
