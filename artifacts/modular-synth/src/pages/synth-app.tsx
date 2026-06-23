@@ -2036,20 +2036,7 @@ export default function SynthApp() {
   const BPM_KNOB_IDS = new Set(['bpm']); // param ids that represent BPM across clock modules
 
   const handleMidiClock = useCallback((info: MidiClockInfo) => {
-    // When locked: freeze the BPM display at the value it had at lock time.
-    // The estimator still runs (so we can track real tempo changes and push
-    // intervals to the audio engine), but React state only updates when the
-    // locked field itself changes — not every time the estimate wobbles.
-    // When unlocked: always show the live estimate.
-    setMidiClockInfo(prev => {
-      if (info.locked && prev.locked) {
-        // Locked → locked: only update if device name changed; BPM stays frozen.
-        return prev.deviceName !== info.deviceName
-          ? { ...prev, deviceName: info.deviceName }
-          : prev;
-      }
-      return info; // lock transition OR unlocked: full update
-    });
+    setMidiClockInfo(info);
     if (info.locked && info.bpm !== null) {
       // Push rounded BPM to every module that has a 'bpm' param
       setModules(prev => prev.map(m => {
