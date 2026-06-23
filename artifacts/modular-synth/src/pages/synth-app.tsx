@@ -2045,20 +2045,23 @@ export default function SynthApp() {
   const BPM_KNOB_IDS = new Set(['bpm']); // param ids that represent BPM across clock modules
 
   const handleMidiClock = useCallback((info: MidiClockInfo) => {
+    // Capture previous locked state BEFORE the state update so we can detect
+    // the unlocked → locked transition below.
+    const wasLocked = midiClockInfoRef.current.locked;
     setMidiClockInfo(info);
-    if (info.locked && info.bpm !== null) {
-      // Push rounded BPM to every module that has a 'bpm' param
+
+    // Push BPM to clock modules ONLY on the first lock transition.
+    // Pushing continuously while locked causes the oscillating BPM estimate
+    // (±0.2 BPM USB jitter) to keep changing intervalMs every beat, which
+    // fights the PLL nudge and causes progressive phase drift.
+    // After the initial BPM is set, the PLL (handleMidiBeat) owns all timing.
+    if (!wasLocked && info.locked && info.bpm !== null) {
       setModules(prev => prev.map(m => {
         if (!BPM_KNOB_IDS.has('bpm')) return m;
         const typeDef = MODULE_TYPE_MAP.get(m.typeId);
         if (!typeDef) return m;
         const hasBpm = typeDef.knobs.some(k => k.id === 'bpm');
         if (!hasBpm) return m;
-        // Push the FULL-PRECISION BPM (only clamped to range). Rounding — even to an
-        // integer — made the pushed interval flip at boundaries (e.g. 120.4↔120.6 →
-        // 120↔121); each flip re-set the worker interval and wandered the clock phase.
-        // Full precision maps a steady tempo to one stable interval (no wander) and
-        // minimises the residual tempo error the free-running clock accumulates.
         const bpmClamped = Math.max(20, Math.min(300, info.bpm!));
         audioModulesRef.current.get(m.id)?.setParam('bpm', bpmClamped);
         return { ...m, params: { ...m.params, bpm: bpmClamped } };
@@ -2088,7 +2091,10 @@ export default function SynthApp() {
     const phaseError = appBeatMs - (midiArrivalMs + midiSyncOffsetMsRef.current);
     // Ignore implausibly large errors (stale data from a previous beat or a big
     // discontinuity); the guard is 2× LOOKAHEAD_MS so we catch genuine drift only.
-    if (Math.abs(phaseError) < 2 || Math.abs(phaseError) > 240) return;
+    // Lower bound 0.5ms — allows the PLL to correct the ~1ms steady-state error
+    // that a 0.1 BPM offset produces.  The old 2ms gate was larger than the error
+    // itself, so the PLL never fired at steady-state and drift went uncorrected.
+    if (Math.abs(phaseError) < 0.5 || Math.abs(phaseError) > 240) return;
     // 40% proportional correction per beat — converges within 3–5 beats, small
     // enough not to create an audible jump on any individual step.
     nudgeAllClockTimers(-phaseError * 0.4);
