@@ -14,7 +14,16 @@
 // the current beat fires on schedule, then the next beat uses the new interval.
 // No clock reset, no missed or doubled beats.
 
-const LOOKAHEAD_MS = 120; // fire message this many ms before the beat
+// Fire the tick message this many ms before the beat is due. This is the slack the
+// main thread has to process the message and schedule the AudioNode before the beat
+// sounds. The audio itself is scheduled at the exact AudioContext time, so the ONLY
+// failure mode is the main thread being blocked LONGER than this window — then the
+// beat time has already passed and clamps to "now" (an audible shift). Fast mouse
+// movement / drag-driven React renders / GC pauses can stall the main thread for
+// 100ms+, so 120ms was too tight; 200ms absorbs those transients. It stays below a
+// beat at normal tempos; for fast sub-beat timers it simply schedules a couple of
+// beats ahead (still at exact audio times), which is harmless.
+const LOOKAHEAD_MS = 200; // fire message this many ms before the beat
 
 type InMsg =
   | { type: 'create';  id: number; intervalMs: number }
