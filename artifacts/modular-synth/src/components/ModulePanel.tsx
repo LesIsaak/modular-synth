@@ -1579,7 +1579,7 @@ function ModulePanel({
                           textShadow: hasSignal ? `0 0 12px ${locked ? CLK_GREEN : CLK_AMBER}66` : 'none',
                           transition: 'color 0.2s, text-shadow 0.2s',
                         }}>
-                          {hasSignal ? bpm!.toFixed(1) : '---.-'}
+                          {hasSignal ? Math.round(bpm!) : '---'}
                         </div>
                         <div style={{ fontSize: 7, color: '#555', letterSpacing: '0.2em', marginTop: 3 }}>
                           BPM
