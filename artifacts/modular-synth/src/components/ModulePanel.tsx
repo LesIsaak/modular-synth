@@ -38,6 +38,9 @@ interface ModulePanelProps {
   midiClockInfo?: { bpm: number | null; deviceName: string | null; locked: boolean };
   /** MIDI Clock In module: toggle sync lock */
   onToggleMidiClockLock?: () => void;
+  /** MIDI Clock In module: offset in ms to compensate for USB latency (negative = fire earlier) */
+  midiSyncOffsetMs?: number;
+  onMidiSyncOffsetChange?: (v: number) => void;
   /** Freeze module: instantly kill the frozen loop */
   onFreezeKill?: () => void;
   /** Seq modules: reset step counter to 1 */
@@ -872,7 +875,7 @@ function ModulePanel({
   onSelectorChange, onDragStart, onDelete, onRegisterPortRef, onKeyPress,
   analyser, midiMonitorData, isMidiTarget, moduleStepRef, getLevelFn, cvLevels, portLevels,
   onLoadSample, samplerBanksFilled,
-  midiClockInfo, onToggleMidiClockLock,
+  midiClockInfo, onToggleMidiClockLock, midiSyncOffsetMs = 0, onMidiSyncOffsetChange,
   onFreezeKill,
   onSeqReset,
   onAudioTrigPickDevice, audioTrigGetDeviceLabel, audioTrigGetDeviceList,
@@ -1625,6 +1628,41 @@ function ModulePanel({
                           All clock BPMs synced
                         </div>
                       )}
+
+                      {/* MIDI sync offset — compensates for USB transmission delay */}
+                      <div style={{ marginTop: 10 }}>
+                        <div style={{
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                          marginBottom: 4,
+                        }}>
+                          <span style={{ fontSize: 7, color: '#555', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+                            Sync Offset
+                          </span>
+                          <span style={{
+                            fontSize: 8, fontFamily: 'monospace', fontWeight: 700,
+                            color: midiSyncOffsetMs === 0 ? '#444' : CLK_AMBER,
+                            minWidth: 40, textAlign: 'right',
+                          }}>
+                            {midiSyncOffsetMs > 0 ? '+' : ''}{midiSyncOffsetMs} ms
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={-100} max={100} step={1}
+                          value={midiSyncOffsetMs}
+                          onChange={e => onMidiSyncOffsetChange?.(Number(e.target.value))}
+                          onDoubleClick={() => onMidiSyncOffsetChange?.(0)}
+                          style={{ width: '100%', accentColor: CLK_AMBER, cursor: 'pointer' }}
+                        />
+                        <div style={{
+                          display: 'flex', justifyContent: 'space-between',
+                          fontSize: 6, color: '#333', marginTop: 1,
+                        }}>
+                          <span>−100</span>
+                          <span style={{ color: '#444' }}>dbl-click = 0</span>
+                          <span>+100</span>
+                        </div>
+                      </div>
                     </div>
                   );
                 })()}

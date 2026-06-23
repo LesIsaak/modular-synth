@@ -2035,6 +2035,13 @@ export default function SynthApp() {
   const midiClockInfoRef = useRef(midiClockInfo);
   midiClockInfoRef.current = midiClockInfo;
 
+  // MIDI sync offset — compensates for USB transmission delay between the DAW's
+  // beat and when the MIDI tick arrives in the browser.  Negative = fire earlier,
+  // positive = fire later.  User-adjustable via the MIDI Clock In panel slider.
+  const [midiSyncOffsetMs, setMidiSyncOffsetMs] = useState(0);
+  const midiSyncOffsetMsRef = useRef(0);
+  midiSyncOffsetMsRef.current = midiSyncOffsetMs;
+
   const BPM_KNOB_IDS = new Set(['bpm']); // param ids that represent BPM across clock modules
 
   const handleMidiClock = useCallback((info: MidiClockInfo) => {
@@ -2078,7 +2085,7 @@ export default function SynthApp() {
   const handleMidiBeat = useCallback((midiArrivalMs: number) => {
     const appBeatMs = getLastClockBeatMainMs();
     if (appBeatMs === 0) return; // no beat has fired yet — nothing to compare
-    const phaseError = appBeatMs - midiArrivalMs;
+    const phaseError = appBeatMs - (midiArrivalMs + midiSyncOffsetMsRef.current);
     // Ignore implausibly large errors (stale data from a previous beat or a big
     // discontinuity); the guard is 2× LOOKAHEAD_MS so we catch genuine drift only.
     if (Math.abs(phaseError) < 2 || Math.abs(phaseError) > 240) return;
@@ -2979,6 +2986,8 @@ export default function SynthApp() {
                 samplerBanksFilled={mod.typeId === 'sampler' ? samplerBanks.get(mod.id) : undefined}
                 midiClockInfo={mod.typeId === 'midi_clock_in' ? midiClockInfo : undefined}
                 onToggleMidiClockLock={mod.typeId === 'midi_clock_in' ? handleToggleMidiClockLock : undefined}
+                midiSyncOffsetMs={mod.typeId === 'midi_clock_in' ? midiSyncOffsetMs : undefined}
+                onMidiSyncOffsetChange={mod.typeId === 'midi_clock_in' ? setMidiSyncOffsetMs : undefined}
                 onFreezeKill={mod.typeId === 'freeze_proc' ? cbs.onFreezeKill : undefined}
                 onSeqReset={['seq_step','seq_trigger','seq_cv','seq_gate'].includes(mod.typeId)
                   ? cbs.onSeqReset
