@@ -1004,7 +1004,10 @@ function useMIDI(
 
     // MIDI Clock (0xF8) BPM measurement — 24 pulses per quarter note
     const CLOCK_PULSES_PER_BEAT = 24;
-    const CLOCK_WINDOW = 8; // average over this many intervals for stability
+    // 24 ticks = one full beat at any tempo. Median over a full beat rejects
+    // isolated late ticks far better than 8 (≈167 ms at 120 BPM); the window
+    // still fills in ≈500 ms so tempo-ramp response stays acceptable.
+    const CLOCK_WINDOW = 24;
     const clockTimestamps: number[] = [];
     let clockDeviceName: string | null = null;
     let lastTickMs = 0; // performance.now() of the previous 0xF8, for discontinuity detection
@@ -1058,8 +1061,11 @@ function useMIDI(
             ? sorted[mid]
             : (sorted[mid - 1] + sorted[mid]) / 2;
           // EMA-smooth the period for extra stability; snap on first lock after a gap.
+          // α=0.05 (was 0.2) — slower to react but much more stable at steady tempo.
+          // At 120 BPM the EMA settles to within 0.1 BPM after ~20 beats (~10 s),
+          // which is fine; the window median already filters most tick-delivery jitter.
           smoothedPeriodMs = Number.isFinite(smoothedPeriodMs)
-            ? smoothedPeriodMs + 0.2 * (medianInterval - smoothedPeriodMs)
+            ? smoothedPeriodMs + 0.05 * (medianInterval - smoothedPeriodMs)
             : medianInterval;
           const rawBpm = (60000 / smoothedPeriodMs) / CLOCK_PULSES_PER_BEAT;
           if (rawBpm >= 20 && rawBpm <= 400) {
@@ -1070,7 +1076,9 @@ function useMIDI(
             // 120.0) instead of flickering 119.9/120.1 — and, crucially, STOPS pushing
             // new intervals to the clocks once locked, so they cannot phase-wander.
             // Hard-cap at ~5×/sec so a real tempo ramp can't storm the main thread.
-            const bpmChanged = Math.abs(rawBpm - lastEmittedBpm) >= 0.25;
+            // 0.5 BPM deadband (was 0.25) — USB MIDI jitter easily produces ±0.3 BPM
+            // swings even on a rock-steady DAW; the wider band keeps the display still.
+            const bpmChanged = Math.abs(rawBpm - lastEmittedBpm) >= 0.5;
             if ((deviceChanged || bpmChanged) && now - lastEmitMs >= 200) {
               // Emit the FULL-PRECISION smoothed tempo (the panel rounds to 0.1 for
               // display). Quantizing here would bake a steady-state tempo error into
@@ -2024,7 +2032,20 @@ export default function SynthApp() {
   const BPM_KNOB_IDS = new Set(['bpm']); // param ids that represent BPM across clock modules
 
   const handleMidiClock = useCallback((info: MidiClockInfo) => {
-    setMidiClockInfo(info);
+    // When locked: freeze the BPM display at the value it had at lock time.
+    // The estimator still runs (so we can track real tempo changes and push
+    // intervals to the audio engine), but React state only updates when the
+    // locked field itself changes — not every time the estimate wobbles.
+    // When unlocked: always show the live estimate.
+    setMidiClockInfo(prev => {
+      if (info.locked && prev.locked) {
+        // Locked → locked: only update if device name changed; BPM stays frozen.
+        return prev.deviceName !== info.deviceName
+          ? { ...prev, deviceName: info.deviceName }
+          : prev;
+      }
+      return info; // lock transition OR unlocked: full update
+    });
     if (info.locked && info.bpm !== null) {
       // Push rounded BPM to every module that has a 'bpm' param
       setModules(prev => prev.map(m => {
