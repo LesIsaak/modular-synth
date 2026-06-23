@@ -1004,6 +1004,14 @@ function useMIDI(
     const CLOCK_WINDOW = 8; // average over this many intervals for stability
     const clockTimestamps: number[] = [];
     let clockDeviceName: string | null = null;
+    // Throttle React updates from MIDI clock. A 0xF8 tick arrives 24× per beat
+    // (~58×/sec at 145 BPM); emitting on every one rebuilds the module tree dozens
+    // of times a second on the main thread and starves the audio clock — the beat
+    // audibly shifts. Only emit when the BPM meaningfully changes (or the sending
+    // device changes), and never faster than ~5×/sec. Steady tempo → ~zero emits.
+    let lastEmittedBpm = 0;
+    let lastEmittedDevice: string | null = null;
+    let lastEmitMs = 0;
 
     // Per-device handler so we can track which device is sending clock
     const makeDeviceHandler = (deviceName: string) => (e: MIDIMessageEvent) => {
@@ -1023,7 +1031,16 @@ function useMIDI(
           const bpm = Math.round((60000 / avgInterval) / CLOCK_PULSES_PER_BEAT * 10) / 10;
           if (bpm >= 20 && bpm <= 400) {
             if (clockDeviceName !== deviceName) clockDeviceName = deviceName;
-            emitMidiClockInfo({ bpm, deviceName });
+            const deviceChanged = lastEmittedDevice !== deviceName;
+            const bpmChanged = Math.abs(bpm - lastEmittedBpm) >= 0.2;
+            // Hard-cap at ~5×/sec even on device change: if two devices both stream
+            // clock, deviceName would otherwise flip every tick and bypass the throttle.
+            if ((deviceChanged || bpmChanged) && now - lastEmitMs >= 200) {
+              lastEmittedBpm = bpm;
+              lastEmittedDevice = deviceName;
+              lastEmitMs = now;
+              emitMidiClockInfo({ bpm, deviceName });
+            }
           }
         }
         return;
