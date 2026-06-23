@@ -1060,31 +1060,35 @@ function useMIDI(
           const medianInterval = sorted.length % 2
             ? sorted[mid]
             : (sorted[mid - 1] + sorted[mid]) / 2;
-          // EMA-smooth the period for extra stability; snap on first lock after a gap.
-          // α=0.05 (was 0.2) — slower to react but much more stable at steady tempo.
-          // At 120 BPM the EMA settles to within 0.1 BPM after ~20 beats (~10 s),
-          // which is fine; the window median already filters most tick-delivery jitter.
+          // EMA-smooth the period; snap on first measurement after a gap.
+          // α=0.15: settles within ~1 s at 120 BPM — fast enough to read an accurate
+          // value before the user hits Lock, stable enough not to chase tick jitter.
           smoothedPeriodMs = Number.isFinite(smoothedPeriodMs)
-            ? smoothedPeriodMs + 0.05 * (medianInterval - smoothedPeriodMs)
+            ? smoothedPeriodMs + 0.15 * (medianInterval - smoothedPeriodMs)
             : medianInterval;
           const rawBpm = (60000 / smoothedPeriodMs) / CLOCK_PULSES_PER_BEAT;
           if (rawBpm >= 20 && rawBpm <= 400) {
             if (clockDeviceName !== deviceName) clockDeviceName = deviceName;
             const deviceChanged = lastEmittedDevice !== deviceName;
-            // Deadband / hysteresis: only report a NEW tempo when it genuinely moves
-            // past 0.25 BPM. A steady DAW tempo then pins to a single value (e.g.
-            // 120.0) instead of flickering 119.9/120.1 — and, crucially, STOPS pushing
-            // new intervals to the clocks once locked, so they cannot phase-wander.
-            // Hard-cap at ~5×/sec so a real tempo ramp can't storm the main thread.
-            // 0.5 BPM deadband (was 0.25) — USB MIDI jitter easily produces ±0.3 BPM
-            // swings even on a rock-steady DAW; the wider band keeps the display still.
-            const bpmChanged = Math.abs(rawBpm - lastEmittedBpm) >= 0.5;
-            if ((deviceChanged || bpmChanged) && now - lastEmitMs >= 200) {
-              // Emit the FULL-PRECISION smoothed tempo (the panel rounds to 0.1 for
-              // display). Quantizing here would bake a steady-state tempo error into
-              // the locked interval that the free-running clocks accumulate as drift;
-              // full precision keeps the interval as close to the DAW's true period as
-              // we can measure. The deadband still freezes the value once locked.
+
+            // TWO separate deadbands for two separate concerns:
+            //
+            // UNLOCKED — display deadband 0.5 BPM, rate-limit 200 ms.
+            //   Keeps the UI digit from flickering due to USB jitter.
+            //
+            // LOCKED — audio correction deadband 0.05 BPM, rate-limit 1000 ms.
+            //   Display is frozen in handleMidiClock so UI stays still regardless.
+            //   But we still push live estimates to the audio engine so a systematic
+            //   offset baked in at lock time (e.g. 120.2 instead of 120.0) self-
+            //   corrects within a few seconds. Rate-limited to once per second so
+            //   one-off outlier ticks can't cause rapid phase wander.
+            const isLocked = getMidiClockInfo().locked;
+            const deadband  = isLocked ? 0.05 : 0.5;
+            const rateLimit = isLocked ? 1000 : 200;
+            const bpmChanged = Math.abs(rawBpm - lastEmittedBpm) >= deadband;
+            if ((deviceChanged || bpmChanged) && now - lastEmitMs >= rateLimit) {
+              // Full-precision BPM: rounding bakes a steady-state tempo error into
+              // the locked interval; full precision minimises accumulated drift.
               lastEmittedBpm = rawBpm;
               lastEmittedDevice = deviceName;
               lastEmitMs = now;
