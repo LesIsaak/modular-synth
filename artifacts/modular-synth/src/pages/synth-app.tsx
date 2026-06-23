@@ -5,7 +5,7 @@ import {
   MODULE_TYPE_MAP, CATEGORY_ORDER, CATEGORY_LABELS, CATEGORY_COLORS,
   CABLE_COLORS, getDefaultParams, MODULE_TYPES, MODULE_DESCRIPTIONS,
 } from '../moduleDefinitions';
-import { createAudioModule, connectAudioPorts, disconnectAudioPorts, getCurrentTickAudioTime } from '../audioEngine';
+import { createAudioModule, connectAudioPorts, disconnectAudioPorts, getCurrentTickAudioTime, restartAllClockTimers } from '../audioEngine';
 import { MODULE_PATCH_EXAMPLES, PatchExample } from '../modulePatchExamples';
 import ModulePanel from '../components/ModulePanel';
 import IORefPanel from '../components/IORefPanel';
@@ -979,17 +979,20 @@ function useMIDI(
   onMod:   (val: number) => void,
   onMon:   (ev: MidiMonEvent) => void,
   onClock: (info: MidiClockInfo) => void,
+  onStart: () => void,
 ): { status: MidiStatus; deviceCount: number } {
   const onNoteRef  = useRef(onNote);
   const onBendRef  = useRef(onBend);
   const onModRef   = useRef(onMod);
   const onMonRef   = useRef(onMon);
   const onClockRef = useRef(onClock);
+  const onStartRef = useRef(onStart);
   onNoteRef.current  = onNote;
   onBendRef.current  = onBend;
   onModRef.current   = onMod;
   onMonRef.current   = onMon;
   onClockRef.current = onClock;
+  onStartRef.current = onStart;
 
   const [status,      setStatus]      = useState<MidiStatus>('pending');
   const [deviceCount, setDeviceCount] = useState(0);
@@ -1093,6 +1096,10 @@ function useMIDI(
         clockTimestamps.length = 0;
         smoothedPeriodMs = NaN;
         lastTickMs = 0;
+        // MIDI Start (0xFA): notify SynthApp so it can snap all clocks to beat 1.
+        // Continue (0xFB) and Stop (0xFC) do NOT restart — Continue resumes from the
+        // current position; Stop leaves the grid where it is.
+        if (d[0] === 0xfa) onStartRef.current();
         return;
       }
 
@@ -2042,6 +2049,14 @@ export default function SynthApp() {
     setMidiClockLocked(!midiClockInfoRef.current.locked);
   }, []);
 
+  // Called by useMIDI when the DAW sends MIDI Start (0xFA).
+  // Restarts every active clock timer to beat 0 so the synth's internal grid
+  // snaps to the DAW's bar 1. Only fires when the clock is locked to the DAW.
+  const handleMidiStart = useCallback(() => {
+    if (!midiClockInfoRef.current.locked) return;
+    restartAllClockTimers();
+  }, []);
+
   const handleFreezeKill = useCallback((moduleId: string) => {
     audioModulesRef.current.get(moduleId)?.kill?.();
   }, []);
@@ -2194,7 +2209,7 @@ export default function SynthApp() {
   }, []);
 
   // MIDI input — routes USB keyboard events + Minilab CC→knob mapping + MIDI Clock
-  const { status: midiStatus, deviceCount: midiDeviceCount } = useMIDI(handleKeyNote, handleKeyBend, handleKeyMod, handleMidiMon, handleMidiClock);
+  const { status: midiStatus, deviceCount: midiDeviceCount } = useMIDI(handleKeyNote, handleKeyBend, handleKeyMod, handleMidiMon, handleMidiClock, handleMidiStart);
 
   // ─── Port click — cable patching ────────────────────────────────────────────
   const handlePortClick = useCallback((moduleId: string, portId: string, portType: PortType) => {

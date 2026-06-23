@@ -235,6 +235,17 @@ function getClockWorker(): Worker {
   return _clockWorker;
 }
 
+// Registry of active clock-timer restart functions.  restartAllClockTimers() sends
+// a 'restart' worker message to every live timer simultaneously, snapping all clocks
+// to beat 0 from 'now' — used when the DAW sends MIDI Start (0xFA) to align the
+// app's internal beat grid to the DAW's bar 1.
+const _activeClockRestarters = new Set<() => void>();
+
+/** Restart every active clock timer to beat 0 from now.  Call on MIDI Start (0xFA). */
+export function restartAllClockTimers(): void {
+  for (const restart of _activeClockRestarters) restart();
+}
+
 function makeClockTimer(getInterval: () => number, onTick: (beatIndex: number) => void) {
   const id = ++_clockTimerSeq;
   _clockCallbacks.set(id, onTick);
@@ -248,14 +259,18 @@ function makeClockTimer(getInterval: () => number, onTick: (beatIndex: number) =
   };
   worker.postMessage({ type: 'create', id, intervalMs: safeInterval() });
 
+  const restarter = () => worker.postMessage({ type: 'restart', id, intervalMs: safeInterval() });
+  _activeClockRestarters.add(restarter);
+
   return {
-    restart: () => worker.postMessage({ type: 'restart', id, intervalMs: safeInterval() }),
+    restart: restarter,
     // Send new intervalMs without resetting the clock — current beat plays on schedule,
     // next beat uses the new tempo. Use this for BPM/div knob changes instead of destroy+create.
     updateInterval: () => worker.postMessage({ type: 'update', id, intervalMs: safeInterval() }),
     destroy: () => {
       worker.postMessage({ type: 'destroy', id });
       _clockCallbacks.delete(id);
+      _activeClockRestarters.delete(restarter);
     },
   };
 }
