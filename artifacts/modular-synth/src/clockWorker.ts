@@ -79,7 +79,11 @@ function schedule(id: number, entry: Entry) {
       if (e.timerId !== null) clearTimeout(e.timerId);
       e.beat = 0;
       e.intervalMs = msg.intervalMs;
-      e.expectedAt = performance.now() + msg.intervalMs;
+      // Set expectedAt = now so beat 0 fires immediately (schedule() clamps
+      // negative delay to 0).  Previously this was now + intervalMs which delayed
+      // the first beat by a full interval — on MIDI Start that put the app's kick
+      // one beat behind the DAW's kick.
+      e.expectedAt = performance.now();
       schedule(msg.id, e);
     }
 
