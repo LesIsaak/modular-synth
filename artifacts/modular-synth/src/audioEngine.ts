@@ -166,6 +166,14 @@ const _clockCallbacks = new Map<number, (beat: number) => void>();
 // Worker messages (due to main-thread React renders) don't cause audible timing drift.
 let _currentTickAudioTime = 0;
 
+// Smoothed performance.now()→AudioContext.currentTime offset, in seconds.
+// Recomputing this raw on every tick injects clock jitter into every beat:
+// audioContext.currentTime only advances once per audio render-quantum, so reading
+// (currentTime - performance.now()) at an arbitrary instant wobbles by up to a
+// buffer each time. We low-pass it instead so the mapping stays stable, and snap on
+// large discontinuities (a new AudioContext, or the tab being backgrounded/resumed).
+let _clockOffset = NaN;
+
 // Cached AudioContext reference — set on first createAudioModule call.
 let _timingCtx: AudioContext | null = null;
 
@@ -195,10 +203,25 @@ function getClockWorker(): Worker {
           // timeline before mapping to audio time — otherwise the beat lands far in
           // the past, clamps to "now" every tick, and lookahead scheduling collapses
           // into raw main-thread jitter (audible timing jumps, worst on drums).
-          const perfNowS    = performance.now() / 1000;
-          const offset      = _timingCtx.currentTime - perfNowS;
+          // Sample a CORRELATED (audioTime, perfTime) pair. getOutputTimestamp gives a
+          // jitter-free pair taken at the same instant; fall back to reading both clocks
+          // back-to-back when it's unavailable or not yet advancing.
+          let instantOffset: number;
+          const ts = _timingCtx.getOutputTimestamp?.();
+          if (ts && Number.isFinite(ts.contextTime) && (ts.performanceTime ?? 0) > 0) {
+            instantOffset = (ts.contextTime as number) - (ts.performanceTime as number) / 1000;
+          } else {
+            instantOffset = _timingCtx.currentTime - performance.now() / 1000;
+          }
+          // Low-pass the offset to reject per-tick clock jitter; snap on big jumps so a
+          // new context or a tab resume re-locks immediately instead of crawling there.
+          if (!Number.isFinite(_clockOffset) || Math.abs(instantOffset - _clockOffset) > 0.12) {
+            _clockOffset = instantOffset;
+          } else {
+            _clockOffset += 0.08 * (instantOffset - _clockOffset);
+          }
           const originDelta  = ((ev.data.origin ?? performance.timeOrigin) - performance.timeOrigin) / 1000;
-          const scheduled   = ev.data.scheduledAt / 1000 + originDelta + offset;
+          const scheduled   = ev.data.scheduledAt / 1000 + originDelta + _clockOffset;
           // Clamp: can't schedule in the past; add 1 ms grace so tiny rounding never fires negative.
           _currentTickAudioTime = Math.max(_timingCtx.currentTime + 0.001, scheduled);
         }
@@ -243,7 +266,9 @@ export function createAudioModule(
   typeId: string,
   params: Record<string, number>,
 ): AudioModuleNodes {
-  _timingCtx = ctx; // keep reference current so the Worker handler can convert timestamps
+  // keep reference current so the Worker handler can convert timestamps; reset the
+  // smoothed clock offset whenever the context changes so it re-locks from scratch.
+  if (_timingCtx !== ctx) { _timingCtx = ctx; _clockOffset = NaN; }
   const p = { ...params };
 
   // Scales a normalized (0..1) CV source up into a filter's Q range so resonance
