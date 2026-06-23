@@ -1005,6 +1005,7 @@ function useMIDI(
     const clockTimestamps: number[] = [];
     let clockDeviceName: string | null = null;
     let lastTickMs = 0; // performance.now() of the previous 0xF8, for discontinuity detection
+    let smoothedPeriodMs = NaN; // EMA of the per-pulse period (ms), the stable tempo estimate
     // Throttle React updates from MIDI clock. A 0xF8 tick arrives 24× per beat
     // (~58×/sec at 145 BPM); emitting on every one rebuilds the module tree dozens
     // of times a second on the main thread and starves the audio clock — the beat
@@ -1029,7 +1030,10 @@ function useMIDI(
         // garbage BPM that, when LOCKed, is pushed to every clock module and
         // PERMANENTLY shifts its phase (the worker's 'update' advances expectedAt by
         // the new interval). Drop the stale samples and re-measure from scratch.
-        if (lastTickMs !== 0 && now - lastTickMs > 250) clockTimestamps.length = 0;
+        if (lastTickMs !== 0 && now - lastTickMs > 250) {
+          clockTimestamps.length = 0;
+          smoothedPeriodMs = NaN; // re-lock the tempo estimate from scratch after a gap
+        }
         lastTickMs = now;
         clockTimestamps.push(now);
         if (clockTimestamps.length > CLOCK_WINDOW + 1) clockTimestamps.shift();
@@ -1040,19 +1044,40 @@ function useMIDI(
           const intervals: number[] = [];
           for (let i = 1; i < clockTimestamps.length; i++)
             intervals.push(clockTimestamps[i] - clockTimestamps[i - 1]);
-          const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-          const bpm = Math.round((60000 / avgInterval) / CLOCK_PULSES_PER_BEAT * 10) / 10;
-          if (bpm >= 20 && bpm <= 400) {
+          // MEDIAN, not mean. MIDI clock bytes are timestamped on the main thread, so
+          // each interval carries event-delivery jitter and the occasional very-late
+          // tick. The mean lets one late tick skew the whole estimate (visible BPM
+          // wobble + a bad interval pushed to the clocks); the median rejects outliers
+          // and yields a rock-steady period.
+          const sorted = [...intervals].sort((a, b) => a - b);
+          const mid = sorted.length >> 1;
+          const medianInterval = sorted.length % 2
+            ? sorted[mid]
+            : (sorted[mid - 1] + sorted[mid]) / 2;
+          // EMA-smooth the period for extra stability; snap on first lock after a gap.
+          smoothedPeriodMs = Number.isFinite(smoothedPeriodMs)
+            ? smoothedPeriodMs + 0.2 * (medianInterval - smoothedPeriodMs)
+            : medianInterval;
+          const rawBpm = (60000 / smoothedPeriodMs) / CLOCK_PULSES_PER_BEAT;
+          if (rawBpm >= 20 && rawBpm <= 400) {
             if (clockDeviceName !== deviceName) clockDeviceName = deviceName;
             const deviceChanged = lastEmittedDevice !== deviceName;
-            const bpmChanged = Math.abs(bpm - lastEmittedBpm) >= 0.2;
-            // Hard-cap at ~5×/sec even on device change: if two devices both stream
-            // clock, deviceName would otherwise flip every tick and bypass the throttle.
+            // Deadband / hysteresis: only report a NEW tempo when it genuinely moves
+            // past 0.25 BPM. A steady DAW tempo then pins to a single value (e.g.
+            // 120.0) instead of flickering 119.9/120.1 — and, crucially, STOPS pushing
+            // new intervals to the clocks once locked, so they cannot phase-wander.
+            // Hard-cap at ~5×/sec so a real tempo ramp can't storm the main thread.
+            const bpmChanged = Math.abs(rawBpm - lastEmittedBpm) >= 0.25;
             if ((deviceChanged || bpmChanged) && now - lastEmitMs >= 200) {
-              lastEmittedBpm = bpm;
+              // Emit the FULL-PRECISION smoothed tempo (the panel rounds to 0.1 for
+              // display). Quantizing here would bake a steady-state tempo error into
+              // the locked interval that the free-running clocks accumulate as drift;
+              // full precision keeps the interval as close to the DAW's true period as
+              // we can measure. The deadband still freezes the value once locked.
+              lastEmittedBpm = rawBpm;
               lastEmittedDevice = deviceName;
               lastEmitMs = now;
-              emitMidiClockInfo({ bpm, deviceName });
+              emitMidiClockInfo({ bpm: rawBpm, deviceName });
             }
           }
         }
@@ -1066,6 +1091,7 @@ function useMIDI(
       // belt-and-suspenders for DAWs that do.
       if (d[0] === 0xfa || d[0] === 0xfb || d[0] === 0xfc) {
         clockTimestamps.length = 0;
+        smoothedPeriodMs = NaN;
         lastTickMs = 0;
         return;
       }
@@ -2000,7 +2026,12 @@ export default function SynthApp() {
         if (!typeDef) return m;
         const hasBpm = typeDef.knobs.some(k => k.id === 'bpm');
         if (!hasBpm) return m;
-        const bpmClamped = Math.max(20, Math.min(300, Math.round(info.bpm!)));
+        // Push the FULL-PRECISION BPM (only clamped to range). Rounding — even to an
+        // integer — made the pushed interval flip at boundaries (e.g. 120.4↔120.6 →
+        // 120↔121); each flip re-set the worker interval and wandered the clock phase.
+        // Full precision maps a steady tempo to one stable interval (no wander) and
+        // minimises the residual tempo error the free-running clock accumulates.
+        const bpmClamped = Math.max(20, Math.min(300, info.bpm!));
         audioModulesRef.current.get(m.id)?.setParam('bpm', bpmClamped);
         return { ...m, params: { ...m.params, bpm: bpmClamped } };
       }));
