@@ -64,6 +64,29 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
     ],
   },
   {
+    id: 'moog_vco', name: 'Moog VCO', category: 'oscillator', accentColor: OSC, width: 240,
+    knobs: [
+      { id: 'freq',  name: 'FREQ',  min: 20,   max: 2000, default: 110,  log: true, unit: 'Hz' },
+      { id: 'fine',  name: 'FINE',  min: -100, max: 100,  default: 0,    unit: 'ct' },
+      { id: 'pw',    name: 'PW',    min: 0.05, max: 0.95, default: 0.5               },
+      { id: 'glide', name: 'GLIDE', min: 0,    max: 2000, default: 0,    unit: 'ms' },
+      { id: 'sub',   name: 'SUB',   min: 0,    max: 1,    default: 0.5               },
+      { id: 'drift', name: 'DRIFT', min: 0,    max: 1,    default: 0.15              },
+    ],
+    selectors: [{ id: 'octave', name: 'OCT', options: ['-2', '-1', '0', '+1', '+2'], default: 2 }],
+    ports: [
+      { id: 'voct',    name: 'V/OCT', type: 'cv_in'    },
+      { id: 'pw_cv',   name: 'PW',    type: 'cv_in'    },
+      { id: 'sync_in', name: 'SYNC',  type: 'cv_in'    },
+      audioOut,
+      { id: 'saw_out', name: 'SAW',   type: 'audio_out' },
+      { id: 'sqr_out', name: 'SQR',   type: 'audio_out' },
+      { id: 'tri_out', name: 'TRI',   type: 'audio_out' },
+      { id: 'sin_out', name: 'SIN',   type: 'audio_out' },
+      { id: 'sub_out', name: 'SUB',   type: 'audio_out' },
+    ],
+  },
+  {
     id: 'digital_osc', name: 'Digital OSC', category: 'oscillator', accentColor: OSC, width: 200,
     knobs: [
       { id: 'freq',   name: 'FREQ',   min: 20, max: 2000, default: 220, log: true },
@@ -1429,6 +1452,7 @@ export const CABLE_COLORS = [
 export const MODULE_DESCRIPTIONS: Record<string, string> = {
   // ── Oscillators ────────────────────────────────────────────────────
   analog_vco:    'Sawtooth-core oscillator with 4 simultaneous waveform outputs and V/OCT pitch tracking. SYNC input hard-resets the phase for punchy, distorted attacks.',
+  moog_vco:      'Moog-style oscillator with glide, octave switch, true PWM pulse output, sub oscillator, and an analogue drift LFO. Main OUT is sawtooth through soft tanh saturation for that classic warm Moog character.',
   digital_osc:   'Precise digital oscillator with octave shift. Cleaner than analog — great for sharp leads or as a sync slave to another oscillator.',
   wavetable_osc: 'Scans through a table of waveforms. POS sets the start position, MORPH crossfades to adjacent waves — patch both to an LFO for evolving, animated tones.',
   fm_osc:        'Two-operator FM synthesis. RATIO tunes the modulator relative to the carrier; INDEX sets modulation depth — low = subtle harmonics, high = metallic or glassy.',

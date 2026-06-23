@@ -381,6 +381,175 @@ export function createAudioModule(
       };
     }
 
+    case 'moog_vco': {
+      const OCT_SHIFTS = [-2, -1, 0, 1, 2];
+      let octIdx   = Math.max(0, Math.min(4, Math.round(p.octave ?? 2)));
+      let baseFreq = p.freq ?? 110;
+      let glideMs  = p.glide ?? 0;
+      let currentPw = Math.max(0.05, Math.min(0.95, p.pw ?? 0.5));
+
+      // ── V/OCT source ───────────────────────────────────────────────────────
+      const voct = ctx.createConstantSource();
+      voct.offset.value = baseFreq * Math.pow(2, OCT_SHIFTS[octIdx]);
+      voct.start();
+
+      // Sub gets half the frequency (one octave below) via a gain of 0.5
+      const subScale = ctx.createGain(); subScale.gain.value = 0.5;
+      voct.connect(subScale);
+
+      // ── Drift LFO — very slow (~0.3–0.8 Hz), random phase, subtle detune ─
+      const driftLfo  = ctx.createOscillator();
+      driftLfo.type   = 'sine';
+      driftLfo.frequency.value = 0.3 + Math.random() * 0.5;
+      const driftGain = ctx.createGain();
+      driftGain.gain.value = (p.drift ?? 0.15) * 12; // 0→0 ct, 1→12 ct max
+      driftLfo.connect(driftGain);
+      driftLfo.start();
+
+      // ── Main oscillators ──────────────────────────────────────────────────
+      const sawOsc = ctx.createOscillator(); sawOsc.type = 'sawtooth';
+      const triOsc = ctx.createOscillator(); triOsc.type = 'triangle';
+      const sinOsc = ctx.createOscillator(); sinOsc.type = 'sine';
+      // pwSaw feeds the PWM comparator waveshaper below
+      const pwSaw  = ctx.createOscillator(); pwSaw.type  = 'sawtooth';
+      const subOsc = ctx.createOscillator(); subOsc.type = 'square';
+
+      const fineDetune = (p.fine ?? 0) * 100;
+      [sawOsc, triOsc, sinOsc, pwSaw].forEach(o => {
+        o.frequency.value = 0;
+        voct.connect(o.frequency);
+        o.detune.value = fineDetune;
+        driftGain.connect(o.detune); // drift is additive on top of .value
+        o.start();
+      });
+      subOsc.frequency.value = 0;
+      subScale.connect(subOsc.frequency);
+      subOsc.detune.value = fineDetune;
+      driftGain.connect(subOsc.detune);
+      subOsc.start();
+
+      // ── PWM: sawtooth → WaveShaper comparator → pulse wave ───────────────
+      // Threshold maps pulse-width [0,1] to sawtooth range [-1,+1]
+      const makePwmCurve = (pw: number): Float32Array<ArrayBuffer> => {
+        const n = 1024;
+        const curve = new Float32Array(new ArrayBuffer(n * 4));
+        const thresh = pw * 2 - 1;
+        for (let i = 0; i < n; i++) {
+          const x = (i / (n - 1)) * 2 - 1;
+          curve[i] = x < thresh ? -1 : 1;
+        }
+        return curve;
+      };
+      const pwShaper = ctx.createWaveShaper();
+      pwShaper.curve = makePwmCurve(currentPw);
+      pwSaw.connect(pwShaper);
+
+      // PW CV input uses AnalyserNode polling (WaveShaper.curve is not an AudioParam)
+      const pwCs = ctx.createConstantSource(); pwCs.offset.value = 0; pwCs.start();
+      const pwAnalyser = ctx.createAnalyser(); pwAnalyser.fftSize = 32;
+      pwCs.connect(pwAnalyser);
+      const pwBuf = new Float32Array(1);
+      const pwPoll = setInterval(() => {
+        pwAnalyser.getFloatTimeDomainData(pwBuf);
+        const target = Math.max(0.05, Math.min(0.95, currentPw + pwBuf[0]));
+        pwShaper.curve = makePwmCurve(target);
+      }, 50);
+
+      // ── Soft tanh saturation on main (SAW) output — classic Moog warmth ──
+      const makeTanhCurve = (): Float32Array<ArrayBuffer> => {
+        const n = 256;
+        const curve = new Float32Array(new ArrayBuffer(n * 4));
+        for (let i = 0; i < n; i++) {
+          const x = (i / (n - 1)) * 2 - 1;
+          curve[i] = Math.tanh(2 * x) / Math.tanh(2);
+        }
+        return curve;
+      };
+      const satShaper = ctx.createWaveShaper();
+      satShaper.curve = makeTanhCurve();
+      satShaper.oversample = '4x';
+
+      // ── Per-wave output gains ─────────────────────────────────────────────
+      const sawGain = ctx.createGain(); sawGain.gain.value = 1; sawOsc.connect(sawGain);
+      const sqrGain = ctx.createGain(); sqrGain.gain.value = 1; pwShaper.connect(sqrGain);
+      const triGain = ctx.createGain(); triGain.gain.value = 1; triOsc.connect(triGain);
+      const sinGain = ctx.createGain(); sinGain.gain.value = 1; sinOsc.connect(sinGain);
+      const subGain = ctx.createGain();
+      subGain.gain.value = Math.max(0, Math.min(1, p.sub ?? 0.5));
+      subOsc.connect(subGain);
+
+      // Main OUT: SAW → tanh saturation
+      const mainOut = ctx.createGain(); mainOut.gain.value = 1;
+      sawGain.connect(satShaper);
+      satShaper.connect(mainOut);
+
+      // ── Glide helper ──────────────────────────────────────────────────────
+      const rampFreq = (targetFreq: number) => {
+        if (glideMs > 0) {
+          const t = ctx.currentTime + glideMs / 1000;
+          voct.offset.cancelScheduledValues(ctx.currentTime);
+          voct.offset.setValueAtTime(voct.offset.value, ctx.currentTime);
+          voct.offset.linearRampToValueAtTime(targetFreq, t);
+        } else {
+          voct.offset.value = targetFreq;
+        }
+      };
+
+      return {
+        outputs: new Map<string, AudioNode>([
+          ['out',     mainOut],
+          ['saw_out', sawGain],
+          ['sqr_out', sqrGain],
+          ['tri_out', triGain],
+          ['sin_out', sinGain],
+          ['sub_out', subGain],
+        ]),
+        inputs: new Map([
+          ['voct',    { node: voct, param: voct.offset }],
+          ['pw_cv',   { node: pwCs, param: pwCs.offset }],
+          ['sync_in', { node: voct }],
+        ]),
+        noteOn: (_t, freq) => {
+          baseFreq = freq;
+          rampFreq(freq * Math.pow(2, OCT_SHIFTS[octIdx]));
+        },
+        setParam: (id, val) => {
+          p[id] = val;
+          if (id === 'freq') {
+            baseFreq = val;
+            rampFreq(val * Math.pow(2, OCT_SHIFTS[octIdx]));
+          }
+          if (id === 'fine') {
+            const cents = val * 100;
+            [sawOsc, triOsc, sinOsc, pwSaw, subOsc].forEach(o => { o.detune.value = cents; });
+          }
+          if (id === 'glide') glideMs = val;
+          if (id === 'pw') {
+            currentPw = Math.max(0.05, Math.min(0.95, val));
+            pwShaper.curve = makePwmCurve(currentPw);
+          }
+          if (id === 'sub')   subGain.gain.value = Math.max(0, Math.min(1, val));
+          if (id === 'drift') driftGain.gain.value = val * 12;
+        },
+        setSelector: (id, val) => {
+          if (id === 'octave') {
+            octIdx = Math.max(0, Math.min(4, Math.round(val)));
+            rampFreq(baseFreq * Math.pow(2, OCT_SHIFTS[octIdx]));
+          }
+        },
+        destroy: () => {
+          clearInterval(pwPoll);
+          voct.stop(); voct.disconnect();
+          driftLfo.stop(); driftLfo.disconnect(); driftGain.disconnect();
+          [sawOsc, triOsc, sinOsc, pwSaw, subOsc].forEach(o => { o.stop(); o.disconnect(); });
+          pwCs.stop(); pwCs.disconnect(); pwAnalyser.disconnect();
+          pwShaper.disconnect(); satShaper.disconnect(); subScale.disconnect();
+          [sawGain, sqrGain, triGain, sinGain, subGain].forEach(g => g.disconnect());
+          mainOut.disconnect();
+        },
+      };
+    }
+
     case 'digital_osc': {
       const osc = ctx.createOscillator();
       const waveMap: OscillatorType[] = ['square', 'sawtooth', 'triangle', 'sine'];
