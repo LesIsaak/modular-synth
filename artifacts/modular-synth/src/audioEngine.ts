@@ -35,6 +35,13 @@ export interface AudioModuleNodes {
   getDeviceLabel?: () => string;
   /** Audio Trig: returns all available audio input devices (non-empty after first permission grant) */
   getDeviceList?: () => { deviceId: string; label: string }[];
+  /** Granular synth: polled at ~60 fps for the waveform + grain visualisation canvas */
+  getGrainData?: () => {
+    position:      number;
+    grains:        Array<{ pos: number; size: number; pan: number; age: number }>;
+    hasBuffer:     boolean;
+    waveformPeaks: Float32Array<ArrayBuffer> | null;
+  };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -3555,6 +3562,302 @@ export function createAudioModule(
           lenCvTap.destroy();   bankCvTap.destroy();
           try { envGain.disconnect(); } catch (_) {}
           try { sampOut.disconnect(); } catch (_) {}
+        },
+      };
+    }
+
+    // ── Granular Synthesizer ──────────────────────────────────────────
+    case 'granular_synth': {
+      let buffer:       AudioBuffer | null = null;
+      let bufferRev:    AudioBuffer | null = null;
+      let waveformPeaks: Float32Array<ArrayBuffer> | null = null;
+      let isDestroyed = false;
+
+      // Live parameter shadows
+      let scanPos      = p.position     ?? 0;
+      let scanSpeed    = p.scan         ?? 0;
+      let grainSizeMs  = p.size         ?? 80;
+      let density      = p.density      ?? 12;
+      let scatter      = p.scatter      ?? 0.2;
+      let pitchSt      = p.pitch        ?? 0;
+      let pitchRandSt  = p.pitch_rand   ?? 0;
+      let panSpread    = p.pan_spread   ?? 0.5;
+      let reverseProb  = p.reverse_prob ?? 0;
+      let feedbackAmt  = p.feedback     ?? 0;
+      let volume       = p.volume       ?? 0.8;
+
+      // Active grains for visualisation (max 64)
+      type GrainViz = { pos: number; sizeSec: number; pan: number; endAt: number };
+      const activeGrains: GrainViz[] = [];
+      const MAX_GRAINS = 64;
+
+      // ── CV Analyser taps ────────────────────────────────────────────
+      const makeTap = () => {
+        const cs = ctx.createConstantSource();
+        cs.offset.value = 0;
+        cs.start();
+        const an = ctx.createAnalyser();
+        an.fftSize = 32;
+        cs.connect(an);
+        const buf32 = new Float32Array(1);
+        return {
+          node:    cs as AudioNode,
+          param:   cs.offset,
+          read:    () => { an.getFloatTimeDomainData(buf32); return buf32[0]; },
+          destroy: () => { try { cs.stop(); cs.disconnect(); an.disconnect(); } catch (_) {} },
+        };
+      };
+
+      const voctTap    = makeTap();
+      const posTap     = makeTap();
+      const sizeTap    = makeTap();
+      const densTap    = makeTap();
+      const scatTap    = makeTap();
+      const pitchCvTap = makeTap();
+
+      // ── Output graph ─────────────────────────────────────────────────
+      // each grain: src → env → panner → grainBus
+      // grainBus → splitter → outL / outR
+      // grainBus → outMono
+      // feedback: grainBus → fbDelay → fbGain → grainBus
+      const grainBus = ctx.createGain();
+      grainBus.gain.value = volume;
+      grainBus.channelCount = 2;
+      grainBus.channelCountMode = 'explicit' as ChannelCountMode;
+
+      const splitter = ctx.createChannelSplitter(2);
+      grainBus.connect(splitter);
+      const outL    = ctx.createGain();
+      const outR    = ctx.createGain();
+      const outMono = ctx.createGain();
+      outMono.channelCount = 1;
+      outMono.channelCountMode = 'clamped-max' as ChannelCountMode;
+      splitter.connect(outL,    0);
+      splitter.connect(outR,    1);
+      grainBus.connect(outMono);
+
+      // Feedback loop (valid in Web Audio when a DelayNode is in the path)
+      const fbDelay = ctx.createDelay(1.0);
+      fbDelay.delayTime.value = 0.04;
+      const fbGain = ctx.createGain();
+      fbGain.gain.value = feedbackAmt;
+      grainBus.connect(fbDelay);
+      fbDelay.connect(fbGain);
+      fbGain.connect(grainBus);
+
+      // Gate-trigger ConstantSource output (pulses 0→1→0)
+      const trigCs = ctx.createConstantSource();
+      trigCs.offset.value = 0;
+      trigCs.start();
+      let gateCb: ((on: boolean, freq: number) => void) | null = null;
+
+      // V/OCT from keyboard noteOn
+      let voctFreq = 440;
+
+      // ── Grain scheduler ─────────────────────────────────────────────
+      const LOOKAHEAD  = 0.08; // seconds
+      const TICK_MS    = 30;   // scheduler interval ms
+      let nextGrainAt  = 0;
+      let lastTickTime = 0;
+      let schedTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const computePeaks = (buf: AudioBuffer): Float32Array<ArrayBuffer> => {
+        const N     = 512;
+        const peaks = new Float32Array(new ArrayBuffer(N * 4));
+        const ch    = buf.getChannelData(0);
+        const block = Math.max(1, Math.floor(ch.length / N));
+        for (let i = 0; i < N; i++) {
+          let peak = 0;
+          const s  = i * block;
+          for (let j = 0; j < block && s + j < ch.length; j++) {
+            const v = Math.abs(ch[s + j]);
+            if (v > peak) peak = v;
+          }
+          peaks[i] = peak;
+        }
+        return peaks;
+      };
+
+      const makeRevBuf = (src: AudioBuffer): AudioBuffer => {
+        const rev = ctx.createBuffer(src.numberOfChannels, src.length, src.sampleRate);
+        for (let c = 0; c < src.numberOfChannels; c++) {
+          const fwd  = src.getChannelData(c);
+          const dest = rev.getChannelData(c);
+          for (let i = 0; i < src.length; i++) dest[i] = fwd[src.length - 1 - i];
+        }
+        return rev;
+      };
+
+      const spawnGrain = (time: number) => {
+        if (!buffer || isDestroyed || activeGrains.length >= MAX_GRAINS) return;
+
+        // Read CV taps
+        const voctCV  = voctTap.read();
+        const posCV   = posTap.read();
+        const sizeCV  = sizeTap.read();
+        const scatCV  = scatTap.read();
+        const pitchCV = pitchCvTap.read();
+
+        // V/OCT: prefer cable value if > 10 Hz, else use keyboard noteOn value
+        const baseFreq  = voctCV > 10 ? voctCV : voctFreq;
+        const grainSec  = Math.max(0.001, (grainSizeMs + sizeCV * 200) / 1000);
+        const effScat   = Math.max(0, Math.min(1, scatter + scatCV));
+        const posJitter = (Math.random() - 0.5) * effScat * 0.15;
+        const pos       = Math.max(0, Math.min(0.999, scanPos + posCV + posJitter));
+
+        const semis     = pitchSt + pitchCV * 12 + Math.log2(baseFreq / 440) * 12;
+        const randSt    = (Math.random() - 0.5) * pitchRandSt;
+        const rate      = Math.max(0.01, Math.pow(2, (semis + randSt) / 12));
+        const pan       = (Math.random() - 0.5) * 2 * panSpread;
+
+        const useRev    = bufferRev !== null && Math.random() < reverseProb;
+        const buf       = useRev ? bufferRev! : buffer!;
+
+        // Clamp start offset so grain fits inside the buffer
+        const startOff  = Math.max(0, Math.min(buf.duration - grainSec / rate - 0.001,
+                                                pos * buf.duration));
+
+        // Hanning-style envelope: short attack + release around sustain body
+        const atk = Math.min(grainSec * 0.3, 0.05);
+        const rel = Math.min(grainSec * 0.3, 0.05);
+
+        const src    = ctx.createBufferSource();
+        src.buffer   = buf;
+        src.playbackRate.value = rate;
+
+        const env = ctx.createGain();
+        env.gain.setValueAtTime(0, time);
+        env.gain.linearRampToValueAtTime(1, time + atk);
+        if (grainSec - atk - rel > 0.001) env.gain.setValueAtTime(1, time + grainSec - rel);
+        env.gain.linearRampToValueAtTime(0, time + grainSec);
+
+        const panner  = ctx.createStereoPanner();
+        panner.pan.value = Math.max(-1, Math.min(1, pan));
+
+        src.connect(env);
+        env.connect(panner);
+        panner.connect(grainBus);
+
+        src.start(time, startOff, grainSec / rate);
+        src.stop(time + grainSec + 0.02);
+
+        const gviz: GrainViz = { pos, sizeSec: grainSec, pan, endAt: time + grainSec };
+        activeGrains.push(gviz);
+
+        src.onended = () => {
+          try { src.disconnect(); env.disconnect(); panner.disconnect(); } catch (_) {}
+          const idx = activeGrains.indexOf(gviz);
+          if (idx >= 0) activeGrains.splice(idx, 1);
+        };
+
+        if (gateCb) {
+          try { gateCb(true, baseFreq); } catch (_) {}
+          setTimeout(() => { try { gateCb?.(false, baseFreq); } catch (_) {} }, 20);
+        }
+      };
+
+      const runScheduler = () => {
+        if (isDestroyed) return;
+        const now = ctx.currentTime;
+
+        // Auto-scan: advance read head over time
+        if (lastTickTime > 0 && Math.abs(scanSpeed) > 0.0001) {
+          const dt  = now - lastTickTime;
+          scanPos  += scanSpeed * dt * 0.05; // 0.05 → full sweep ~20 s at max speed
+          scanPos   = ((scanPos % 1) + 1) % 1;
+        }
+        lastTickTime = now;
+
+        // Prune visualisation entries for grains that already ended
+        for (let i = activeGrains.length - 1; i >= 0; i--) {
+          if (activeGrains[i].endAt < now - 0.05) activeGrains.splice(i, 1);
+        }
+
+        // Effective density from knob + CV
+        const dCV            = densTap.read();
+        const effDensity     = Math.max(0.5, Math.min(200, density + dCV * 50));
+        const interval       = 1 / effDensity;
+
+        // Fill lookahead window
+        while (nextGrainAt < now + LOOKAHEAD) {
+          spawnGrain(Math.max(nextGrainAt, now + 0.001));
+          const sCV    = scatTap.read();
+          const effS   = Math.max(0, Math.min(1, scatter + sCV));
+          const jitter = (Math.random() - 0.5) * effS * interval * 0.5;
+          nextGrainAt += interval + jitter;
+          if (nextGrainAt < now + 0.001) nextGrainAt = now + 0.001;
+        }
+
+        schedTimer = setTimeout(runScheduler, TICK_MS);
+      };
+
+      return {
+        outputs: new Map<string, AudioNode>([
+          ['out_l',      outL],
+          ['out_r',      outR],
+          ['out',        outMono],
+          ['grain_trig', trigCs],
+        ]),
+        inputs: new Map([
+          ['voct',       { node: voctTap.node,    param: voctTap.param    }],
+          ['pos_cv',     { node: posTap.node,     param: posTap.param     }],
+          ['size_cv',    { node: sizeTap.node,    param: sizeTap.param    }],
+          ['density_cv', { node: densTap.node,    param: densTap.param    }],
+          ['scatter_cv', { node: scatTap.node,    param: scatTap.param    }],
+          ['pitch_cv',   { node: pitchCvTap.node, param: pitchCvTap.param }],
+        ]),
+        noteOn:          (_t, freq) => { voctFreq = freq; },
+        setGateTrigger:  fn => { gateCb = fn; },
+        getLevel: () => Math.min(1, activeGrains.length / Math.max(1, density * 0.3)),
+        getGrainData: () => ({
+          position:      scanPos,
+          grains:        activeGrains.map(g => ({
+            pos:  g.pos,
+            size: Math.min(1, g.sizeSec),
+            pan:  g.pan,
+            age:  Math.max(0, Math.min(1,
+                    1 - (g.endAt - ctx.currentTime) / Math.max(0.001, g.sizeSec))),
+          })),
+          hasBuffer:     buffer !== null,
+          waveformPeaks: waveformPeaks,
+        }),
+        loadSample: async (arrayBuffer: ArrayBuffer, _bankIndex: number) => {
+          const decoded  = await ctx.decodeAudioData(arrayBuffer.slice(0));
+          buffer         = decoded;
+          bufferRev      = makeRevBuf(decoded);
+          waveformPeaks  = computePeaks(decoded);
+          // Start scheduler on first load
+          if (schedTimer === null && !isDestroyed) {
+            nextGrainAt  = ctx.currentTime;
+            lastTickTime = ctx.currentTime;
+            runScheduler();
+          }
+        },
+        setParam: (id, val) => {
+          p[id] = val;
+          switch (id) {
+            case 'position':     scanPos     = val; break;
+            case 'scan':         scanSpeed   = val; break;
+            case 'size':         grainSizeMs = val; break;
+            case 'density':      density     = val; break;
+            case 'scatter':      scatter     = val; break;
+            case 'pitch':        pitchSt     = val; break;
+            case 'pitch_rand':   pitchRandSt = val; break;
+            case 'pan_spread':   panSpread   = val; break;
+            case 'reverse_prob': reverseProb = val; break;
+            case 'feedback':     feedbackAmt = val; fbGain.gain.value   = val; break;
+            case 'volume':       volume      = val; grainBus.gain.value = val; break;
+          }
+        },
+        destroy: () => {
+          isDestroyed = true;
+          if (schedTimer !== null) clearTimeout(schedTimer);
+          try { trigCs.stop(); } catch (_) {}
+          [trigCs, grainBus, outL, outR, outMono, splitter, fbDelay, fbGain].forEach(n => {
+            try { n.disconnect(); } catch (_) {}
+          });
+          voctTap.destroy(); posTap.destroy(); sizeTap.destroy();
+          densTap.destroy(); scatTap.destroy(); pitchCvTap.destroy();
         },
       };
     }

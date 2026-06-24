@@ -53,6 +53,13 @@ interface ModulePanelProps {
   audioTrigGetDeviceList?: () => { deviceId: string; label: string }[];
   /** Build this module's example patch in the rack */
   onBuildPatch?: () => void;
+  /** Granular synth: real-time grain + waveform data for the canvas visualisation */
+  getGrainDataFn?: () => {
+    position:      number;
+    grains:        Array<{ pos: number; size: number; pan: number; age: number }>;
+    hasBuffer:     boolean;
+    waveformPeaks: Float32Array | null;
+  };
 }
 
 function ActivityLED({ getLevelFn, color }: { getLevelFn: () => number; color: string }) {
@@ -75,6 +82,171 @@ function ActivityLED({ getLevelFn, color }: { getLevelFn: () => number; color: s
       width: 5, height: 5, borderRadius: '50%', flexShrink: 0,
       background: color, opacity: 0.12,
     }} />
+  );
+}
+
+// ─── Granular Synth Display ───────────────────────────────────────────────────
+type GrainDataResult = {
+  position:      number;
+  grains:        Array<{ pos: number; size: number; pan: number; age: number }>;
+  hasBuffer:     boolean;
+  waveformPeaks: Float32Array | null;
+};
+
+function GranularSynthDisplay({
+  getGrainData,
+  accent,
+  onLoadSample,
+}: {
+  getGrainData?: () => GrainDataResult;
+  accent: string;
+  onLoadSample?: (file: File, bankIndex: number) => void;
+}) {
+  const canvasRef  = useRef<HTMLCanvasElement>(null);
+  const rafRef     = useRef<number | null>(null);
+  const [hasBuffer, setHasBuffer] = useState(false);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setHasBuffer(getGrainData?.()?.hasBuffer ?? false);
+    }, 300);
+    return () => clearInterval(id);
+  }, [getGrainData]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const draw = () => {
+      const data   = getGrainData?.();
+      const c2d    = canvas.getContext('2d');
+      if (!c2d) return;
+      const W = canvas.width;
+      const H = canvas.height;
+
+      c2d.clearRect(0, 0, W, H);
+      c2d.fillStyle = '#080810';
+      c2d.fillRect(0, 0, W, H);
+
+      if (!data?.hasBuffer) {
+        c2d.fillStyle = '#333';
+        c2d.font = '9px monospace';
+        c2d.textAlign = 'center';
+        c2d.textBaseline = 'middle';
+        c2d.fillText('LOAD A SAMPLE', W / 2, H / 2);
+        rafRef.current = requestAnimationFrame(draw);
+        return;
+      }
+
+      // Waveform from peaks
+      const peaks = data.waveformPeaks;
+      if (peaks && peaks.length > 0) {
+        const step = W / peaks.length;
+        for (let i = 0; i < peaks.length; i++) {
+          const h = Math.max(1, peaks[i] * H * 0.45);
+          const x = i * step;
+          c2d.fillStyle = '#1e1e3a';
+          c2d.fillRect(x, H / 2 - h, step + 0.5, h * 2);
+        }
+        // Mid-line
+        c2d.strokeStyle = '#2a2a4a';
+        c2d.lineWidth = 0.5;
+        c2d.beginPath();
+        c2d.moveTo(0, H / 2);
+        c2d.lineTo(W, H / 2);
+        c2d.stroke();
+      }
+
+      // Active grains (semi-transparent bars at their buffer position)
+      for (const g of data.grains) {
+        const alpha = Math.max(0, (1 - g.age) * 0.75);
+        if (alpha < 0.02) continue;
+        const x      = g.pos * W;
+        const gW     = Math.max(2, g.size * W * 0.08);
+        // Tint by pan position: left=cool, right=warm
+        const panNorm = (g.pan + 1) / 2; // 0=left, 1=right
+        c2d.save();
+        c2d.globalAlpha = alpha;
+        c2d.fillStyle   = accent;
+        c2d.shadowColor = accent;
+        c2d.shadowBlur  = 4;
+        c2d.fillRect(x - gW / 2, 0, gW, H);
+        c2d.restore();
+        // Pan dot at bottom
+        c2d.save();
+        c2d.globalAlpha = alpha * 0.6;
+        c2d.fillStyle   = panNorm > 0.5 ? '#f97316' : '#22d3ee';
+        c2d.fillRect(x - 1, H - 4, 2, 4);
+        c2d.restore();
+      }
+
+      // Scan-position line
+      const posX = data.position * W;
+      c2d.save();
+      c2d.globalAlpha = 0.85;
+      c2d.strokeStyle = '#ffffff';
+      c2d.lineWidth   = 1.5;
+      c2d.shadowColor = accent;
+      c2d.shadowBlur  = 6;
+      c2d.beginPath();
+      c2d.moveTo(posX, 0);
+      c2d.lineTo(posX, H);
+      c2d.stroke();
+      c2d.restore();
+
+      rafRef.current = requestAnimationFrame(draw);
+    };
+
+    rafRef.current = requestAnimationFrame(draw);
+    return () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); };
+  }, [getGrainData, accent]);
+
+  return (
+    <div style={{ padding: '4px 5px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <canvas
+        ref={canvasRef}
+        width={256}
+        height={64}
+        style={{
+          width: '100%', height: 64,
+          borderRadius: 3, display: 'block',
+          border: `1px solid ${hasBuffer ? accent + '44' : '#1c1c1c'}`,
+          transition: 'border-color 0.3s',
+        }}
+        onMouseDown={e => e.stopPropagation()}
+      />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <label
+          style={{
+            padding: '3px 8px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
+            background: '#1c1c1c', color: accent,
+            border: `1px solid ${accent}55`,
+            textTransform: 'uppercase', letterSpacing: '0.12em',
+            userSelect: 'none', lineHeight: '14px', flexShrink: 0,
+          }}
+          onMouseDown={e => e.stopPropagation()}
+          title="Load audio sample (wav, mp3, flac, ogg…)"
+        >
+          LOAD SAMPLE
+          <input
+            type="file"
+            accept="audio/*,.wav,.mp3,.flac,.ogg,.aiff"
+            style={{ display: 'none' }}
+            onChange={e => {
+              const file = e.target.files?.[0];
+              if (file && onLoadSample) { onLoadSample(file, 0); e.target.value = ''; }
+            }}
+          />
+        </label>
+        <span style={{
+          marginLeft: 'auto', fontSize: 7,
+          color: hasBuffer ? accent : '#333',
+          letterSpacing: '0.1em', textTransform: 'uppercase',
+        }}>
+          {hasBuffer ? '● LOADED' : '○ NO SAMPLE'}
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -880,6 +1052,7 @@ function ModulePanel({
   onSeqReset,
   onAudioTrigPickDevice, audioTrigGetDeviceLabel, audioTrigGetDeviceList,
   onBuildPatch,
+  getGrainDataFn,
 }: ModulePanelProps) {
   const typeDef = MODULE_TYPE_MAP.get(module.typeId);
   const [showDelete, setShowDelete] = useState(false);
@@ -927,6 +1100,7 @@ function ModulePanel({
   const isEuc       = module.typeId === 'euclidean_trig';
   const isPolyStep  = module.typeId === 'poly_step';
   const isSampler   = module.typeId === 'sampler';
+  const isGranular  = module.typeId === 'granular_synth';
   const isMixer     = module.typeId === 'mixer';
   const panelH   = isPolyStep && !noteOpen ? PANEL_H : (typeDef.height ?? PANEL_H);
   const bodyH    = panelH - RAIL_H * 2;
@@ -1366,6 +1540,14 @@ function ModulePanel({
                     </div>
                   );
                 })}
+
+                {isGranular && (
+                  <GranularSynthDisplay
+                    getGrainData={getGrainDataFn}
+                    accent={accent}
+                    onLoadSample={onLoadSample}
+                  />
+                )}
 
                 {module.typeId === 'freeze_proc' && onFreezeKill && (
                   <div style={{ display: 'flex', justifyContent: 'center', marginTop: 2 }}>

@@ -2988,8 +2988,9 @@ export default function SynthApp() {
                 getLevelFn={audioModulesRef.current.get(mod.id)?.getLevel}
                 cvLevels={cvLevelMap.get(mod.id)}
                 portLevels={portLevelMap.get(mod.id)}
-                onLoadSample={mod.typeId === 'sampler' ? cbs.onLoadSample : undefined}
+                onLoadSample={(mod.typeId === 'sampler' || mod.typeId === 'granular_synth') ? cbs.onLoadSample : undefined}
                 samplerBanksFilled={mod.typeId === 'sampler' ? samplerBanks.get(mod.id) : undefined}
+                getGrainDataFn={mod.typeId === 'granular_synth' ? audioModulesRef.current.get(mod.id)?.getGrainData : undefined}
                 midiClockInfo={mod.typeId === 'midi_clock_in' ? midiClockInfo : undefined}
                 onToggleMidiClockLock={mod.typeId === 'midi_clock_in' ? handleToggleMidiClockLock : undefined}
                 midiSyncOffsetMs={mod.typeId === 'midi_clock_in' ? midiSyncOffsetMs : undefined}

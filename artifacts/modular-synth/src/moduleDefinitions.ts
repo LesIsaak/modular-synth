@@ -1415,11 +1415,42 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
     ],
     ports: [{ id: 'audio_in', name: 'IN', type: 'audio_in' }],
   },
+
+  // ── Synths ──────────────────────────────────────────────────────────────
+  {
+    id: 'granular_synth', name: 'GRANULAR', category: 'synths', accentColor: '#a78bfa', width: 290,
+    knobs: [
+      { id: 'position',     name: 'POSITION', min: 0,   max: 1,    default: 0    },
+      { id: 'scan',         name: 'SCAN',     min: -1,  max: 1,    default: 0    },
+      { id: 'size',         name: 'SIZE',     min: 1,   max: 500,  default: 80,   unit: 'ms' },
+      { id: 'density',      name: 'DENSITY',  min: 1,   max: 100,  default: 12,   unit: '/s' },
+      { id: 'scatter',      name: 'SCATTER',  min: 0,   max: 1,    default: 0.2  },
+      { id: 'pitch',        name: 'PITCH',    min: -24, max: 24,   default: 0,    unit: 'st', step: 1 },
+      { id: 'pitch_rand',   name: 'P.RAND',   min: 0,   max: 24,   default: 0,    unit: 'st' },
+      { id: 'pan_spread',   name: 'SPREAD',   min: 0,   max: 1,    default: 0.5  },
+      { id: 'reverse_prob', name: 'REVERSE',  min: 0,   max: 1,    default: 0    },
+      { id: 'feedback',     name: 'FEEDBK',   min: 0,   max: 0.9,  default: 0    },
+      { id: 'volume',       name: 'VOL',      min: 0,   max: 1,    default: 0.8  },
+    ],
+    ports: [
+      { id: 'voct',        name: 'V/OCT',   type: 'cv_in'    },
+      { id: 'pos_cv',      name: 'POS CV',  type: 'cv_in'    },
+      { id: 'size_cv',     name: 'SIZE CV', type: 'cv_in'    },
+      { id: 'density_cv',  name: 'DENS CV', type: 'cv_in'    },
+      { id: 'scatter_cv',  name: 'SCAT CV', type: 'cv_in'    },
+      { id: 'pitch_cv',    name: 'PTCH CV', type: 'cv_in'    },
+      { id: 'out_l',       name: 'OUT L',   type: 'audio_out' },
+      { id: 'out_r',       name: 'OUT R',   type: 'audio_out' },
+      { id: 'out',         name: 'OUT',     type: 'audio_out' },
+      { id: 'grain_trig',  name: 'G.TRG',   type: 'gate_out'  },
+    ],
+  },
 ];
 
 export const MODULE_TYPE_MAP = new Map(MODULE_TYPES.map(m => [m.id, m]));
 
 export const CATEGORY_ORDER: ModuleCategory[] = [
+  'synths',
   'oscillator', 'filter', 'amplifier', 'dynamics',
   'envelope', 'lfo', 'sequencer', 'clock',
   'delay', 'reverb', 'modulation', 'distortion',
@@ -1428,6 +1459,7 @@ export const CATEGORY_ORDER: ModuleCategory[] = [
 ];
 
 export const CATEGORY_LABELS: Record<string, string> = {
+  synths:      'Synths',
   oscillator:  'Oscillators',   filter:     'Filters',      amplifier:  'Amplifiers', dynamics:   'Dynamics',
   envelope:    'Envelopes',     lfo:        'LFO',           sequencer:  'Sequencers', clock:      'Clock',
   delay:       'Delay',         reverb:     'Reverb',        modulation: 'Modulation', distortion: 'Distortion',
@@ -1436,6 +1468,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
 };
 
 export const CATEGORY_COLORS: Record<string, string> = {
+  synths:     '#a78bfa',
   oscillator: '#f97316', filter:     '#14b8a6', amplifier:  '#3b82f6', dynamics:   '#0ea5e9',
   envelope:   '#a855f7', lfo:        '#ec4899', sequencer:  '#84cc16', clock:      '#eab308',
   delay:      '#22c55e', reverb:     '#10b981', modulation: '#06b6d4', distortion: '#ef4444',
@@ -1560,6 +1593,7 @@ export const MODULE_DESCRIPTIONS: Record<string, string> = {
   granular:     'Slices audio into tiny grains and scatters / overlaps them. POSITION scans the grain buffer; SIZE sets grain length; SPREAD randomizes position for clouds and textures.',
   time_stretch: 'Changes playback speed without pitch shift — or vice versa — using granular grain manipulation.',
   freeze_proc:  'Captures a snapshot of the audio and loops it as a sustained drone. FADE controls how quickly the frozen image builds up.',
+  granular_synth: 'Granular synthesizer — slices a loaded sample into micro-grains and re-assembles them. POSITION sets the read head; SCAN auto-sweeps it; SIZE controls grain duration (1ms glitchy → 500ms ambient); DENSITY sets grains per second; SCATTER randomises timing; SPREAD pans grains across the stereo field; REVERSE sets the chance each grain plays backwards; FEEDBK recirculates the output for cloudy resonance. Load any audio file and patch OUT L/R to a mixer.',
   sampler:      'Plays back audio samples from up to 8 banks. PITCH shifts playback in semitones; START trims the play head; LEN sets the region length. GATE triggers playback; SYNC re-triggers without retriggering the envelope. FWD/REV reverses the sample; LOOP sustains until gate-off. Click LOAD to drop a file into the selected bank.',
 
   // ── Utility ────────────────────────────────────────────────────────

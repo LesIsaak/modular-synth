@@ -4,7 +4,7 @@ export type ModuleCategory =
   | 'envelope' | 'lfo' | 'sequencer' | 'clock'
   | 'delay' | 'reverb' | 'modulation' | 'distortion'
   | 'spectral' | 'granular' | 'percussion' | 'utility'
-  | 'visualizer';
+  | 'visualizer' | 'synths';
 
 export interface PortDef {
   id: string;
