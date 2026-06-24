@@ -202,27 +202,27 @@ function GranularSynthDisplay({
   }, [getGrainData, accent]);
 
   return (
-    <div style={{ padding: '4px 5px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+    <div style={{ padding: '4px 5px', display: 'flex', flexDirection: 'row', alignItems: 'stretch', gap: 4 }}>
       <canvas
         ref={canvasRef}
         width={256}
         height={64}
         style={{
-          width: '100%', height: 44,
+          flex: 1, minWidth: 0, height: 36,
           borderRadius: 3, display: 'block',
           border: `1px solid ${hasBuffer ? accent + '44' : '#1c1c1c'}`,
           transition: 'border-color 0.3s',
         }}
         onMouseDown={e => e.stopPropagation()}
       />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, flexShrink: 0 }}>
         <label
           style={{
             padding: '3px 8px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
             background: '#1c1c1c', color: accent,
             border: `1px solid ${accent}55`,
             textTransform: 'uppercase', letterSpacing: '0.12em',
-            userSelect: 'none', lineHeight: '14px', flexShrink: 0,
+            userSelect: 'none', lineHeight: '14px', whiteSpace: 'nowrap',
           }}
           onMouseDown={e => e.stopPropagation()}
           title="Load audio sample (wav, mp3, flac, ogg…)"
@@ -239,11 +239,11 @@ function GranularSynthDisplay({
           />
         </label>
         <span style={{
-          marginLeft: 'auto', fontSize: 7,
+          fontSize: 7,
           color: hasBuffer ? accent : '#333',
           letterSpacing: '0.1em', textTransform: 'uppercase',
         }}>
-          {hasBuffer ? '● LOADED' : '○ NO SAMPLE'}
+          {hasBuffer ? '● LOADED' : '○ EMPTY'}
         </span>
       </div>
     </div>
