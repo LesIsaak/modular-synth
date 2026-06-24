@@ -3651,8 +3651,9 @@ export function createAudioModule(
       trigCs.start();
       let gateCb: ((on: boolean, freq: number) => void) | null = null;
 
-      // V/OCT from keyboard noteOn
+      // V/OCT from keyboard noteOn; gateOn controls grain spawning
       let voctFreq = 440;
+      let gateOn   = false;
 
       // ── Grain scheduler ─────────────────────────────────────────────
       const LOOKAHEAD  = 0.08; // seconds
@@ -3689,7 +3690,7 @@ export function createAudioModule(
       };
 
       const spawnGrain = (time: number) => {
-        if (!buffer || isDestroyed || activeGrains.length >= MAX_GRAINS) return;
+        if (!buffer || isDestroyed || !gateOn || activeGrains.length >= MAX_GRAINS) return;
 
         // Read CV taps
         const voctCV  = voctTap.read();
@@ -3806,7 +3807,11 @@ export function createAudioModule(
           ['scatter_cv', { node: scatTap.node,    param: scatTap.param    }],
           ['pitch_cv',   { node: pitchCvTap.node, param: pitchCvTap.param }],
         ]),
-        noteOn:          (_t, freq) => { voctFreq = freq; },
+        portNoteOn: new Map([
+          ['gate_in', (_t: number, freq?: number) => { gateOn = true; if (freq && freq > 10) voctFreq = freq; }],
+        ]),
+        noteOn:          (_t, freq) => { voctFreq = freq; gateOn = true; },
+        noteOff:         (_t)       => { gateOn = false; },
         setGateTrigger:  fn => { gateCb = fn; },
         getLevel: () => Math.min(1, activeGrains.length / Math.max(1, density * 0.3)),
         getGrainData: () => ({

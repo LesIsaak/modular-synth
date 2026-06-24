@@ -1433,6 +1433,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
       { id: 'volume',       name: 'VOL',   min: 0,   max: 1,    default: 0.8  },
     ],
     ports: [
+      { id: 'gate_in',     name: 'GATE',   type: 'gate_in'  },
       { id: 'voct',        name: 'V/OCT',  type: 'cv_in'    },
       { id: 'pos_cv',      name: 'POS',    type: 'cv_in'    },
       { id: 'size_cv',     name: 'SIZE',   type: 'cv_in'    },
