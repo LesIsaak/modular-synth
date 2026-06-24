@@ -1418,7 +1418,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
 
   // ── Synths ──────────────────────────────────────────────────────────────
   {
-    id: 'granular_synth', name: 'GRANULAR', category: 'synths', accentColor: '#a78bfa', width: 290,
+    id: 'granular_synth', name: 'GRANULAR', category: 'synths', accentColor: '#a78bfa', width: 360, height: 460,
     knobs: [
       { id: 'position',     name: 'POSITION', min: 0,   max: 1,    default: 0    },
       { id: 'scan',         name: 'SCAN',     min: -1,  max: 1,    default: 0    },
@@ -1433,16 +1433,16 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
       { id: 'volume',       name: 'VOL',      min: 0,   max: 1,    default: 0.8  },
     ],
     ports: [
-      { id: 'voct',        name: 'V/OCT',   type: 'cv_in'    },
-      { id: 'pos_cv',      name: 'POS CV',  type: 'cv_in'    },
-      { id: 'size_cv',     name: 'SIZE CV', type: 'cv_in'    },
-      { id: 'density_cv',  name: 'DENS CV', type: 'cv_in'    },
-      { id: 'scatter_cv',  name: 'SCAT CV', type: 'cv_in'    },
-      { id: 'pitch_cv',    name: 'PTCH CV', type: 'cv_in'    },
-      { id: 'out_l',       name: 'OUT L',   type: 'audio_out' },
-      { id: 'out_r',       name: 'OUT R',   type: 'audio_out' },
-      { id: 'out',         name: 'OUT',     type: 'audio_out' },
-      { id: 'grain_trig',  name: 'G.TRG',   type: 'gate_out'  },
+      { id: 'voct',        name: 'V/OCT',  type: 'cv_in'    },
+      { id: 'pos_cv',      name: 'POS',    type: 'cv_in'    },
+      { id: 'size_cv',     name: 'SIZE',   type: 'cv_in'    },
+      { id: 'density_cv',  name: 'DENS',   type: 'cv_in'    },
+      { id: 'scatter_cv',  name: 'SCAT',   type: 'cv_in'    },
+      { id: 'pitch_cv',    name: 'PTCH',   type: 'cv_in'    },
+      { id: 'out_l',       name: 'OUT L',  type: 'audio_out' },
+      { id: 'out_r',       name: 'OUT R',  type: 'audio_out' },
+      { id: 'out',         name: 'OUT',    type: 'audio_out' },
+      { id: 'grain_trig',  name: 'G.TRG',  type: 'gate_out'  },
     ],
   },
 ];
