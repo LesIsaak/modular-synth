@@ -208,7 +208,7 @@ function GranularSynthDisplay({
         width={256}
         height={64}
         style={{
-          width: '100%', height: 64,
+          width: '100%', height: 44,
           borderRadius: 3, display: 'block',
           border: `1px solid ${hasBuffer ? accent + '44' : '#1c1c1c'}`,
           transition: 'border-color 0.3s',

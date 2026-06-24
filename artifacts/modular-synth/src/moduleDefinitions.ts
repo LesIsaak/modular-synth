@@ -1418,19 +1418,19 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
 
   // ── Synths ──────────────────────────────────────────────────────────────
   {
-    id: 'granular_synth', name: 'GRANULAR', category: 'synths', accentColor: '#a78bfa', width: 360, height: 460,
+    id: 'granular_synth', name: 'GRANULAR', category: 'synths', accentColor: '#a78bfa', width: 500,
     knobs: [
-      { id: 'position',     name: 'POSITION', min: 0,   max: 1,    default: 0    },
-      { id: 'scan',         name: 'SCAN',     min: -1,  max: 1,    default: 0    },
-      { id: 'size',         name: 'SIZE',     min: 1,   max: 500,  default: 80,   unit: 'ms' },
-      { id: 'density',      name: 'DENSITY',  min: 1,   max: 100,  default: 12,   unit: '/s' },
-      { id: 'scatter',      name: 'SCATTER',  min: 0,   max: 1,    default: 0.2  },
-      { id: 'pitch',        name: 'PITCH',    min: -24, max: 24,   default: 0,    unit: 'st', step: 1 },
-      { id: 'pitch_rand',   name: 'P.RAND',   min: 0,   max: 24,   default: 0,    unit: 'st' },
-      { id: 'pan_spread',   name: 'SPREAD',   min: 0,   max: 1,    default: 0.5  },
-      { id: 'reverse_prob', name: 'REVERSE',  min: 0,   max: 1,    default: 0    },
-      { id: 'feedback',     name: 'FEEDBK',   min: 0,   max: 0.9,  default: 0    },
-      { id: 'volume',       name: 'VOL',      min: 0,   max: 1,    default: 0.8  },
+      { id: 'position',     name: 'POS',   min: 0,   max: 1,    default: 0    },
+      { id: 'scan',         name: 'SCAN',  min: -1,  max: 1,    default: 0    },
+      { id: 'size',         name: 'SIZE',  min: 1,   max: 500,  default: 80,   unit: 'ms' },
+      { id: 'density',      name: 'DENS',  min: 1,   max: 100,  default: 12,   unit: '/s' },
+      { id: 'scatter',      name: 'SCAT',  min: 0,   max: 1,    default: 0.2  },
+      { id: 'pitch',        name: 'PTCH',  min: -24, max: 24,   default: 0,    unit: 'st', step: 1 },
+      { id: 'pitch_rand',   name: 'PRND',  min: 0,   max: 24,   default: 0,    unit: 'st' },
+      { id: 'pan_spread',   name: 'SPRD',  min: 0,   max: 1,    default: 0.5  },
+      { id: 'reverse_prob', name: 'REV',   min: 0,   max: 1,    default: 0    },
+      { id: 'feedback',     name: 'FDBK',  min: 0,   max: 0.9,  default: 0    },
+      { id: 'volume',       name: 'VOL',   min: 0,   max: 1,    default: 0.8  },
     ],
     ports: [
       { id: 'voct',        name: 'V/OCT',  type: 'cv_in'    },
