@@ -3808,7 +3808,19 @@ export function createAudioModule(
           ['pitch_cv',   { node: pitchCvTap.node, param: pitchCvTap.param }],
         ]),
         portNoteOn: new Map([
-          ['gate_in', (_t: number, freq?: number) => { gateOn = true; if (freq && freq > 10) voctFreq = freq; }],
+          ['gate_in',  (_t: number, freq?: number) => { gateOn = true; if (freq && freq > 10) voctFreq = freq; }],
+          ['sync_in',  (_t: number, freq?: number) => {
+            // Each sync pulse fires one grain immediately (bypasses density timer & gate)
+            if (freq && freq > 10) voctFreq = freq;
+            const prev = gateOn;
+            gateOn = true;
+            spawnGrain(ctx.currentTime + 0.002);
+            gateOn = prev;
+          }],
+        ]),
+        portNoteOff: new Map([
+          ['gate_in', (_t: number, freq?: number) => { if (freq && freq > 10) voctFreq = freq; gateOn = false; }],
+          ['sync_in', () => { /* ignore falling edge — grain already fired on rising */ }],
         ]),
         noteOn:          (_t, freq) => { voctFreq = freq; gateOn = true; },
         noteOff:         (_t)       => { gateOn = false; },
