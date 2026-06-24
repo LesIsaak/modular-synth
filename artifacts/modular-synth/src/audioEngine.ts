@@ -1138,8 +1138,11 @@ export function createAudioModule(
       comp.attack.value = p.attack ?? 0.003;
       comp.release.value = p.release ?? 0.25;
       comp.knee.value = 6;
+      const makeupGain = ctx.createGain();
+      makeupGain.gain.value = Math.pow(10, (p.gain ?? 0) / 20);
+      comp.connect(makeupGain);
       return {
-        outputs: new Map([['out', comp]]),
+        outputs: new Map([['out', makeupGain]]),
         inputs: new Map([['audio_in', { node: comp }]]),
         setParam: (id, val) => {
           p[id] = val;
@@ -1147,8 +1150,9 @@ export function createAudioModule(
           if (id === 'ratio') comp.ratio.value = val;
           if (id === 'attack') comp.attack.value = val;
           if (id === 'release') comp.release.value = val;
+          if (id === 'gain') makeupGain.gain.value = Math.pow(10, val / 20);
         },
-        destroy: () => comp.disconnect(),
+        destroy: () => { comp.disconnect(); makeupGain.disconnect(); },
       };
     }
 

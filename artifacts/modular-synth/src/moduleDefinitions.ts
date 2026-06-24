@@ -355,6 +355,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
       { id: 'ratio',     name: 'RATIO',   min: 1,   max: 20,  default: 4 },
       { id: 'attack',    name: 'ATK',     min: 0,   max: 1,   default: 0.003 },
       { id: 'release',   name: 'REL',     min: 0,   max: 1,   default: 0.25 },
+      { id: 'gain',      name: 'GAIN',    min: 0,   max: 24,  default: 0,   unit: 'dB' },
     ],
     ports: [
       audioIn,
