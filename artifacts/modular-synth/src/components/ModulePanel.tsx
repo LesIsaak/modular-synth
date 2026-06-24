@@ -60,6 +60,8 @@ interface ModulePanelProps {
     hasBuffer:     boolean;
     waveformPeaks: Float32Array | null;
   };
+  onGranularStartRecord?: () => void;
+  onGranularStopRecord?:  () => void;
 }
 
 function ActivityLED({ getLevelFn, color }: { getLevelFn: () => number; color: string }) {
@@ -97,14 +99,19 @@ function GranularSynthDisplay({
   getGrainData,
   accent,
   onLoadSample,
+  onStartRecord,
+  onStopRecord,
 }: {
   getGrainData?: () => GrainDataResult;
   accent: string;
   onLoadSample?: (file: File, bankIndex: number) => void;
+  onStartRecord?: () => void;
+  onStopRecord?:  () => void;
 }) {
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const rafRef     = useRef<number | null>(null);
-  const [hasBuffer, setHasBuffer] = useState(false);
+  const [hasBuffer,    setHasBuffer]    = useState(false);
+  const [isRecording,  setIsRecording]  = useState(false);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -245,6 +252,32 @@ function GranularSynthDisplay({
         }}>
           {hasBuffer ? '● LOADED' : '○ EMPTY'}
         </span>
+        {(onStartRecord || onStopRecord) && (
+          <button
+            style={{
+              padding: '3px 8px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
+              background: isRecording ? '#7f1d1d' : '#1c1c1c',
+              color: isRecording ? '#fca5a5' : '#888',
+              border: `1px solid ${isRecording ? '#ef4444' : '#333'}`,
+              textTransform: 'uppercase', letterSpacing: '0.12em',
+              userSelect: 'none', lineHeight: '14px', whiteSpace: 'nowrap',
+              boxShadow: isRecording ? '0 0 6px #ef444466' : 'none',
+              transition: 'background 0.1s, box-shadow 0.1s',
+            }}
+            onMouseDown={e => e.stopPropagation()}
+            onClick={() => {
+              if (isRecording) {
+                setIsRecording(false);
+                onStopRecord?.();
+              } else {
+                setIsRecording(true);
+                onStartRecord?.();
+              }
+            }}
+          >
+            {isRecording ? '■ STOP' : '● REC'}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -1053,6 +1086,8 @@ function ModulePanel({
   onAudioTrigPickDevice, audioTrigGetDeviceLabel, audioTrigGetDeviceList,
   onBuildPatch,
   getGrainDataFn,
+  onGranularStartRecord,
+  onGranularStopRecord,
 }: ModulePanelProps) {
   const typeDef = MODULE_TYPE_MAP.get(module.typeId);
   const [showDelete, setShowDelete] = useState(false);
@@ -1546,6 +1581,8 @@ function ModulePanel({
                     getGrainData={getGrainDataFn}
                     accent={accent}
                     onLoadSample={onLoadSample}
+                    onStartRecord={onGranularStartRecord}
+                    onStopRecord={onGranularStopRecord}
                   />
                 )}
 

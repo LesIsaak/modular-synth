@@ -2991,6 +2991,8 @@ export default function SynthApp() {
                 onLoadSample={(mod.typeId === 'sampler' || mod.typeId === 'granular_synth') ? cbs.onLoadSample : undefined}
                 samplerBanksFilled={mod.typeId === 'sampler' ? samplerBanks.get(mod.id) : undefined}
                 getGrainDataFn={mod.typeId === 'granular_synth' ? audioModulesRef.current.get(mod.id)?.getGrainData : undefined}
+                onGranularStartRecord={mod.typeId === 'granular_synth' ? () => audioModulesRef.current.get(mod.id)?.startRecord?.() : undefined}
+                onGranularStopRecord={mod.typeId === 'granular_synth' ? () => audioModulesRef.current.get(mod.id)?.stopRecord?.() : undefined}
                 midiClockInfo={mod.typeId === 'midi_clock_in' ? midiClockInfo : undefined}
                 onToggleMidiClockLock={mod.typeId === 'midi_clock_in' ? handleToggleMidiClockLock : undefined}
                 midiSyncOffsetMs={mod.typeId === 'midi_clock_in' ? midiSyncOffsetMs : undefined}

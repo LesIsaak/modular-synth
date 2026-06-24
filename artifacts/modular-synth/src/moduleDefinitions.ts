@@ -1436,6 +1436,7 @@ export const MODULE_TYPES: ModuleTypeDef[] = [
     ports: [
       { id: 'gate_in',     name: 'GATE',   type: 'gate_in'  },
       { id: 'sync_in',     name: 'SYNC',   type: 'gate_in'  },
+      { id: 'rec_in',      name: 'REC IN', type: 'audio_in' },
       { id: 'voct',        name: 'V/OCT',  type: 'cv_in'    },
       { id: 'pos_cv',      name: 'POS',    type: 'cv_in'    },
       { id: 'size_cv',     name: 'SIZE',   type: 'cv_in'    },

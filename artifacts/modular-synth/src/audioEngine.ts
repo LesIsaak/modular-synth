@@ -42,6 +42,10 @@ export interface AudioModuleNodes {
     hasBuffer:     boolean;
     waveformPeaks: Float32Array<ArrayBuffer> | null;
   };
+  /** Granular synth: begin capturing audio from the rec_in port into the granular buffer */
+  startRecord?: () => void;
+  /** Granular synth: stop capturing and commit the recorded audio as the new granular buffer */
+  stopRecord?: () => void;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -3659,6 +3663,25 @@ export function createAudioModule(
       let voctFreq = 440;
       let gateOn   = false;
 
+      // ── Live recording (rec_in → ScriptProcessor → silent sink) ─────
+      const recInputGain = ctx.createGain();
+      recInputGain.gain.value = 1;
+      // bufferSize 4096, 1 input channel, 1 output channel (mono capture)
+      // eslint-disable-next-line @typescript-eslint/no-deprecated
+      const recProc = ctx.createScriptProcessor(4096, 1, 1);
+      const recSink = ctx.createGain();
+      recSink.gain.value = 0;
+      recInputGain.connect(recProc);
+      recProc.connect(recSink);
+      recSink.connect(ctx.destination);
+      let isRecording  = false;
+      let recChunks: Float32Array[] = [];
+      recProc.onaudioprocess = (e) => {
+        if (isRecording) {
+          recChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+        }
+      };
+
       // ── Grain scheduler ─────────────────────────────────────────────
       const LOOKAHEAD  = 0.08; // seconds
       const TICK_MS    = 30;   // scheduler interval ms
@@ -3810,6 +3833,7 @@ export function createAudioModule(
           ['density_cv', { node: densTap.node,    param: densTap.param    }],
           ['scatter_cv', { node: scatTap.node,    param: scatTap.param    }],
           ['pitch_cv',   { node: pitchCvTap.node, param: pitchCvTap.param }],
+          ['rec_in',     { node: recInputGain }],
         ]),
         portNoteOn: new Map([
           ['gate_in',  (_t: number, freq?: number) => { gateOn = true; if (freq && freq > 10) voctFreq = freq; }],
@@ -3828,6 +3852,25 @@ export function createAudioModule(
         ]),
         noteOn:          (_t, freq) => { voctFreq = freq; gateOn = true; },
         noteOff:         (_t)       => { gateOn = false; },
+        startRecord: () => { isRecording = true; recChunks = []; },
+        stopRecord:  () => {
+          isRecording = false;
+          if (recChunks.length === 0) return;
+          const totalLen = recChunks.reduce((s, c) => s + c.length, 0);
+          const newBuf   = ctx.createBuffer(1, totalLen, ctx.sampleRate);
+          const data     = newBuf.getChannelData(0);
+          let off = 0;
+          for (const ch of recChunks) { data.set(ch, off); off += ch.length; }
+          recChunks  = [];
+          buffer     = newBuf;
+          bufferRev  = makeRevBuf(newBuf);
+          waveformPeaks = computePeaks(newBuf);
+          if (schedTimer === null && !isDestroyed) {
+            nextGrainAt  = ctx.currentTime;
+            lastTickTime = ctx.currentTime;
+            runScheduler();
+          }
+        },
         setGateTrigger:  fn => { gateCb = fn; },
         getLevel: () => Math.min(1, activeGrains.length / Math.max(1, density * 0.3)),
         getGrainData: () => ({
@@ -3872,9 +3915,12 @@ export function createAudioModule(
         },
         destroy: () => {
           isDestroyed = true;
+          isRecording = false;
+          recChunks = [];
           if (schedTimer !== null) clearTimeout(schedTimer);
           try { trigCs.stop(); } catch (_) {}
-          [trigCs, grainBus, outL, outR, outMono, splitter, fbDelay, fbGain].forEach(n => {
+          [trigCs, grainBus, outL, outR, outMono, splitter, fbDelay, fbGain,
+           recInputGain, recProc, recSink].forEach(n => {
             try { n.disconnect(); } catch (_) {}
           });
           voctTap.destroy(); posTap.destroy(); sizeTap.destroy();
