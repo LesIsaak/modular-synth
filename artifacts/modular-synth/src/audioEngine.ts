@@ -4729,8 +4729,14 @@ export function createAudioModule(
           analyser.disconnect(ctx.destination);
           recProc = ctx.createScriptProcessor(4096, 2, 2);
           recProc.onaudioprocess = (e: AudioProcessingEvent) => {
-            leftChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
-            rightChunks.push(new Float32Array(e.inputBuffer.getChannelData(1)));
+            const inL = e.inputBuffer.getChannelData(0);
+            const inR = e.inputBuffer.getChannelData(1);
+            // Pass audio through to destination
+            e.outputBuffer.getChannelData(0).set(inL);
+            e.outputBuffer.getChannelData(1).set(inR);
+            // Capture samples
+            leftChunks.push(new Float32Array(inL));
+            rightChunks.push(new Float32Array(inR));
           };
           analyser.connect(recProc);
           recProc.connect(ctx.destination);
