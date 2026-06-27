@@ -2993,6 +2993,8 @@ export default function SynthApp() {
                 getGrainDataFn={mod.typeId === 'granular_synth' ? audioModulesRef.current.get(mod.id)?.getGrainData : undefined}
                 onGranularStartRecord={mod.typeId === 'granular_synth' ? () => audioModulesRef.current.get(mod.id)?.startRecord?.() : undefined}
                 onGranularStopRecord={mod.typeId === 'granular_synth' ? () => audioModulesRef.current.get(mod.id)?.stopRecord?.() : undefined}
+                onOutputStartRecording={mod.typeId === 'output' ? () => audioModulesRef.current.get(mod.id)?.startRecording?.() : undefined}
+                onOutputStopRecording={mod.typeId === 'output' ? () => audioModulesRef.current.get(mod.id)?.stopRecording?.() : undefined}
                 midiClockInfo={mod.typeId === 'midi_clock_in' ? midiClockInfo : undefined}
                 onToggleMidiClockLock={mod.typeId === 'midi_clock_in' ? handleToggleMidiClockLock : undefined}
                 midiSyncOffsetMs={mod.typeId === 'midi_clock_in' ? midiSyncOffsetMs : undefined}

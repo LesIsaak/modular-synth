@@ -46,6 +46,10 @@ export interface AudioModuleNodes {
   startRecord?: () => void;
   /** Granular synth: stop capturing and commit the recorded audio as the new granular buffer */
   stopRecord?: () => void;
+  /** Output module: start recording the final mix to a downloadable file */
+  startRecording?: () => void;
+  /** Output module: stop recording and trigger browser download */
+  stopRecording?: () => void;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -4665,7 +4669,6 @@ export function createAudioModule(
     case 'output': {
       const master = ctx.createGain();
       master.gain.value = p.volume ?? 0.7;
-      // Route through analyser so the VU meter can read levels
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
       analyser.smoothingTimeConstant = 0.0;
@@ -4673,16 +4676,53 @@ export function createAudioModule(
       analyser.connect(ctx.destination);
       const volCv = ctx.createConstantSource(); volCv.offset.value = 0; volCv.start();
       volCv.connect(master.gain);
+
+      // ── Output recorder ──────────────────────────────────────────────
+      const recDest = ctx.createMediaStreamDestination();
+      analyser.connect(recDest);
+      let mediaRec: MediaRecorder | null = null;
+      let recChunks: Blob[] = [];
+
+      const mimeType = (() => {
+        for (const t of ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg']) {
+          if (MediaRecorder.isTypeSupported(t)) return t;
+        }
+        return '';
+      })();
+
       return {
         outputs: new Map(),
         inputs: new Map([
-          ['in_l', { node: master }],
-          ['in_r', { node: master }],
+          ['in_l',   { node: master }],
+          ['in_r',   { node: master }],
           ['vol_cv', { node: volCv, param: volCv.offset }],
         ]),
         setParam: (id, val) => { p[id] = val; if (id === 'volume') master.gain.value = val; },
-        destroy: () => { volCv.stop(); volCv.disconnect(); master.disconnect(); analyser.disconnect(); },
+        destroy: () => {
+          try { mediaRec?.stop(); } catch (_) {}
+          volCv.stop(); volCv.disconnect(); master.disconnect();
+          analyser.disconnect(); recDest.disconnect();
+        },
         analyser,
+        startRecording: () => {
+          recChunks = [];
+          mediaRec = new MediaRecorder(recDest.stream, mimeType ? { mimeType } : undefined);
+          mediaRec.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
+          mediaRec.onstop = () => {
+            const ext  = mimeType.includes('ogg') ? 'ogg' : 'webm';
+            const blob = new Blob(recChunks, { type: mimeType || 'audio/webm' });
+            const url  = URL.createObjectURL(blob);
+            const stamp = new Date().toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '-');
+            const a = document.createElement('a');
+            a.href = url; a.download = `orangecastle_${stamp}.${ext}`;
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+            recChunks = [];
+          };
+          mediaRec.start(1000);
+        },
+        stopRecording: () => { try { mediaRec?.stop(); } catch (_) {} mediaRec = null; },
       };
     }
 

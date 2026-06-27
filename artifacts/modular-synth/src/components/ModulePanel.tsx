@@ -62,6 +62,8 @@ interface ModulePanelProps {
   };
   onGranularStartRecord?: () => void;
   onGranularStopRecord?:  () => void;
+  onOutputStartRecording?: () => void;
+  onOutputStopRecording?:  () => void;
 }
 
 function ActivityLED({ getLevelFn, color }: { getLevelFn: () => number; color: string }) {
@@ -1077,11 +1079,14 @@ function ModulePanel({
   getGrainDataFn,
   onGranularStartRecord,
   onGranularStopRecord,
+  onOutputStartRecording,
+  onOutputStopRecording,
 }: ModulePanelProps) {
   const typeDef = MODULE_TYPE_MAP.get(module.typeId);
-  const [showDelete, setShowDelete] = useState(false);
-  const [showInfo,   setShowInfo]   = useState(false);
-  const [infoAnchor, setInfoAnchor] = useState({ x: 0, y: 0 });
+  const [showDelete,        setShowDelete]        = useState(false);
+  const [showInfo,          setShowInfo]          = useState(false);
+  const [infoAnchor,        setInfoAnchor]        = useState({ x: 0, y: 0 });
+  const [isOutputRecording, setIsOutputRecording] = useState(false);
   const [noteOpen,   setNoteOpen]   = useState(true);
   const [eucStep,  setEucStep]  = useState(0);
   const [seqStep,  setSeqStep]  = useState(-1);
@@ -1760,7 +1765,37 @@ function ModulePanel({
                     </div>
                   );
                 })()}
-                {isOutput && <OutputMeter analyser={analyser} />}
+                {isOutput && (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '0 0 4px' }}>
+                    <OutputMeter analyser={analyser} />
+                    <button
+                      onMouseDown={e => e.stopPropagation()}
+                      onClick={() => {
+                        if (isOutputRecording) {
+                          setIsOutputRecording(false);
+                          onOutputStopRecording?.();
+                        } else {
+                          setIsOutputRecording(true);
+                          onOutputStartRecording?.();
+                        }
+                      }}
+                      style={{
+                        padding: '2px 14px', fontSize: 7, borderRadius: 2, cursor: 'pointer',
+                        background: isOutputRecording ? '#7f1d1d' : '#1c1c1c',
+                        color: isOutputRecording ? '#fca5a5' : '#888',
+                        border: `1px solid ${isOutputRecording ? '#ef4444' : '#333'}`,
+                        textTransform: 'uppercase', letterSpacing: '0.12em',
+                        lineHeight: '14px', userSelect: 'none', whiteSpace: 'nowrap',
+                        boxShadow: isOutputRecording ? '0 0 8px #ef444466' : 'none',
+                        transition: 'background 0.1s, box-shadow 0.1s',
+                        width: '100%',
+                      }}
+                      title={isOutputRecording ? 'Stop recording and download' : 'Record synth output to file'}
+                    >
+                      {isOutputRecording ? '■ STOP' : '● REC'}
+                    </button>
+                  </div>
+                )}
                 {module.typeId === 'spectrum_analyzer' && (
                   <SpectrumAnalyzerDisplay analyser={analyser} />
                 )}
