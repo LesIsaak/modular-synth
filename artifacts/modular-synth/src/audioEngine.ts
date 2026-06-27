@@ -55,6 +55,32 @@ export interface AudioModuleNodes {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const midiToHz = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
 
+/** Encode interleaved stereo Float32 chunks into a 16-bit PCM WAV ArrayBuffer. */
+function encodeWav(leftChunks: Float32Array[], rightChunks: Float32Array[], sampleRate: number): ArrayBuffer {
+  const totalFrames = leftChunks.reduce((s, c) => s + c.length, 0);
+  const numCh = 2, bps = 16, bytesPerFrame = numCh * (bps / 8);
+  const dataBytes = totalFrames * bytesPerFrame;
+  const buf = new ArrayBuffer(44 + dataBytes);
+  const v = new DataView(buf);
+  const ws = (o: number, s: string) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  ws(0, 'RIFF'); v.setUint32(4, 36 + dataBytes, true);
+  ws(8, 'WAVE'); ws(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true);          // PCM
+  v.setUint16(22, numCh, true); v.setUint32(24, sampleRate, true);
+  v.setUint32(28, sampleRate * bytesPerFrame, true);
+  v.setUint16(32, bytesPerFrame, true); v.setUint16(34, bps, true);
+  ws(36, 'data'); v.setUint32(40, dataBytes, true);
+  let off = 44;
+  for (let i = 0; i < leftChunks.length; i++) {
+    const L = leftChunks[i], R = rightChunks[i];
+    for (let j = 0; j < L.length; j++) {
+      v.setInt16(off, Math.max(-1, Math.min(1, L[j])) * 0x7fff, true); off += 2;
+      v.setInt16(off, Math.max(-1, Math.min(1, R[j])) * 0x7fff, true); off += 2;
+    }
+  }
+  return buf;
+}
+
 function makeIR(ctx: AudioContext, dur: number, decay: number, stereo = true): AudioBuffer {
   const sr = ctx.sampleRate;
   const len = Math.floor(sr * dur);
@@ -4677,18 +4703,10 @@ export function createAudioModule(
       const volCv = ctx.createConstantSource(); volCv.offset.value = 0; volCv.start();
       volCv.connect(master.gain);
 
-      // ── Output recorder ──────────────────────────────────────────────
-      const recDest = ctx.createMediaStreamDestination();
-      analyser.connect(recDest);
-      let mediaRec: MediaRecorder | null = null;
-      let recChunks: Blob[] = [];
-
-      const mimeType = (() => {
-        for (const t of ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg']) {
-          if (MediaRecorder.isTypeSupported(t)) return t;
-        }
-        return '';
-      })();
+      // ── Output recorder (ScriptProcessorNode → 16-bit PCM WAV) ──────
+      let recProc: ScriptProcessorNode | null = null;
+      let leftChunks:  Float32Array[] = [];
+      let rightChunks: Float32Array[] = [];
 
       return {
         outputs: new Map(),
@@ -4699,30 +4717,44 @@ export function createAudioModule(
         ]),
         setParam: (id, val) => { p[id] = val; if (id === 'volume') master.gain.value = val; },
         destroy: () => {
-          try { mediaRec?.stop(); } catch (_) {}
-          volCv.stop(); volCv.disconnect(); master.disconnect();
-          analyser.disconnect(); recDest.disconnect();
+          if (recProc) { try { recProc.disconnect(); } catch (_) {} recProc = null; }
+          volCv.stop(); volCv.disconnect(); master.disconnect(); analyser.disconnect();
         },
         analyser,
         startRecording: () => {
-          recChunks = [];
-          mediaRec = new MediaRecorder(recDest.stream, mimeType ? { mimeType } : undefined);
-          mediaRec.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
-          mediaRec.onstop = () => {
-            const ext  = mimeType.includes('ogg') ? 'ogg' : 'webm';
-            const blob = new Blob(recChunks, { type: mimeType || 'audio/webm' });
-            const url  = URL.createObjectURL(blob);
-            const stamp = new Date().toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '-');
-            const a = document.createElement('a');
-            a.href = url; a.download = `orangecastle_${stamp}.${ext}`;
-            document.body.appendChild(a); a.click();
-            document.body.removeChild(a);
-            setTimeout(() => URL.revokeObjectURL(url), 5000);
-            recChunks = [];
+          if (recProc) return;                   // already recording
+          leftChunks  = [];
+          rightChunks = [];
+          // Insert processor between analyser and destination so it always fires
+          analyser.disconnect(ctx.destination);
+          recProc = ctx.createScriptProcessor(4096, 2, 2);
+          recProc.onaudioprocess = (e: AudioProcessingEvent) => {
+            leftChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+            rightChunks.push(new Float32Array(e.inputBuffer.getChannelData(1)));
           };
-          mediaRec.start(1000);
+          analyser.connect(recProc);
+          recProc.connect(ctx.destination);
         },
-        stopRecording: () => { try { mediaRec?.stop(); } catch (_) {} mediaRec = null; },
+        stopRecording: () => {
+          if (!recProc) return;
+          recProc.onaudioprocess = null;
+          recProc.disconnect(ctx.destination);
+          analyser.disconnect(recProc);
+          analyser.connect(ctx.destination);
+          recProc = null;
+          // Encode & download WAV
+          const wav   = encodeWav(leftChunks, rightChunks, ctx.sampleRate);
+          leftChunks  = [];
+          rightChunks = [];
+          const blob  = new Blob([wav], { type: 'audio/wav' });
+          const url   = URL.createObjectURL(blob);
+          const stamp = new Date().toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '-');
+          const a     = document.createElement('a');
+          a.href = url; a.download = `orangecastle_${stamp}.wav`;
+          document.body.appendChild(a); a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(url), 10_000);
+        },
       };
     }
 
